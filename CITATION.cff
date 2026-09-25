@@ -1,0 +1,26 @@
+# TODO: 著者・ORCID・書誌情報を確定させてから公開する。
+cff-version: 1.2.0
+message: "If you use this toolkit, please cite it as below."
+type: software
+title: "Full-Duplex-Bench-JA"
+abstract: "Turn-taking evaluation toolkit for Japanese full-duplex spoken dialogue models."
+authors:
+  - family-names: Abe
+    given-names: Yuto
+    affiliation: "Waseda University / LLM-jp"
+    orcid: "https://orcid.org/0009-0000-6500-0851"
+  # TODO: 共著者を追加
+repository-code: "https://github.com/llm-jp/full-duplex-bench-ja"
+url: "https://llm-jp.github.io/full-duplex-bench-ja/"
+license: Apache-2.0
+version: 0.1.0
+date-released: "2026-11-05"   # TODO: 公開日に合わせる
+preferred-citation:
+  type: conference-paper
+  title: "TODO: RTCA 2026 論文タイトル"
+  authors:
+    - family-names: Abe
+      given-names: Yuto
+    # TODO: 共著者
+  collection-title: "Proceedings of RTCA 2026"
+  year: 2026

@@ -1,0 +1,25 @@
+# CLAUDE.md
+
+## 重要なルール
+
+- コミット前に `make lint test` を通す(CI と同じ内容: ruff + pytest、Python 3.10 / 3.12)。
+- コミットは `type: 要約`(feat / fix / docs / chore / test)。詳細は [CONTRIBUTING.md](CONTRIBUTING.md)。
+- 音声(`*.wav` / `*.mp3` など)、チェックポイント(`*.pt`)、評価ディレクトリ(`data/`, `results/`)はコミットしない。
+  例外は `docs/samples/*.mp3`(リーダーボードの試聴用)だけ。
+- 指標のロジック(`metrics/`, `data/event_detection.py`)を変えたら、リファレンス評価セットで既知値と一致することを確認して PR 本文に書く。
+
+## 落とし穴
+
+- `score-offline` は GT の jchat とモデル出力の ASR jchat が**両方**あるクリップだけを採点し、無いものは黙ってスキップする。
+  「scored 0 clips」はデータ配置の問題であることが多い。
+- ASR は `fdbja transcribe`(`asr/`)。バックエンドは `reazonspeech_whisperx`(既定。論文・リーダーボードの経路)/
+  `reazonspeech_nemo` / `reazonspeech_k2` で、extra(`asr-reazon-whisperx` / `asr-nemo` / `asr-k2`)は排他。
+  NeMo / k2 は整列器なしで速いが発話の切れ目が多く出るので TOR の絶対値はリーダーボードと比較不可。
+  サブワード内の文字時刻は均等分割 + 0.5 秒以内の橋渡しの近似(`asr/_subword.py`)。
+- `.[asr-reazon-whisperx]` は ESPnet の重みを `huggingface_hub` で直接読む(`espnet_model_zoo` の Python 3.10 向け版は Hub の
+  リダイレクトで落ちる)。`ctc-segmentation` は numpy 2 に対して `--no-build-isolation` で再ビルドが要ることがある。
+- α(`exp(-α·D_KL)`)はモデル集合から自動較正されるため、モデルを 1 つ足すと全モデルのスコアが変わる。
+  `docs/results.json` を更新するときは全モデルを 1 回の実行で採点し直す。
+- `sample-human-eval` はリポジトリ直下の `webui/` を `__file__` 相対で探す。wheel でインストールすると見つからない。
+- Gemini のモデル名は config(`gemini-live-2.5-flash-preview`)とアダプタの既定値(`gemini-3.1-flash-live-preview`)で異なる。config が優先される。
+- 日本語 VAP チェックポイントは学術目的限定の配布。リポジトリに同梱しない。
