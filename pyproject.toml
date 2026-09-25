@@ -22,6 +22,19 @@ gemini = ["google-genai", "librosa", "soundfile"]
 realtime = ["websockets", "librosa"]
 # analysis / figures
 analysis = ["matplotlib", "pandas"]
+# `transcribe` backends (mutually exclusive: pick one per environment)
+asr-nemo = [
+    "reazonspeech-nemo-asr @ git+https://github.com/reazon-research/ReazonSpeech@v3.0.0#subdirectory=pkg/nemo-asr",
+    "torch", "torchaudio",
+]
+asr-k2 = [
+    "reazonspeech-k2-asr @ git+https://github.com/reazon-research/ReazonSpeech@v3.0.0#subdirectory=pkg/k2-asr",
+    "sherpa-onnx-core",   # the sherpa-onnx wheel omits it from its metadata; macOS needs libonnxruntime from here
+]
+asr-reazon-whisperx = [
+    "reazonspeech-espnet-asr @ git+https://github.com/reazon-research/ReazonSpeech@v2.1.0#subdirectory=pkg/espnet-asr",
+    "whisperx>=3.3", "torch", "torchaudio",
+]
 
 [project.scripts]
 fdbja = "fdbja.cli:main"
@@ -32,3 +45,34 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[tool.uv]
+# Resolve the lock for the interpreters we support; without an upper bound the
+# resolver has to pick versions that also install on future Pythons, which drags
+# in very old numba/llvmlite for the ASR extras.
+environments = ["python_version < '3.14'"]
+# The ASR extras pin different torch / numpy ranges; resolve them separately.
+conflicts = [
+    [{ extra = "asr-nemo" }, { extra = "asr-reazon-whisperx" }],
+    [{ extra = "asr-k2" }, { extra = "asr-reazon-whisperx" }],
+    [{ extra = "asr-nemo" }, { extra = "asr-k2" }],
+]
+# reazonspeech-espnet-asr declares espnet_model_zoo from git HEAD, which now
+# requires Python >= 3.12; take the PyPI release instead.
+override-dependencies = ["espnet-model-zoo>=0.1.7"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# import order only; left as-is so the metric definitions stay byte-identical to the scored runs
+"src/fdbja/data/*" = ["I001"]

@@ -1,6 +1,7 @@
 """Binary Takeover (TO) / Takeover Rate (TOR) metric.
 
-Ported from the original Full-Duplex-Bench evaluation: at each detected event,
+Follows the metric definition of the original Full-Duplex-Bench (independent
+reimplementation for character-level Japanese transcripts): at each detected event,
 TO=1 if the model takes the floor (speaks beyond a backchannel), else TO=0.
 TOR is the mean TO over events. Desired direction is task-dependent
 (see ``event_detection.DESIRED_TO``).
@@ -11,7 +12,7 @@ ASR via ``group_chars_to_utterances``).
 
 from __future__ import annotations
 
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from fdbja.data.event_detection import intervals_overlap
 

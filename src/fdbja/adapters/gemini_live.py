@@ -15,7 +15,7 @@ import time
 
 import numpy as np
 
-from fdbja.adapters.base import ModelAdapter, DialogueResponse
+from fdbja.adapters.base import DialogueResponse, ModelAdapter
 
 INPUT_SR = 16000
 OUTPUT_SR = 24000

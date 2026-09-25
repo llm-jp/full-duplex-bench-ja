@@ -18,6 +18,7 @@ only needs per-frame 256-class probability arrays.
 from __future__ import annotations
 
 from typing import Tuple
+
 import numpy as np
 
 EPS = 1e-8

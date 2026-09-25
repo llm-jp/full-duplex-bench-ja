@@ -25,7 +25,7 @@ import time
 
 import numpy as np
 
-from fdbja.adapters.base import ModelAdapter, DialogueResponse
+from fdbja.adapters.base import DialogueResponse, ModelAdapter
 
 WIRE_SR = 24000            # both APIs default to 24 kHz PCM16
 CHUNK_MS = 100

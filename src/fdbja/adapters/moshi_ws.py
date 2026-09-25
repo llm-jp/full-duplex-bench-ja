@@ -16,8 +16,8 @@ import time
 
 import numpy as np
 
-from fdbja.adapters.base import ModelAdapter, DialogueResponse
-from fdbja.adapters._oggopus import OggOpusMuxer, OggDemuxer
+from fdbja.adapters._oggopus import OggDemuxer, OggOpusMuxer
+from fdbja.adapters.base import DialogueResponse, ModelAdapter
 
 MOSHI_SR = 24000
 FRAME_DURATION_MS = 20

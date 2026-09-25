@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fdbja.adapters.base import ModelAdapter, DialogueResponse
+from fdbja.adapters.base import DialogueResponse, ModelAdapter
 
 
 def build_adapter(spec: dict) -> ModelAdapter:

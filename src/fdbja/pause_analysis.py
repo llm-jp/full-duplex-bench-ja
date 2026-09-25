@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import csv
 import json
-import os
 from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
@@ -18,7 +17,6 @@ import numpy as np
 from fdbja.data import event_detection as ed
 from fdbja.metrics import tor as tor_metric
 from fdbja.metrics import vap_distance as vd
-
 
 BINS = (
     ("0.4-0.6", 0.4, 0.6),
