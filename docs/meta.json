@@ -1,0 +1,146 @@
+{
+ "generated": "2026-07-08",
+ "dataset": "LLM-jp-Zoom1 ケース (各タスク200クリップ / 評価事象 n はタスク別表を参照)",
+ "window_source": "イベント注釈 (a_end / gap / a_utt) 由来。2026-08-18 に、公開サンプルへ凍結VAPを再実行し各モデルの D_KL を再現できることで検証済み(平均絶対差: pause 0.027 / smooth_tt 0.021 / bc 0.009)。",
+ "repo_url": "https://github.com/llm-jp/full-duplex-bench-ja",
+ "task_labels": {
+  "pause": "ポーズ処理",
+  "smooth_tt": "話者交代",
+  "bc": "相槌"
+ },
+ "model_labels": {
+  "jmoshi": "J-Moshi",
+  "jmoshi_ext": "J-Moshi-ext",
+  "llmjp": "LLM-jp-Moshi-v1",
+  "llmjp_moshi_v1": "LLM-jp-Moshi-v1",
+  "gemini": "Gemini-Live",
+  "gpt_realtime": "GPT-Realtime",
+  "grok_voice": "Grok-Voice"
+ },
+ "model_urls": {
+  "jmoshi": "https://huggingface.co/nu-dialogue/j-moshi",
+  "jmoshi_ext": "https://huggingface.co/nu-dialogue/j-moshi-ext",
+  "llmjp": "https://huggingface.co/llm-jp/llm-jp-moshi-v1",
+  "llmjp_moshi_v1": "https://huggingface.co/llm-jp/llm-jp-moshi-v1",
+  "gemini": "https://ai.google.dev/gemini-api/docs/live",
+  "gpt_realtime": "https://platform.openai.com/docs/guides/realtime",
+  "grok_voice": "https://docs.x.ai/docs/models"
+ },
+ "domain_note": {
+  "in": "in-domain (LLM-jp-Zoom1で学習: 参考値)",
+  "out": "out-of-domain"
+ },
+ "pending_models": [],
+ "samples": {
+  "pause": {
+   "desired_TO": 0,
+   "window": [
+    9.7,
+    10.3
+   ],
+   "note": "話者Aのターン内ポーズ(0.6秒、ハイライト帯 = 評価窓)。人間Bはここで沈黙を守った。モデルも沈黙する(TO=0)のが望ましい。",
+   "models": {
+    "jmoshi": {
+     "TO": 0,
+     "dkl": 0.753
+    },
+    "jmoshi_ext": {
+     "TO": 1,
+     "dkl": 2.936
+    },
+    "llmjp": {
+     "TO": 0,
+     "dkl": 2.635
+    },
+    "gemini": {
+     "TO": 0,
+     "dkl": 3.163
+    },
+    "gpt_realtime": {
+     "TO": 1,
+     "dkl": 2.483
+    },
+    "grok_voice": {
+     "TO": 0,
+     "dkl": 0.022
+    }
+   }
+  },
+  "smooth_tt": {
+   "desired_TO": 1,
+   "window": [
+    10.0,
+    12.0
+   ],
+   "marker": [
+    10.39,
+    "人間Bの応答開始"
+   ],
+   "note": "話者Aのターン終了(10.0秒)から2秒間が評価窓(ハイライト帯)。人間Bは0.39秒後の10.39秒(縦線)で応答を開始した。モデルもこの窓でターンを取る(TO=1)のが望ましい。",
+   "models": {
+    "jmoshi": {
+     "TO": 0,
+     "dkl": 1.163
+    },
+    "jmoshi_ext": {
+     "TO": 0,
+     "dkl": 3.923
+    },
+    "llmjp": {
+     "TO": 0,
+     "dkl": 0.177
+    },
+    "gemini": {
+     "TO": 1,
+     "dkl": 1.082
+    },
+    "gpt_realtime": {
+     "TO": 1,
+     "dkl": 0.618
+    },
+    "grok_voice": {
+     "TO": 0,
+     "dkl": 2.854
+    }
+   }
+  },
+  "bc": {
+   "desired_TO": 0,
+   "window": [
+    8.48,
+    11.52
+   ],
+   "marker": [
+    9.4,
+    "人間Bの相槌"
+   ],
+   "note": "話者Aの長い発話区間(ハイライト帯 = 評価窓)。人間Bは9.4秒(縦線)で相槌「うん」を打ちつつターンは奪わなかった。モデルも相槌に留めターンを奪わない(TO=0)のが望ましい。",
+   "models": {
+    "jmoshi": {
+     "TO": 1,
+     "dkl": 1.07
+    },
+    "jmoshi_ext": {
+     "TO": 0,
+     "dkl": 0.636
+    },
+    "llmjp": {
+     "TO": 1,
+     "dkl": 1.925
+    },
+    "gemini": {
+     "TO": 1,
+     "dkl": 2.167
+    },
+    "gpt_realtime": {
+     "TO": 0,
+     "dkl": 0.788
+    },
+    "grok_voice": {
+     "TO": 1,
+     "dkl": 1.588
+    }
+   }
+  }
+ }
+}

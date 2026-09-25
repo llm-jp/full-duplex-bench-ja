@@ -1,0 +1,34 @@
+[project]
+name = "fdbja"
+version = "0.0.1"
+description = "Full-Duplex-Bench-JA: evaluation toolkit for Japanese full-duplex spoken dialogue models (turn-taking)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "numpy",
+    "soundfile",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+# VAP-distance metric backend (Blackwell GPU needs cu128+)
+vap = ["torch", "torchaudio", "einops"]
+# `infer` with a Moshi WebSocket server
+infer = ["opuslib", "websockets", "torch", "torchaudio"]
+# `infer` with the Gemini Live API
+gemini = ["google-genai", "librosa", "soundfile"]
+# `infer` with OpenAI-Realtime-protocol APIs (GPT-Realtime, Grok-Voice)
+realtime = ["websockets", "librosa"]
+# analysis / figures
+analysis = ["matplotlib", "pandas"]
+
+[project.scripts]
+fdbja = "fdbja.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

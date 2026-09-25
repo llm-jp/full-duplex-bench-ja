@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Full-Duplex-Bench-JA 人手評価</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <!-- Start screen -->
+  <section id="start" class="card">
+    <h1>対話タイミング 評価タスク</h1>
+    <p>音声を聞いて、対話相手(システム)の<strong>「間の取り方・発話のタイミング」</strong>を評価していただきます。所要時間の目安は <span id="est-time">—</span> です。</p>
+    <label>作業者 ID(クラウドソーシングの ID 等)
+      <input id="worker-id" type="text" placeholder="例: worker_123" autocomplete="off">
+    </label>
+    <label>評価セット
+      <select id="study-select">
+        <option value="both">両方(A → B)</option>
+        <option value="A">Study A のみ</option>
+        <option value="B">Study B のみ</option>
+      </select>
+    </label>
+    <div id="intro-notes" class="intro-box"></div>
+    <button id="start-btn">開始する</button>
+    <p id="load-err" class="err"></p>
+  </section>
+
+  <!-- Task screen -->
+  <section id="task" class="card hidden">
+    <div id="progress-wrap"><div id="progress-bar"></div></div>
+    <p id="progress-text"></p>
+    <p id="instruction"></p>
+    <audio id="player" controls preload="auto"></audio>
+    <p id="play-hint" class="hint">▶ 音声を最後まで再生すると回答できます</p>
+    <div id="question"></div>
+    <button id="next-btn" disabled>次へ</button>
+  </section>
+
+  <!-- Done screen -->
+  <section id="done" class="card hidden">
+    <h1>完了しました。ありがとうございました。</h1>
+    <p>下の「提出用テキスト」を全てコピーし、タスクの回答欄に
+      貼り付けて提出してください(完了コードも回答欄に記入)。</p>
+    <p>完了コード: <code id="code"></code></p>
+    <p><textarea id="submit-token" readonly rows="6"
+        style="width:100%; font-size:.75rem;"></textarea></p>
+    <button id="copy-btn">提出用テキストをコピー</button>
+    <button id="download-btn">回答を保存(JSON・予備)</button>
+  </section>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

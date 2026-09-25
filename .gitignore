@@ -1,0 +1,40 @@
+# --- Audio / corpus data: NEVER commit (license-restricted, large) ---
+*.wav
+*.flac
+*.mp3
+*.opus
+*.ogg
+*.npz
+/data/
+# leaderboard sample excerpts are deliberately published (anonymized filenames)
+!docs/samples/*.mp3
+datasets/
+corpus/
+outputs/
+eval_clips/
+**/vap_cache/
+*.pt
+*.ckpt
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.eggs/
+.ipynb_checkpoints/
+
+# --- Tooling ---
+.env
+.DS_Store
+.pytest_cache/
+.ruff_cache/
+results/
+wandb/
+
+# Allow small example manifests / tiny fixtures explicitly if needed:
+# !tests/fixtures/example_manifest.json
+.wrangler/

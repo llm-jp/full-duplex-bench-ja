@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Full-Duplex-Bench-JA Leaderboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Full-Duplex-Bench-JA <span class="sub">Leaderboard</span></h1>
+    <p class="lead">日本語フルデュプレックス音声対話モデルの
+      ターンテイキング能力(ポーズ処理・話者交代・相槌)の評価結果。</p>
+    <p id="meta" class="meta"></p>
+  </header>
+
+  <section>
+    <h2>総合ランキング</h2>
+    <p class="hint">総合 = 各タスクの平均。<b>VAP-distance↓</b>(人間の音声活動予測
+      分布との距離が小さいほど人間に近い)で順位付け。あわせて適合率↑(相手の
+      振る舞いに一致)・スコア↑(<code>exp(-&alpha;&middot;D<sub>KL</sub>)</code>)を掲載。</p>
+    <div class="table-wrap"><table id="overall"></table></div>
+  </section>
+
+  <section>
+    <h2>タスク別</h2>
+    <div id="per-task"></div>
+  </section>
+
+  <section id="samples-sec">
+    <h2>サンプル音声</h2>
+    <p class="hint">各タスクの例クリップ(20秒)。刺激音声(話者A)に対する
+      人間Bの実応答(正解)と各モデルの応答の波形。<b>波形クリックで再生/停止</b>。
+      ハイライト帯が評価対象のイベント窓、橙の縦線が人間Bの応答/相槌の開始点。
+      モデル行は VAP-distance(D)昇順。音声は LLM-jp-Zoom1 からの抜粋。
+      「無出力」バッジは、そのモデルが全区間で音声を返さなかったことを示します
+      (ポーズ処理のように沈黙が正解のタスクでは、正しく黙ったのか何も生成
+      できなかったのかを指標だけでは区別できない点に注意)。</p>
+    <p class="hint"><label class="mix-label"><input type="checkbox" id="mix-toggle" checked>
+      刺激音声(話者A)と同時に再生する(左ch=話者A / 右ch=応答。
+      オフにすると応答のみ)</label></p>
+    <p class="hint">※ TO バッジは本家 Full-Duplex-Bench 準拠の
+      <b>ASR 転写ベース</b>の判定です。転写に乗らない発声や整列誤差は
+      拾えないため、まれに波形の見た目と食い違うことがあります。
+      VAP-distance (D) は生波形から計算されるため、この影響を受けません。</p>
+    <div id="samples"></div>
+  </section>
+
+  <section id="pending">
+    <h2>評価予定モデル</h2>
+    <p class="hint">アダプタ整備・実走待ち。整い次第このリーダーボードに追加します。</p>
+    <ul id="pending-list"></ul>
+  </section>
+
+  <footer>
+    <p>指標の定義: <b>TOR</b> = モデルがターンを取った割合。
+      <b>適合率</b> = 相手(人間B)の実際の振る舞いに一致した割合。
+      <b>VAP-distance</b> = 人間の音声活動予測(VAP)分布とモデル応答の
+      分布の距離(D<sub>KL</sub>, 小さいほど自然)。</p>
+    <p>コード: <a id="repo" href="#">llm-jp/full-duplex-bench-ja</a>
+      (Apache-2.0)。評価データ(LLM-jp-Zoom1)は APSIPA 公表後に公開予定。</p>
+    <p id="load-err" class="err"></p>
+  </footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

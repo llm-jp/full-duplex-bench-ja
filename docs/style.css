@@ -1,0 +1,69 @@
+:root {
+  --fg:#1a1a1a; --muted:#666; --accent:#2563eb; --line:#e2e5ea;
+  --head:#0f172a; --in:#b45309; --best:#16a34a; --bg:#f6f7f9;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); line-height:1.6;
+  font-family:-apple-system,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif; }
+#app { max-width:960px; margin:0 auto; padding:32px 18px 64px; }
+header h1 { font-size:1.8rem; margin:0 0 4px; }
+header h1 .sub { color:var(--accent); font-weight:600; }
+.lead { margin:.2rem 0; }
+.meta { color:var(--muted); font-size:.9rem; }
+h2 { font-size:1.2rem; margin:2rem 0 .4rem; border-bottom:2px solid var(--line);
+  padding-bottom:4px; }
+.hint { color:var(--muted); font-size:.88rem; margin:.2rem 0 .8rem; }
+.table-wrap { overflow-x:auto; }
+table { border-collapse:collapse; width:100%; background:#fff; font-size:.92rem;
+  border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+th, td { padding:9px 12px; text-align:right; border-bottom:1px solid var(--line);
+  white-space:nowrap; }
+th { background:var(--head); color:#fff; font-weight:600; text-align:right; }
+th:first-child, td:first-child { text-align:left; }
+th.model, td.model { text-align:left; }
+td.model a { color:var(--accent); text-decoration:none; }
+td.model a:hover { text-decoration:underline; }
+tbody tr:last-child td { border-bottom:0; }
+tbody tr:nth-child(even) { background:#fafbfc; }
+.rank { color:var(--muted); width:2.2em; }
+.dom { font-size:.72rem; padding:1px 7px; border-radius:20px; margin-left:6px;
+  vertical-align:middle; }
+.dom.in { background:#fef3c7; color:var(--in); border:1px solid #fcd34d; }
+.dom.out { background:#eef2f7; color:var(--muted); border:1px solid var(--line); }
+td.best { color:var(--best); font-weight:700; }
+.note { color:var(--in); font-size:.8rem; }
+h3 { font-size:1rem; margin:1.4rem 0 .3rem; }
+#pending-list { color:var(--muted); }
+footer { margin-top:2.4rem; color:var(--muted); font-size:.85rem;
+  border-top:1px solid var(--line); padding-top:14px; }
+footer a { color:var(--accent); }
+.err { color:#dc2626; }
+code { background:#eef1f5; padding:1px 6px; border-radius:5px; font-size:.86em; }
+
+/* ---- sample-audio waveforms ---- */
+.wave-box { background:#fff; border:1px solid var(--line); border-radius:10px;
+  padding:10px 12px; margin:.4rem 0 1.2rem; }
+.wave-row { display:flex; align-items:center; gap:12px; padding:5px 0;
+  border-bottom:1px dashed var(--line); }
+.wave-row:last-child { border-bottom:0; }
+.wave-label { flex:0 0 148px; font-size:.82rem; line-height:1.35;
+  overflow:hidden; text-overflow:ellipsis; }
+.wave-row.stim .wave-label { font-weight:700; }
+.wave-row.human .wave-label { color:var(--best); font-weight:700; }
+.wave-canvas-wrap { flex:1 1 auto; min-width:0; }
+.wave-canvas { display:block; width:100%; height:52px; cursor:pointer;
+  border-radius:6px; }
+.wave-canvas:hover { background:#f1f4f8; }
+.wave-row.playing .wave-canvas { background:#eef4ff; }
+.wave-canvas.wave-missing { opacity:.25; cursor:default; }
+.wave-badge { display:inline-block; font-size:.7rem; padding:0 6px;
+  border-radius:10px; margin-top:2px; white-space:nowrap; }
+.wave-badge.ok { background:#dcfce7; color:var(--best); border:1px solid #86efac; }
+.wave-badge.ng { background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; }
+.wave-badge.none { background:#f1f5f9; color:var(--muted); border:1px solid #cbd5e1; }
+.mix-label { cursor:pointer; user-select:none; }
+.mix-label input { vertical-align:-2px; margin-right:4px; accent-color:var(--accent); }
+@media (max-width: 640px) {
+  .wave-row { flex-wrap:wrap; gap:4px; }
+  .wave-label { flex-basis:100%; }
+}

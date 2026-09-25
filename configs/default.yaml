@@ -1,0 +1,77 @@
+# Full-Duplex-Bench-JA default configuration.
+# Paths are placeholders; audio/corpus are NOT bundled (see DATASET.md).
+
+corpus:
+  # Root of LLM-jp-Zoom1 (obtain separately; see DATASET.md).
+  zoom1_root: /path/to/llmjp-zoom1
+  # Optional overrides; default to <zoom1_root>/text and /audio_merged.
+  # text_dir: /path/to/llmjp-zoom1/text
+  # audio_dir: /path/to/llmjp-zoom1/audio_merged
+  # Where reconstructed eval clips + manifests are written (git-ignored).
+  eval_dir: ./data/eval
+
+tasks: [pause, smooth_tt, bc]
+
+# Event-detection thresholds (aligned with original Full-Duplex-Bench).
+detection:
+  pause:     { min_gap: 0.4, max_gap: 1.0, min_a_turn_duration: 5.0 }
+  smooth_tt: { min_a_duration: 4.0, max_gap: 0.4, min_b_duration: 4.0 }
+  bc:        { min_a_duration: 3.0, bc_max_chars: 6, bc_max_duration: 1.5 }
+  clips_per_task: 200
+  clip_seconds: 20
+
+models:
+  - name: jmoshi
+    adapter: moshi_ws
+    url: ws://localhost:8998/api/chat
+    domain: out          # out-of-domain w.r.t. LLM-jp-Zoom1
+  - name: llmjp_moshi_v1
+    adapter: moshi_ws
+    url: ws://localhost:8998/api/chat
+    domain: in           # in-domain: trained on LLM-jp-Zoom1 (document leakage!)
+  - name: gemini
+    adapter: gemini_live
+    model: gemini-live-2.5-flash-preview
+    domain: out
+  - name: jmoshi_ext
+    adapter: moshi_ws
+    url: ws://localhost:8999/api/chat   # nu-dialogue/j-moshi-ext server
+    domain: out
+  - name: gpt_realtime
+    adapter: openai_realtime            # needs OPENAI_API_KEY
+    model: gpt-realtime
+    voice: marin
+    domain: out
+  - name: grok_voice
+    adapter: openai_realtime            # same protocol; needs XAI_API_KEY
+    url: wss://api.x.ai/v1/realtime
+    model: grok-voice-latest
+    voice: eve
+    domain: out
+  # Degenerate references. Report these on every task: a model must beat them
+  # everywhere, not only on the task whose desired behaviour they mimic.
+  - name: silence_baseline
+    adapter: silence
+    domain: out
+  - name: always_talk_baseline
+    adapter: always_talk
+    domain: out
+
+asr:
+  backend: reazonspeech_whisperx   # transcribes model output for binary TOR
+
+metrics:
+  tor:
+    enabled: true
+  vap_distance:
+    enabled: true
+    vap_model: vap_state_dict_jp_20hz_2500msec.pt
+    cpc_model: 60k_epoch4-d0f474de.pt
+    frame_rate: 20
+    context_len_sec: 2.5
+    # exp(-alpha * D_KL); set null to auto-calibrate (median desired -> 0.5)
+    alpha: null
+
+output:
+  dir: ./results
+  exporters: [json]     # json | table | wandb
