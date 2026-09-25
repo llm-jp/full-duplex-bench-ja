@@ -5,6 +5,8 @@ Config-driven evaluation. Pipeline:
     reconstruct  : LLM-jp-Zoom1 -> detected events + 20s eval clips + manifest
     infer        : stream each clip's speaker-A audio to a model adapter,
                    record the response
+    transcribe   : ASR the recorded responses into character-level jchat
+                   (backend chosen by ``asr.backend``)
     score-offline: score precomputed model outputs (binary TOR + VAP-distance)
 
 ``score-offline`` is fully wired; ``infer`` / ``reconstruct`` depend on live
@@ -12,6 +14,7 @@ model servers / the corpus and are partially stubbed.
 
 Usage:
     fdbja --help
+    fdbja transcribe --config configs/default.yaml [--model NAME] [--task T]
     fdbja score-offline --config configs/default.yaml [--limit N]
 """
 
@@ -38,6 +41,30 @@ def main(argv=None) -> int:
     p.add_argument("--config", required=True)
     p.add_argument("--limit", type=int, default=0,
                    help="generate only the first N clips per task (debug)")
+
+    p = sub.add_parser("transcribe",
+                       help="ASR the model responses (infer output) into jchat "
+                            "transcripts for TOR")
+    p.add_argument("--config", default=None,
+                   help="evaluation config (required unless --wav is given)")
+    p.add_argument("--model", nargs="+", default=None,
+                   help="only these model names from the config")
+    p.add_argument("--task", nargs="+", default=None,
+                   help="only these tasks (default: config tasks)")
+    p.add_argument("--backend", default=None,
+                   help="ASR backend name (default: asr.backend in the config)")
+    p.add_argument("--device", default=None, help="e.g. cuda, cuda:1, cpu")
+    p.add_argument("--limit", type=int, default=0,
+                   help="transcribe only the first N clips per task (debug)")
+    p.add_argument("--overwrite", action="store_true",
+                   help="re-transcribe clips that already have a jchat file")
+    p.add_argument("--wav", nargs="+", default=None,
+                   help="ad-hoc mode: transcribe these audio files instead of "
+                        "the config layout (writes <out>/<stem>.json)")
+    p.add_argument("--out", default=None, help="output dir for --wav mode")
+    p.add_argument("--channel", type=int, default=1,
+                   help="response channel of stereo input in --wav mode "
+                        "(default 1; combined.wav has the model on ch1)")
 
     p = sub.add_parser("score-offline",
                        help="score precomputed model outputs (TOR + VAP-distance)")
@@ -93,9 +120,12 @@ def main(argv=None) -> int:
         run_infer(Config.load(args.config), limit=args.limit)
         return 0
 
+    if args.command == "transcribe":
+        return _cmd_transcribe(args)
+
     if args.command == "score-offline":
-        from fdbja.runner import score_offline
         from fdbja import report
+        from fdbja.runner import score_offline
         config = Config.load(args.config)
         results = score_offline(config, limit=args.limit)
         path = report.write_json(results, config.output_dir)
@@ -123,6 +153,37 @@ def main(argv=None) -> int:
             n_boot=args.bootstrap, seed=args.seed)
         return 0
     return 1
+
+
+def _cmd_transcribe(args) -> int:
+    import os
+
+    from fdbja.runner import run_transcribe, transcribe_file
+
+    if args.wav:
+        from fdbja.asr import DEFAULT_BACKEND, load_asr
+        config = Config.load(args.config) if args.config else None
+        asr_cfg = (config.get("asr", default={}) if config else {}) or {}
+        name = args.backend or asr_cfg.get("backend") or DEFAULT_BACKEND
+        options = dict(asr_cfg.get("options", {}) or {})
+        if args.device:
+            options["device"] = args.device
+        asr = load_asr(name, **options)
+        out_dir = args.out or "."
+        for wav in args.wav:
+            stem = os.path.splitext(os.path.basename(wav))[0]
+            out = os.path.join(out_dir, stem + ".json")
+            items = transcribe_file(asr, wav, out, channel=args.channel)
+            print(f"[fdbja] {wav} -> {out} ({len(items)} chars)", file=sys.stderr)
+        return 0
+
+    if not args.config:
+        print("fdbja transcribe: --config is required (or use --wav)", file=sys.stderr)
+        return 2
+    run_transcribe(Config.load(args.config), limit=args.limit, models=args.model,
+                   tasks=args.task, backend=args.backend, overwrite=args.overwrite,
+                   device=args.device)
+    return 0
 
 
 if __name__ == "__main__":

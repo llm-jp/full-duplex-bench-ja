@@ -12,7 +12,8 @@ compute, per detected event:
 then aggregate per task/model (TOR, event-mean D_KL, AUC, exp(-alpha) score).
 
 The binary path needs only numpy/soundfile-free data; the VAP path needs a
-VAP backend (optional, enabled in config).
+VAP backend (optional, enabled in config). ``run_transcribe`` produces the ASR
+transcript from the model output wav with the backend chosen in ``asr.backend``.
 """
 
 from __future__ import annotations
@@ -123,6 +124,7 @@ def run_infer(config: Config, limit: int = 0, log=print) -> None:
     ``input.wav`` / ``output.wav`` / ``combined.wav`` per clip, matching the
     layout that ``score-offline`` reads (``layout['model_wav']``)."""
     import soundfile as sf
+
     from fdbja.adapters import build_adapter
     from fdbja.io_audio import load_stereo_16k
 
@@ -153,12 +155,86 @@ def run_infer(config: Config, limit: int = 0, log=print) -> None:
             adapter.close()
 
 
+def run_transcribe(config: Config, limit: int = 0, models=None, tasks=None,
+                   backend: str = None, overwrite: bool = False,
+                   device: str = None, log=print) -> int:
+    """Transcribe each model response (``layout['model_wav']``, ch1) into the
+    jchat file that ``score_offline`` reads (``layout['model_asr']``).
+
+    The backend comes from ``--backend``, else ``asr.backend`` in the config;
+    ``asr.options`` are passed to its constructor. Existing transcripts are
+    kept unless ``overwrite``. Returns the number of clips transcribed.
+    """
+    from fdbja.asr import DEFAULT_BACKEND, load_asr
+
+    asr_cfg = config.get("asr", default={}) or {}
+    name = backend or asr_cfg.get("backend") or DEFAULT_BACKEND
+    options = dict(asr_cfg.get("options", {}) or {})
+    if device:
+        options["device"] = device
+    asr = load_asr(name, **options)
+    log(f"[asr] backend={name} options={options}")
+
+    eval_dir = config.eval_dir
+    layout = config.layout()
+    wanted = set(models) if models else None
+    total = 0
+    for model in config.models:
+        mname = model["name"]
+        if wanted is not None and mname not in wanted:
+            continue
+        for task in (tasks or config.tasks):
+            clip_ids = _clip_ids(eval_dir, task, layout)
+            if limit:
+                clip_ids = clip_ids[:limit]
+            done = skipped = 0
+            for clip in clip_ids:
+                model_wav = os.path.join(eval_dir, layout["model_wav"].format(
+                    task=task, clip=clip, model=mname))
+                asr_json = os.path.join(eval_dir, layout["model_asr"].format(
+                    task=task, clip=clip, model=mname))
+                if not os.path.exists(model_wav):
+                    continue
+                if os.path.exists(asr_json) and not overwrite:
+                    skipped += 1
+                    continue
+                transcribe_file(asr, model_wav, asr_json)
+                done += 1
+            log(f"[{task}/{mname}] transcribed {done} clips"
+                + (f" (kept {skipped} existing)" if skipped else ""))
+            total += done
+    return total
+
+
+def transcribe_file(asr, wav_path: str, out_json: str, channel: int = 1,
+                    speaker: str = "B") -> List[Dict[str, Any]]:
+    """Transcribe one response channel of ``wav_path`` and write jchat JSON.
+
+    ``channel`` selects the response channel of a stereo file (ch1 = model
+    response in ``combined.wav``); a mono file is used as is.
+    """
+    import soundfile as sf
+
+    from fdbja.asr import validate_jchat
+
+    data, sr = sf.read(wav_path, dtype="float32")
+    if data.ndim == 2:
+        data = data[:, min(channel, data.shape[1] - 1)]
+    items = validate_jchat(asr.transcribe(np.ascontiguousarray(data), sr, speaker=speaker))
+    os.makedirs(os.path.dirname(out_json) or ".", exist_ok=True)
+    with open(out_json, "w", encoding="utf-8") as f:
+        json.dump(items, f, ensure_ascii=False, indent=2)
+    return items
+
+
 def _write_outputs(combined_path, resp, sf) -> None:
     os.makedirs(os.path.dirname(combined_path), exist_ok=True)
     a, b = resp.input_audio, resp.response_audio
     n = max(len(a), len(b))
-    ap = np.zeros(n, dtype=np.float32); ap[:len(a)] = a
-    bp = np.zeros(n, dtype=np.float32); bp[:len(b)] = b
+    ap = np.zeros(n, dtype=np.float32)
+    ap[:len(a)] = a
+    bp = np.zeros(n, dtype=np.float32)
+    bp[:len(b)] = b
     sf.write(combined_path, np.stack([ap, bp], axis=1), resp.sample_rate)
     d = os.path.dirname(combined_path)
     sf.write(os.path.join(d, "input.wav"), ap, resp.sample_rate)

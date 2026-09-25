@@ -57,8 +57,15 @@ models:
     adapter: always_talk
     domain: out
 
+# ASR of the model responses (``fdbja transcribe``) for binary TOR.
+#   reazonspeech_whisperx : ReazonSpeech-ESPnet + WhisperX alignment (default; pipeline of the
+#                           published numbers, use it to compare with the leaderboard)
+#   reazonspeech_nemo     : ReazonSpeech NeMo v2, token timestamps, no aligner, ~5x faster
+#   reazonspeech_k2       : ReazonSpeech k2 v2 via sherpa-onnx, CPU-friendly, lightest install
+# Each needs its extra: uv sync --extra asr-reazon-whisperx | asr-nemo | asr-k2
 asr:
-  backend: reazonspeech_whisperx   # transcribes model output for binary TOR
+  backend: reazonspeech_whisperx
+  options: {}          # constructor kwargs, e.g. {device: cuda:1} or {char_seconds: 0.1, bridge_seconds: 0.5}
 
 metrics:
   tor:
