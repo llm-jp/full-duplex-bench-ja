@@ -234,5 +234,7 @@
    "alpha": 2.4212,
    "score": 0.5397
   }
- ]
+ ],
+ "vap_checkpoint": "vap_state_dict_jp_20hz_2500msec.pt (inokoj/VAP-Realtime Japanese checkpoint, academic-only). VAP-distance columns are not comparable with runs that use the MIT default (maai-kyoto/vap_jp_kyoto); rescoring pending.",
+ "asr": "reazonspeech_whisperx (ReazonSpeech-ESPnet + WhisperX alignment)"
 }
