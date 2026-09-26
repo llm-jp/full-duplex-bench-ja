@@ -1,8 +1,13 @@
 """Reference VAP backend wrapping inokoj/VAP-Realtime.
 
-Requires the VAP-Realtime repository on the path and a Japanese checkpoint
-(e.g. ``vap_state_dict_jp_20hz_2500msec.pt``) plus the CPC encoder. Set the
-repo location via ``VAP_REALTIME_ROOT`` or pass ``repo_root``.
+Requires the VAP-Realtime repository on the path, a Japanese VAP checkpoint
+and the CPC encoder. The default checkpoint is
+``vap_state_dict_jp_kyoto_20hz_2500msec.pt`` from
+https://huggingface.co/maai-kyoto/vap_jp_kyoto (MIT); the older academic-only
+``vap_state_dict_jp_20hz_2500msec.pt`` distributed with VAP-Realtime loads
+through the same code path. Set the repo location via ``VAP_REALTIME_ROOT`` or
+pass ``repo_root``; relative model paths are resolved under ``asset/vap`` and
+``asset/cpc``.
 
 This runs VAP incrementally over a stereo pair and captures the full 256-class
 softmax per frame (the public offline script only exposes the aggregated

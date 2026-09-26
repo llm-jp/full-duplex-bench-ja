@@ -72,7 +72,10 @@ metrics:
     enabled: true
   vap_distance:
     enabled: true
-    vap_model: vap_state_dict_jp_20hz_2500msec.pt
+    # Japanese VAP checkpoint (MIT): https://huggingface.co/maai-kyoto/vap_jp_kyoto
+    # Download into <VAP_REALTIME_ROOT>/asset/vap/ (or give an absolute path).
+    vap_model: vap_state_dict_jp_kyoto_20hz_2500msec.pt
+    # CPC encoder shipped with VAP-Realtime (asset/cpc/).
     cpc_model: 60k_epoch4-d0f474de.pt
     frame_rate: 20
     context_len_sec: 2.5

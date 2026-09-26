@@ -97,6 +97,11 @@ def pattern_to_class(bits: np.ndarray, msb_first: bool = False) -> np.ndarray:
     gives P(A active) = 0.98 / P(B active) = 0.08, and reversing any part of
     the order muddies or inverts that.
 
+    The MIT checkpoint ``vap_state_dict_jp_kyoto_20hz_2500msec.pt``
+    (maai-kyoto/vap_jp_kyoto) was verified the same way on 2026-09-26 and uses
+    the same order (A speaking / B silent: P(A active) = 0.94, P(B active) =
+    0.11; the reverse for B-only frames).
+
     **Re-verify when changing checkpoints** -- an ordering mismatch silently
     produces valid-looking but wrong likelihoods.
     """

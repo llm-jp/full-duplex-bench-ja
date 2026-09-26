@@ -24,12 +24,19 @@ APSIPA dataset paper once available. Until then this repo stays **private** and
 ships **code only** (the toolkit can be open-sourced independently of the data).
 
 ### Open items before public release
-- [ ] Time the data release with the APSIPA LLM-jp-Zoom1 publication.
-- [ ] Provide a **held-out split** excluding sessions used to train any
-      evaluated model (e.g. LLM-jp-Moshi-v1 is in-domain — document leakage).
-- [ ] Human-validation subset (metric ↔ human judgment) for release.
-- [ ] Rewrite the README status block (currently "private / 開発中" with
-      internal progress notes) into release notes / versioning.
+- [ ] **Data release timing**: LLM-jp-Zoom1 has been accepted at APSIPA 2026. Public release
+      of the Full-Duplex-Bench-JA evaluation clips (and of the excerpts under `docs/samples/`)
+      follows the corpus release; until then only the code is public and clips are rebuilt
+      locally with `fdbja reconstruct`. Cite the APSIPA dataset paper once available.
+- [x] **Provenance instead of a held-out split**: `reconstruct` writes `manifest.jsonl` with the
+      source `session_id`, the event `key` and `event_time` of every clip. Users report
+      `domain: in|out` per model (required by the config) and can filter clips whose sessions
+      overlap a model's training data using the manifest. A fixed held-out split is not
+      maintained: which sessions count as "seen" depends on the model, so the manifest plus
+      the `domain` declaration is the portable form of that information.
+- [ ] **Human-validation subset**: the crowdsourced validation (see `docs/human_eval.md`) is
+      released as an item list with aggregated ratings (no worker identifiers) together with
+      the clips, once the clips themselves can be released.
 
 ## Models
 
@@ -40,7 +47,14 @@ out-of-domain models (J-Moshi, Gemini).
 
 ## VAP / ASR checkpoints
 
-- VAP-distance uses a frozen Japanese VAP checkpoint from
-  [inokoj/VAP-Realtime](https://github.com/inokoj/VAP-Realtime)
-  (`vap_state_dict_jp_20hz_2500msec.pt` + CPC encoder); obtain under its terms.
-- ASR uses ReazonSpeech-ESPnet + WhisperX alignment.
+- VAP-distance uses a **frozen** Japanese VAP checkpoint. The default is
+  `vap_state_dict_jp_kyoto_20hz_2500msec.pt` from
+  [maai-kyoto/vap_jp_kyoto](https://huggingface.co/maai-kyoto/vap_jp_kyoto) (MIT), run
+  through the [inokoj/VAP-Realtime](https://github.com/inokoj/VAP-Realtime) code (MIT) with
+  its CPC encoder (`60k_epoch4-d0f474de.pt`, facebookresearch/CPC_audio, MIT). Download the
+  checkpoint into `<VAP_REALTIME_ROOT>/asset/vap/`.
+- The measurement instrument must stay fixed within a comparison: VAP-distance values from
+  different checkpoints are not comparable. `docs/results.json` records which checkpoint
+  produced each table (see `README.md`, "リーダーボード").
+- ASR uses ReazonSpeech-ESPnet + WhisperX (wav2vec 2.0 forced alignment) by default; see the
+  README for the other backends.

@@ -22,4 +22,4 @@
   `docs/results.json` を更新するときは全モデルを 1 回の実行で採点し直す。
 - `sample-human-eval` はリポジトリ直下の `webui/` を `__file__` 相対で探す。wheel でインストールすると見つからない。
 - Gemini のモデル名は config(`gemini-live-2.5-flash-preview`)とアダプタの既定値(`gemini-3.1-flash-live-preview`)で異なる。config が優先される。
-- 日本語 VAP チェックポイントは学術目的限定の配布。リポジトリに同梱しない。
+- VAP チェックポイントはリポジトリに同梱しない。既定は MIT の `maai-kyoto/vap_jp_kyoto`(20 Hz / 2.5 s)。旧来の VAP-Realtime 配布版は学術目的限定。チェックポイントを替えたら `metrics/turnnat.py` の手順でビット順を再検証し、比較対象を全部同じ重みで採点し直す。

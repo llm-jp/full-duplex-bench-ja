@@ -6,13 +6,18 @@ It brings the evaluation design of [Full-Duplex-Bench](https://github.com/Daniel
 interlocutor (speaker B) in a real dialogue corpus (LLM-jp-Zoom1) is used as the reference.
 
 The full README is in Japanese: [README.md](README.md). Leaderboard: <https://llm-jp.github.io/full-duplex-bench-ja/>
+(its VAP-distance columns were scored with the academic-only VAP-Realtime checkpoint; rescoring with the
+MIT default below is pending, and values from different checkpoints are not comparable — see
+`vap_checkpoint` in `docs/results.json`).
 
 ## Requirements
 
 - Python >= 3.10 and [uv](https://docs.astral.sh/uv/) for binary TOR.
-- For VAP-distance: `.[vap]` (torch) and a local clone of
-  [VAP-Realtime](https://github.com/inokoj/VAP-Realtime) with the Japanese VAP checkpoint
-  (`vap_state_dict_jp_20hz_2500msec.pt`) and the CPC encoder. Set `VAP_REALTIME_ROOT`.
+- For VAP-distance: `.[vap]` (torch), a local clone of
+  [VAP-Realtime](https://github.com/inokoj/VAP-Realtime) (ships the CPC encoder) and the Japanese VAP
+  checkpoint `vap_state_dict_jp_kyoto_20hz_2500msec.pt` from
+  [maai-kyoto/vap_jp_kyoto](https://huggingface.co/maai-kyoto/vap_jp_kyoto) (MIT) placed under
+  `<VAP_REALTIME_ROOT>/asset/vap/`. Set `VAP_REALTIME_ROOT`.
 - One ASR extra for `fdbja transcribe`, which turns the recorded responses into character-level,
   time-aligned "jchat" JSON: `.[asr-reazon-whisperx]` (default; ReazonSpeech-ESPnet segments +
   WhisperX character alignment, the pipeline behind the published numbers), `.[asr-nemo]`
@@ -60,16 +65,19 @@ the protocols and model names available **as of 2026-08**; we do not guarantee t
 
 Code: Apache-2.0. Backends and data are **not** covered:
 
-- The Japanese VAP checkpoint from VAP-Realtime is distributed for **academic purposes only**
-  (its code is MIT; the CPC encoder is MIT). Results that include VAP-distance therefore cannot be
-  used commercially.
+- Default VAP checkpoint `vap_state_dict_jp_kyoto_20hz_2500msec.pt` (maai-kyoto/vap_jp_kyoto): MIT.
+  VAP-Realtime code: MIT. CPC encoder: MIT. With the default configuration there is no
+  non-commercial restriction on the scores. The older VAP-Realtime Japanese checkpoint
+  (`vap_state_dict_jp_20hz_2500msec.pt`, used for the current leaderboard) is academic-only and
+  loads through the same code path; its terms then apply to the results.
 - ReazonSpeech code and models (nemo-v2 / k2-v2 / espnet-v2): Apache-2.0. NVIDIA NeMo: Apache-2.0.
   WhisperX: BSD-2-Clause; its Japanese alignment model `jonatasgrosman/wav2vec2-large-xlsr-53-japanese`
   is Apache-2.0.
 - Full-Duplex-Bench is CC BY-NC 4.0; this toolkit reimplements the event and TOR definitions
   independently and does not reuse its code.
-- LLM-jp-Zoom1 and the excerpts in `docs/samples/` follow the corpus terms (see DATASET.md).
-  J-Moshi-family outputs in `docs/samples/` are outputs of CC BY-NC 4.0 models.
+- LLM-jp-Zoom1 and the excerpts in `docs/samples/` (three events; stimulus, human B and two models)
+  follow the corpus terms (see DATASET.md). The model outputs kept there are from LLM-jp-Moshi-v1 and
+  J-Moshi-ext (CC BY-NC 4.0 models); commercial-API outputs are not included.
 
 ## Citation
 

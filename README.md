@@ -7,7 +7,10 @@
 モデルの応答が「人間らしいタイミング」かどうかを採点します。
 
 - リーダーボード: <https://llm-jp.github.io/full-duplex-bench-ja/>
-  (`docs/` を GitHub Pages で配信。結果は `docs/results.json`、サンプル音声は `docs/samples/`)
+  (`docs/` を GitHub Pages で配信。結果は `docs/results.json`、サンプル音声は `docs/samples/`)。
+  掲載中の VAP-distance は VAP-Realtime 配布の日本語チェックポイント(学術目的限定)で採点したもので、
+  現在の既定である MIT チェックポイント(下記)での再採点は未了です。**チェックポイントが違う値は比較できません**
+  (`docs/results.json` の `vap_checkpoint` に採点に使った重みを記録しています)。
 - 英語版 README: [README.en.md](README.en.md)
 
 ## 前提条件
@@ -15,7 +18,7 @@
 | 用途 | 必要なもの |
 |------|-----------|
 | 採点(二値 TOR) | Python 3.10 以上、[uv](https://docs.astral.sh/uv/) |
-| 採点(VAP-distance) | 上に加えて `.[vap]`(torch)と [VAP-Realtime](https://github.com/inokoj/VAP-Realtime) のローカル clone(日本語 VAP チェックポイントと CPC エンコーダを含む。配布条件は「ライセンス」節を参照) |
+| 採点(VAP-distance) | 上に加えて `.[vap]`(torch)、[VAP-Realtime](https://github.com/inokoj/VAP-Realtime) のローカル clone(CPC エンコーダ同梱)、日本語 VAP チェックポイント [`maai-kyoto/vap_jp_kyoto`](https://huggingface.co/maai-kyoto/vap_jp_kyoto) の `vap_state_dict_jp_kyoto_20hz_2500msec.pt`(MIT)を `<VAP_REALTIME_ROOT>/asset/vap/` に置く |
 | モデル出力の ASR 転写(`transcribe`) | いずれか 1 つの extra: `.[asr-reazon-whisperx]`(既定。ReazonSpeech-ESPnet + WhisperX。論文の数値を出した経路)/ `.[asr-nemo]`(ReazonSpeech NeMo v2、整列器なしで高速)/ `.[asr-k2]`(ReazonSpeech k2 v2、CPU 可)。モデルの重みは初回実行時に Hugging Face Hub から取得 |
 | 評価クリップの生成 | LLM-jp-Zoom1 のローカルコピー([DATASET.md](DATASET.md)) |
 | モデル推論(`infer`) | 評価対象に応じて Moshi 系 WebSocket サーバ、`GOOGLE_API_KEY`、`OPENAI_API_KEY`、`XAI_API_KEY` |
@@ -82,6 +85,9 @@ ESPnet の転写文は完全に再現され、文字の開始時刻の差は中�
 任意の音声を単発で転写するには
 `uv run fdbja transcribe --backend reazonspeech_nemo --wav response.wav --out ./text` が使えます。
 自前の ASR を使う場合は `fdbja.asr.ASRModel` を実装して `fdbja.asr.register_backend` で登録します。
+転写文の出どころ(ReazonSpeech-ESPnet)と文字の時刻付け(WhisperX の wav2vec 2.0 整列)は分かれているので、
+精度の高い日本語 ASR(例: kotoba-whisper、parakeet-tdt v3、ReazonSpeech の新版)に転写側だけ差し替える拡張は
+0.2 系の候補です。差し替えた場合も既定バックエンドの結果とは別枝として報告してください。
 
 ### モデルアダプタ
 
@@ -168,7 +174,7 @@ config 駆動で、**データはコードと別レイヤ**として扱います
 
 ## データ
 
-リポジトリには音声・コーパスを同梱しません(`docs/samples/` の試聴用抜粋を除く)。
+リポジトリには音声・コーパスを同梱しません(`docs/samples/` の試聴用抜粋 — 3 事象 × 刺激・人間 B・モデル 2 つ — を除く)。
 評価クリップは LLM-jp-Zoom1 から `reconstruct` でローカル生成します。
 入手方法、in-domain / out-of-domain の報告義務、held-out の方針は [DATASET.md](DATASET.md) を参照。
 
@@ -180,7 +186,8 @@ config 駆動で、**データはコードと別レイヤ**として扱います
 | 構成要素 | 条件 | 出典 |
 |---------|------|------|
 | VAP-Realtime(コード) | MIT | [inokoj/VAP-Realtime](https://github.com/inokoj/VAP-Realtime) |
-| 日本語 VAP チェックポイント `vap_state_dict_jp_20hz_2500msec.pt` | **学術目的のみ**(academic purposes only)。本リポジトリには含めず、各自が入手 | 同 README「Lisence」節 |
+| 日本語 VAP チェックポイント `vap_state_dict_jp_kyoto_20hz_2500msec.pt`(既定) | MIT。本リポジトリには含めず、Hugging Face から取得 | [maai-kyoto/vap_jp_kyoto](https://huggingface.co/maai-kyoto/vap_jp_kyoto) |
+| 日本語 VAP チェックポイント `vap_state_dict_jp_20hz_2500msec.pt`(リーダーボード採点時に使用) | **学術目的のみ**(academic purposes only)。同じコード経路で読み込める | VAP-Realtime README「Lisence」節 |
 | CPC エンコーダ `60k_epoch4-d0f474de.pt` | MIT(facebookresearch/CPC_audio) | 同上 |
 | ReazonSpeech(コード、`reazonspeech-{nemo,k2,espnet}-asr`) | Apache-2.0 | [reazon-research/ReazonSpeech](https://github.com/reazon-research/ReazonSpeech) |
 | ReazonSpeech モデル(`reazonspeech-nemo-v2` / `reazonspeech-k2-v2` / `reazonspeech-espnet-v2`) | Apache-2.0(各モデルカード) | [Hugging Face: reazon-research](https://huggingface.co/reazon-research) |
@@ -191,10 +198,11 @@ config 駆動で、**データはコードと別レイヤ**として扱います
 | WhisperX が日本語整列に使う wav2vec2 モデル(`jonatasgrosman/wav2vec2-large-xlsr-53-japanese`) | Apache-2.0(モデルカード) | [Hugging Face](https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-japanese) |
 | Full-Duplex-Bench(設計の出典) | CC BY-NC 4.0。本リポジトリはコードを流用せず、事象定義と TOR の定義を独立に再実装 | [DanielLin94144/Full-Duplex-Bench](https://github.com/DanielLin94144/Full-Duplex-Bench) |
 | LLM-jp-Zoom1(評価コーパス) | コーパスの利用条件に従う。`docs/samples/` の音声は同コーパスからの抜粋で、同じ条件が及ぶ | [DATASET.md](DATASET.md) |
-| 評価対象モデルの出力(`docs/samples/`) | J-Moshi 系は CC BY-NC 4.0 のモデル出力。商用 API の出力は各サービスの利用規約に従う | 各モデルカード / 規約 |
+| 評価対象モデルの出力(`docs/samples/`) | LLM-jp-Moshi-v1 と J-Moshi-ext(CC BY-NC 4.0 のモデル)の出力のみ収録。商用 API の出力は収録していない | 各モデルカード |
 
-VAP-distance を含む結果を報告する場合、VAP チェックポイントの「学術目的のみ」の条件により
-**商用利用はできません**。二値 TOR のみであれば本リポジトリのコードは Apache-2.0 の範囲で使えます。
+既定の構成(コード Apache-2.0、VAP-Realtime MIT、VAP チェックポイント MIT、CPC MIT、ReazonSpeech / ESPnet Apache-2.0、
+WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用の制限はありません。
+学術目的限定のチェックポイントを使った場合はその条件が結果にも及びます。
 
 ## 引用
 
@@ -224,6 +232,9 @@ VAP-distance を含む結果を報告する場合、VAP チェックポイント
   TOR と VAP-distance、TurnNat 系スコア、退化ベースライン、Pause のギャップ長別分析、
   人手評価バンドル生成と集計、リーダーボード(6 モデル: J-Moshi / J-Moshi-ext / LLM-jp-Moshi-v1 /
   Gemini Live / GPT-Realtime / Grok Voice)。
+  VAP チェックポイントの既定を MIT の `maai-kyoto/vap_jp_kyoto`(20 Hz / 2.5 s)に変更(ビット順の再検証済み)。
+  リーダーボードの VAP-distance は旧チェックポイントの値のまま(再採点は 0.1.x で予定)。
+  試聴サンプルは 3 事象 × 2 モデルに絞り、D_KL の表示値は MIT チェックポイントで再計算。
 
 バージョンは `pyproject.toml` の `version` が正です。
 
@@ -235,7 +246,8 @@ VAP-distance を含む結果を報告する場合、VAP チェックポイント
 | `ASR backend '...' is missing a dependency` | バックエンドの extra が入っていません。`uv sync --extra asr-reazon-whisperx`(NeMo は `asr-nemo`、k2 は `asr-k2`)。extra 同士は排他なので環境を分けてください |
 | `.[asr-reazon-whisperx]` の import で `numpy.core.multiarray failed to import` | `ctc-segmentation` の wheel が numpy 1.x 向けにビルドされています。`uv pip install cython setuptools` の後、`uv pip install --no-build-isolation --no-cache --reinstall --no-binary ctc-segmentation ctc-segmentation` で手元の numpy に対して再ビルド |
 | Blackwell 世代の GPU(sm_120)で ASR が CPU に落ちる / CUDA エラー | `uv pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128` を extra より先に入れる(下の torch の行も参照) |
-| `metrics.vap_distance.vap_realtime_root or $VAP_REALTIME_ROOT must be set` | VAP-Realtime を clone し、`VAP_REALTIME_ROOT=/path/to/VAP-Realtime` を設定。`asset/vap/` と `asset/cpc/` にチェックポイントがあること |
+| `metrics.vap_distance.vap_realtime_root or $VAP_REALTIME_ROOT must be set` | VAP-Realtime を clone し、`VAP_REALTIME_ROOT=/path/to/VAP-Realtime` を設定。`asset/cpc/` は clone に含まれる。`asset/vap/` には [maai-kyoto/vap_jp_kyoto](https://huggingface.co/maai-kyoto/vap_jp_kyoto) から `vap_state_dict_jp_kyoto_20hz_2500msec.pt` を置く |
+| VAP チェックポイントを替えたら D_KL の値が変わった | 仕様どおりです。VAP は凍結した計測器で、チェックポイントが違えば値は比較できません。比較する全モデルを同じチェックポイントで採点し直し、`results.json` の `vap_checkpoint` を確認してください |
 | torch が Blackwell GPU(sm_120)で動かない | `uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128` で cu128 以上を入れる |
 | α(`exp(-α·D_KL)` のスケール)がモデル追加のたびに変わる | α はモデル集合から自動較正されます。モデルを追加したら全モデルを 1 回の `score-offline` で採点し直してください |
 | `sample-human-eval` が `webui/ not found` と言う | Web UI はリポジトリ直下の `webui/` を参照します。`git clone` した作業ツリーから(`uv sync` の editable install で)実行してください |
@@ -244,4 +256,4 @@ VAP-distance を含む結果を報告する場合、VAP チェックポイント
 ## 謝辞
 
 [Full-Duplex-Bench](https://github.com/DanielLin94144/Full-Duplex-Bench)(Lin et al., 2025)の評価設計と、
-[VAP-Realtime](https://github.com/inokoj/VAP-Realtime)(Inoue et al.)の日本語 VAP モデルに基づいています。
+[VAP-Realtime](https://github.com/inokoj/VAP-Realtime) / [MaAI](https://huggingface.co/maai-kyoto)(Inoue et al.、京都大学)の日本語 VAP モデルに基づいています。
