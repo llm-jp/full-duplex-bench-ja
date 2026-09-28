@@ -69,7 +69,12 @@ def score_offline(config: Config, limit: int = 0,
             clip_ids = clip_ids[:limit]
         for model in models:
             mname = model["name"]
-            cache_dir = os.path.join(eval_dir, "vap_cache")
+            # Cached VAP probabilities are only valid for the checkpoint that
+            # produced them, so key the cache by the checkpoint file name.
+            vap_cfg = config.get("metrics", "vap_distance", default={}) or {}
+            ckpt_stem = os.path.splitext(os.path.basename(
+                str(vap_cfg.get("vap_model", "vap"))))[0]
+            cache_dir = os.path.join(eval_dir, "vap_cache", ckpt_stem)
             n_done = 0
             for clip in clip_ids:
                 gt_json = os.path.join(eval_dir, layout["gt_json"].format(
