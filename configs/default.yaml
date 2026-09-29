@@ -10,7 +10,7 @@ corpus:
   # Where reconstructed eval clips + manifests are written (git-ignored).
   eval_dir: ./data/eval
 
-tasks: [pause, smooth_tt, bc]
+tasks: [pause, smooth_tt]   # bc(相槌)は実験的タスク。既定では採点しない(下の detection.bc は残してある)
 
 # Event-detection thresholds (aligned with original Full-Duplex-Bench).
 detection:

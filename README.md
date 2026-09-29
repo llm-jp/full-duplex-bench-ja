@@ -10,7 +10,7 @@
   (`docs/` を GitHub Pages で配信。結果は `docs/results.json`、サンプル音声は `docs/samples/`)。
   掲載中の VAP-distance は既定の MIT チェックポイント(`maai-kyoto/vap_jp_kyoto`、下記)で 2026-09-28 に採点し直した値です。
   **チェックポイントが違う値は比較できません**(`docs/results.json` の `vap_checkpoint` に採点に使った重みを記録しています)。
-  bc(相槌)の事象数は 125 で、公開コードの検出器(人間 B の相槌が 1 回以上ある区間だけを事象にする)に合わせてあります。
+  掲載は Pause Handling と Smooth Turn-Taking の 2 タスクです。bc(相槌)は転写の閾値に依存する実験的タスクとしてコードにだけ残し、既定では採点しません。
 - 英語版 README: [README.en.md](README.en.md)
 
 ## 前提条件
@@ -111,7 +111,7 @@ API 側の変更への追随は保証しません。動かなくなった場合�
 |--------|------|----------------------|
 | **Pause Handling** | ターン内の間(0.4–1.0 秒)で人間 B が沈黙 | 沈黙する(TO=0) |
 | **Smooth Turn-Taking** | A(≥4 秒)→ 間(<0.4 秒)→ B(≥4 秒) | ターンを取る(TO=1) |
-| **Backchanneling** | A(≥3 秒)中に人間 B が相槌のみ | 相槌に留める(TO=0) |
+| **Backchanneling** | A(≥3 秒)中に人間 B が相槌のみ | 相槌に留める(TO=0) (実験的。既定の `tasks` に含めない) |
 
 指標は 2 つです。
 

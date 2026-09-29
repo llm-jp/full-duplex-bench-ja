@@ -155,88 +155,10 @@
    "r_pb": -0.0912,
    "alpha": 0.4048,
    "score": 0.4664
-  },
-  {
-   "task": "bc",
-   "model": "jmoshi",
-   "n": 125,
-   "domain": "out",
-   "TOR": 0.576,
-   "desired_TO": 0,
-   "event_mean_dkl": 1.0923,
-   "AUC": 0.5975,
-   "r_pb": 0.2495,
-   "alpha": 1.3967,
-   "score": 0.3313
-  },
-  {
-   "task": "bc",
-   "model": "jmoshi_ext",
-   "n": 125,
-   "domain": "out",
-   "TOR": 0.52,
-   "desired_TO": 0,
-   "event_mean_dkl": 1.017,
-   "AUC": 0.7421,
-   "r_pb": 0.4077,
-   "alpha": 1.3967,
-   "score": 0.3647
-  },
-  {
-   "task": "bc",
-   "model": "llmjp",
-   "n": 125,
-   "domain": "in",
-   "TOR": 0.744,
-   "desired_TO": 0,
-   "event_mean_dkl": 1.7801,
-   "AUC": 0.8814,
-   "r_pb": 0.5162,
-   "alpha": 1.3967,
-   "score": 0.2322
-  },
-  {
-   "task": "bc",
-   "model": "gemini",
-   "n": 125,
-   "domain": "out",
-   "TOR": 0.536,
-   "desired_TO": 0,
-   "event_mean_dkl": 1.0143,
-   "AUC": 0.6809,
-   "r_pb": 0.3869,
-   "alpha": 1.3967,
-   "score": 0.4744
-  },
-  {
-   "task": "bc",
-   "model": "gpt_realtime",
-   "n": 125,
-   "domain": "out",
-   "TOR": 0.496,
-   "desired_TO": 0,
-   "event_mean_dkl": 1.607,
-   "AUC": 0.8313,
-   "r_pb": 0.6082,
-   "alpha": 1.3967,
-   "score": 0.3548
-  },
-  {
-   "task": "bc",
-   "model": "grok_voice",
-   "n": 125,
-   "domain": "out",
-   "TOR": 0.488,
-   "desired_TO": 0,
-   "event_mean_dkl": 0.654,
-   "AUC": 0.5938,
-   "r_pb": 0.2999,
-   "alpha": 1.3967,
-   "score": 0.5533
   }
  ],
  "vap_checkpoint": "vap_state_dict_jp_kyoto_20hz_2500msec.pt (maai-kyoto/vap_jp_kyoto, MIT; 20 Hz / 2.5 s). Rescored 2026-09-28 with the repository default; VAP-distance columns are comparable with runs that use the same checkpoint.",
  "asr": "reazonspeech_whisperx (ReazonSpeech-ESPnet + WhisperX alignment)",
  "rescored": "2026-09-28",
- "events_note": "pause 240 / smooth_tt 197 events are unchanged from the 2026-07-08 leaderboard (TOR identical). bc events are now 125 (was 314): the released detector only keeps speaker-A stretches that contain at least one observed human backchannel, so bc TOR and VAP-distance are not comparable with the 2026-07-08 values."
+ "events_note": "pause 240 / smooth_tt 197 events are unchanged from the 2026-07-08 leaderboard (TOR identical); only the VAP-distance columns changed with the checkpoint. The bc (backchannel) task is no longer listed: its event definition depends on transcript-level thresholds and the released detector yields 125 events (was 314), so it is kept in the code as an experimental task only."
 }

@@ -100,5 +100,5 @@
   "samples": "vap_state_dict_jp_kyoto_20hz_2500msec.pt (maai-kyoto/vap_jp_kyoto, MIT)",
   "leaderboard": "vap_state_dict_jp_kyoto_20hz_2500msec.pt (maai-kyoto/vap_jp_kyoto, MIT; rescored 2026-09-28)"
  },
- "events_note": "bc の事象数は公開コードの検出器（人間 B の相槌が 1 回以上ある A の発話区間だけ）で 125。2026-07-08 のリーダーボード（314）とは bc の TOR / VAP-distance を比較できない。pause 240 / smooth_tt 197 は同一。"
+ "events_note": "公開版の掲載は pause / smooth_tt の 2 タスク。bc(相槌)は転写の閾値に依存する実験的タスクとしてコードにのみ残す（公開コードの検出器で 125 事象、07-08 の 314 とは比較不可）。相槌・割り込みはシステム/ユーザ × 相槌/割り込みの 2×2 で別途測る。"
 }

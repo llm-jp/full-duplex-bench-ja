@@ -8,8 +8,8 @@ interlocutor (speaker B) in a real dialogue corpus (LLM-jp-Zoom1) is used as the
 The full README is in Japanese: [README.md](README.md). Leaderboard: <https://llm-jp.github.io/full-duplex-bench-ja/>
 (its VAP-distance columns were rescored on 2026-09-28 with the MIT default checkpoint below,
 `maai-kyoto/vap_jp_kyoto`; values from different checkpoints are not comparable — see
-`vap_checkpoint` in `docs/results.json`. The bc task lists 125 events, matching the released
-detector, which keeps only speaker-A stretches that contain at least one human backchannel).
+`vap_checkpoint` in `docs/results.json`. The leaderboard lists Pause Handling and Smooth Turn-Taking;
+the backchannel (bc) task stays in the code as an experimental task and is not scored by default).
 
 ## Requirements
 
@@ -49,7 +49,7 @@ Run `uv run fdbja <command> --help` for arguments.
 |------|-------|-------------------|
 | Pause Handling | intra-turn pause (0.4-1.0 s), human B silent | stay silent (TO=0) |
 | Smooth Turn-Taking | A (>=4 s) -> gap (<0.4 s) -> B (>=4 s) | take the turn (TO=1) |
-| Backchanneling | human B only backchannels during A (>=3 s) | backchannel only (TO=0) |
+| Backchanneling | human B only backchannels during A (>=3 s) | backchannel only (TO=0) (experimental; not in the default `tasks`) |
 
 Metrics: **TOR** (binary takeover rate, ASR-based, same definition as Full-Duplex-Bench) and
 **VAP-distance** (KL divergence between next-speaker distributions of a frozen VAP model given the

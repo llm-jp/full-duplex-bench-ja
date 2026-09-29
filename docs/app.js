@@ -2,7 +2,7 @@
 // output) + meta.json, aggregates per model, and renders the tables.
 "use strict";
 
-const TASK_ORDER = ["pause", "smooth_tt", "bc"];
+const TASK_ORDER = ["pause", "smooth_tt"];  // bc は実験的タスクとして掲載しない (2026-09-29)
 
 Promise.all([
   fetch("results.json").then((r) => r.json()),
