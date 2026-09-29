@@ -8,9 +8,9 @@
 
 - リーダーボード: <https://llm-jp.github.io/full-duplex-bench-ja/>
   (`docs/` を GitHub Pages で配信。結果は `docs/results.json`、サンプル音声は `docs/samples/`)。
-  掲載中の VAP-distance は VAP-Realtime 配布の日本語チェックポイント(学術目的限定)で採点したもので、
-  現在の既定である MIT チェックポイント(下記)での再採点は未了です。**チェックポイントが違う値は比較できません**
-  (`docs/results.json` の `vap_checkpoint` に採点に使った重みを記録しています)。
+  掲載中の VAP-distance は既定の MIT チェックポイント(`maai-kyoto/vap_jp_kyoto`、下記)で 2026-09-28 に採点し直した値です。
+  **チェックポイントが違う値は比較できません**(`docs/results.json` の `vap_checkpoint` に採点に使った重みを記録しています)。
+  bc(相槌)の事象数は 125 で、公開コードの検出器(人間 B の相槌が 1 回以上ある区間だけを事象にする)に合わせてあります。
 - 英語版 README: [README.en.md](README.en.md)
 
 ## 前提条件

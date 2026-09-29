@@ -6,9 +6,10 @@ It brings the evaluation design of [Full-Duplex-Bench](https://github.com/Daniel
 interlocutor (speaker B) in a real dialogue corpus (LLM-jp-Zoom1) is used as the reference.
 
 The full README is in Japanese: [README.md](README.md). Leaderboard: <https://llm-jp.github.io/full-duplex-bench-ja/>
-(its VAP-distance columns were scored with the academic-only VAP-Realtime checkpoint; rescoring with the
-MIT default below is pending, and values from different checkpoints are not comparable — see
-`vap_checkpoint` in `docs/results.json`).
+(its VAP-distance columns were rescored on 2026-09-28 with the MIT default checkpoint below,
+`maai-kyoto/vap_jp_kyoto`; values from different checkpoints are not comparable — see
+`vap_checkpoint` in `docs/results.json`. The bc task lists 125 events, matching the released
+detector, which keeps only speaker-A stretches that contain at least one human backchannel).
 
 ## Requirements
 
@@ -68,8 +69,8 @@ Code: Apache-2.0. Backends and data are **not** covered:
 - Default VAP checkpoint `vap_state_dict_jp_kyoto_20hz_2500msec.pt` (maai-kyoto/vap_jp_kyoto): MIT.
   VAP-Realtime code: MIT. CPC encoder: MIT. With the default configuration there is no
   non-commercial restriction on the scores. The older VAP-Realtime Japanese checkpoint
-  (`vap_state_dict_jp_20hz_2500msec.pt`, used for the current leaderboard) is academic-only and
-  loads through the same code path; its terms then apply to the results.
+  (`vap_state_dict_jp_20hz_2500msec.pt`) is academic-only and loads through the same code path;
+  its terms then apply to the results. The leaderboard no longer uses it.
 - ReazonSpeech code and models (nemo-v2 / k2-v2 / espnet-v2): Apache-2.0. NVIDIA NeMo: Apache-2.0.
   WhisperX: BSD-2-Clause; its Japanese alignment model `jonatasgrosman/wav2vec2-large-xlsr-53-japanese`
   is Apache-2.0.

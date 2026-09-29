@@ -1,5 +1,5 @@
 {
- "generated": "2026-07-08",
+ "generated": "2026-09-28",
  "dataset": "LLM-jp-Zoom1 ケース (各タスク200クリップ / 評価事象 n はタスク別表を参照)",
  "window_source": "イベント注釈 (a_end / gap / a_utt) 由来。2026-08-18 に、公開サンプルへ凍結 VAP を再実行し各モデルの D_KL を再現できることで検証済み(平均絶対差: pause 0.027 / smooth_tt 0.021 / bc 0.009)。サンプルの D_KL は 2026-09-26 に MIT チェックポイントで再計算。",
  "repo_url": "https://github.com/llm-jp/full-duplex-bench-ja",
@@ -98,6 +98,7 @@
  "samples_note": "試聴用の抜粋は各タスク 1 事象、モデルは LLM-jp-Moshi-v1 と J-Moshi-ext の 2 つに絞っている。D_KL は既定の VAP チェックポイント(maai-kyoto/vap_jp_kyoto, 20 Hz / 2.5 s, MIT)で 2026-09-26 に再計算した値。",
  "vap_checkpoint": {
   "samples": "vap_state_dict_jp_kyoto_20hz_2500msec.pt (maai-kyoto/vap_jp_kyoto, MIT)",
-  "leaderboard": "vap_state_dict_jp_20hz_2500msec.pt (VAP-Realtime, academic-only; rescoring with the MIT checkpoint pending)"
- }
+  "leaderboard": "vap_state_dict_jp_kyoto_20hz_2500msec.pt (maai-kyoto/vap_jp_kyoto, MIT; rescored 2026-09-28)"
+ },
+ "events_note": "bc の事象数は公開コードの検出器（人間 B の相槌が 1 回以上ある A の発話区間だけ）で 125。2026-07-08 のリーダーボード（314）とは bc の TOR / VAP-distance を比較できない。pause 240 / smooth_tt 197 は同一。"
 }
