@@ -82,5 +82,5 @@ Code: Apache-2.0. Backends and data are **not** covered:
 
 ## Citation
 
-See [CITATION.cff](CITATION.cff) (RTCA 2026 and ASJ Autumn 2026; bibliographic details will be
-updated after acceptance).
+See [CITATION.cff](CITATION.cff) (ASJ Autumn 2026; bibliographic details will be updated once
+finalized).

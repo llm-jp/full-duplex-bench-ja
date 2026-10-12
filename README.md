@@ -206,17 +206,10 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 
 ## 引用
 
-本ツールキットを使った場合は次を引用してください(書誌情報は採択後に更新します。
+本ツールキットを使った場合は次を引用してください(書誌情報は確定後に更新します。
 [CITATION.cff](CITATION.cff) も参照)。
 
 ```bibtex
-@inproceedings{abe2026fdbja_rtca,
-  title     = {TODO: RTCA 2026 論文タイトル},
-  author    = {Abe, Yuto and TODO},
-  booktitle = {Proceedings of RTCA 2026},
-  year      = {2026}
-}
-
 @inproceedings{abe2026fdbja_asj,
   title     = {TODO: 日本音響学会 2026 年秋季研究発表会 講演タイトル},
   author    = {阿部 雄斗 and TODO},

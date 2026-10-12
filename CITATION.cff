@@ -17,10 +17,10 @@ version: 0.1.0
 date-released: "2026-11-05"   # TODO: 公開日に合わせる
 preferred-citation:
   type: conference-paper
-  title: "TODO: RTCA 2026 論文タイトル"
+  title: "TODO: 日本音響学会 2026 年秋季研究発表会 講演タイトル"
   authors:
     - family-names: Abe
       given-names: Yuto
     # TODO: 共著者
-  collection-title: "Proceedings of RTCA 2026"
+  collection-title: "日本音響学会 2026 年秋季研究発表会 講演論文集"
   year: 2026
