@@ -36,6 +36,10 @@ def main(argv=None) -> int:
     p.add_argument("--config", required=True)
     p.add_argument("--limit-sessions", type=int, default=0,
                    help="scan only the first N corpus sessions (debug)")
+    p.add_argument("--sessions", default=None, metavar="FILE",
+                   help="text file with one recording id per line; only these "
+                        "sessions are scanned (e.g. a model's held-out split, "
+                        "to build a domain: out evaluation set)")
 
     p = sub.add_parser("infer", help="run a model adapter over the eval clips")
     p.add_argument("--config", required=True)
@@ -112,7 +116,8 @@ def main(argv=None) -> int:
     if args.command == "reconstruct":
         from fdbja.data.reconstruct import reconstruct
         reconstruct(Config.load(args.config),
-                    limit_sessions=args.limit_sessions)
+                    limit_sessions=args.limit_sessions,
+                    sessions_file=args.sessions)
         return 0
 
     if args.command == "infer":

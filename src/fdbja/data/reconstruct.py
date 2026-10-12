@@ -62,8 +62,23 @@ def _extract_clip(audio_path, jchat, event_time, clip_duration=CLIP_DURATION):
     return audio, sr, sliced, clip_start, clip_end
 
 
+def load_session_list(path: str) -> set:
+    """Read recording ids (one per line; ``#`` comments and blanks ignored).
+
+    Each id is matched against the session directory name *and* the file stem
+    (``key``) of the jchat JSON, so either naming convention works.
+    """
+    ids = set()
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.split("#", 1)[0].strip()
+            if line:
+                ids.add(line)
+    return ids
+
+
 def collect_events(text_dir: str, tasks: List[str], limit_sessions: int = 0,
-                   log=print) -> Dict[str, list]:
+                   log=print, sessions: set | None = None) -> Dict[str, list]:
     files = []
     for root, _dirs, fs in os.walk(text_dir):
         for f in sorted(fs):
@@ -72,6 +87,12 @@ def collect_events(text_dir: str, tasks: List[str], limit_sessions: int = 0,
                               "key": f[:-5],
                               "json_path": os.path.join(root, f)})
     files.sort(key=lambda x: x["key"])
+    if sessions is not None:
+        before = len(files)
+        files = [x for x in files
+                 if x["session_id"] in sessions or x["key"] in sessions]
+        log(f"session filter: {len(files)}/{before} sessions kept "
+            f"({len(sessions)} ids given)")
     if limit_sessions:
         files = files[:limit_sessions]
     log(f"scanning {len(files)} sessions for events...")
@@ -134,7 +155,11 @@ def _sample_extract(events, task, n_samples, audio_dir, out_dir, seed, log):
     return success
 
 
-def reconstruct(config, limit_sessions: int = 0, log=print) -> None:
+def reconstruct(config, limit_sessions: int = 0, log=print,
+                sessions_file: str | None = None) -> None:
+    """Build eval clips. ``sessions_file`` restricts the scan to the listed
+    recordings (e.g. a model's held-out split) so that a ``domain: out``
+    evaluation set can be built from the same corpus."""
     zoom1 = config.get("corpus", "zoom1_root")
     text_dir = config.get("corpus", "text_dir", default=os.path.join(zoom1, "text"))
     audio_dir = config.get("corpus", "audio_dir",
@@ -144,7 +169,9 @@ def reconstruct(config, limit_sessions: int = 0, log=print) -> None:
     n = config.get("detection", "clips_per_task", default=200)
     seed = config.get("detection", "seed", default=42)
 
-    events = collect_events(text_dir, tasks, limit_sessions, log)
+    sessions = load_session_list(sessions_file) if sessions_file else None
+    events = collect_events(text_dir, tasks, limit_sessions, log,
+                            sessions=sessions)
     log("totals: " + ", ".join(f"{t}={len(events[t])}" for t in tasks))
     for task in tasks:
         _sample_extract(events, task, n, audio_dir,
