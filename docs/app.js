@@ -55,9 +55,10 @@ function render(results, meta) {
   repo.href = meta.repo_url; repo.textContent = meta.repo_url.replace(/^https?:\/\//, "");
 
   const models = aggregate(results.summary || []);
-  // primary ranking key = VAP-distance (lower = closer to human = better)
+  // primary ranking key = TOR agreement (higher = better). VAP-distance is experimental
+  // and shown for reference only (2026-10-12).
   const ranked = Object.values(models)
-    .sort((a, b) => (a.dkl ?? Infinity) - (b.dkl ?? Infinity));
+    .sort((a, b) => (b.acc ?? -Infinity) - (a.acc ?? -Infinity));
 
   // ---- overall ranking ----
   const best = { acc: Math.max(...ranked.map((m) => m.acc ?? -Infinity)),
@@ -66,7 +67,8 @@ function render(results, meta) {
   const ov = document.getElementById("overall");
   ov.innerHTML =
     "<thead><tr><th class='rank'>#</th><th class='model'>モデル</th>" +
-    "<th>適合率 ↑</th><th>VAP-distance ↓</th><th>スコア ↑</th></tr></thead>";
+    "<th>適合率 ↑</th><th>VAP-distance ↓ <small>(実験的)</small></th>" +
+    "<th>スコア ↑ <small>(実験的)</small></th></tr></thead>";
   const tb = document.createElement("tbody");
   ranked.forEach((m, i) => {
     tb.appendChild(rowEl([
@@ -90,12 +92,12 @@ function render(results, meta) {
     const wrap = document.createElement("div"); wrap.className = "table-wrap";
     const t = document.createElement("table");
     t.innerHTML = "<thead><tr><th class='model'>モデル</th><th>TOR</th>" +
-      "<th>適合率 ↑</th><th>VAP-distance ↓</th><th>スコア ↑</th>" +
-      "<th>AUC</th><th>n</th></tr></thead>";
+      "<th>適合率 ↑</th><th>VAP-distance ↓ <small>(実験的)</small></th>" +
+      "<th>スコア ↑ <small>(実験的)</small></th><th>AUC</th><th>n</th></tr></thead>";
     const body = document.createElement("tbody");
     const bDkl = Math.min(...rows.map((r) => r.event_mean_dkl ?? Infinity));
     const bAcc = Math.max(...rows.map((r) => accOf(r) ?? -Infinity));
-    rows.sort((a, b) => (a.event_mean_dkl ?? Infinity) - (b.event_mean_dkl ?? Infinity))
+    rows.sort((a, b) => (accOf(b) ?? -Infinity) - (accOf(a) ?? -Infinity))
       .forEach((r) => {
         body.appendChild(rowEl([
           modelCell(label(r.model), r.domain, meta, r.model),

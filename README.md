@@ -8,7 +8,10 @@
 
 - リーダーボード: <https://llm-jp.github.io/full-duplex-bench-ja/>
   (`docs/` を GitHub Pages で配信。結果は `docs/results.json`、サンプル音声は `docs/samples/`)。
-  掲載中の VAP-distance は既定の MIT チェックポイント(`maai-kyoto/vap_jp_kyoto`、下記)で 2026-09-28 に採点し直した値です。
+  順位は **TOR の適合率**(本家 Full-Duplex-Bench と同じ二値指標)で付けています。
+  **VAP-distance は実験的指標**です。人手判断との相関や既存指標との比較による検証が済んでいないため参考値として併記し、
+  既定の config では無効にしています(`metrics.vap_distance.enabled: true` で有効化)。
+  掲載中の VAP-distance は既定の MIT チェックポイント(`maai-kyoto/vap_jp_kyoto`、下記)で 2026-09-28 に採点し直した値で、
   **チェックポイントが違う値は比較できません**(`docs/results.json` の `vap_checkpoint` に採点に使った重みを記録しています)。
   掲載は Pause Handling と Smooth Turn-Taking の 2 タスクです。bc(相槌)は転写の閾値に依存する実験的タスクとしてコードにだけ残し、既定では採点しません。
 - 英語版 README: [README.en.md](README.en.md)
@@ -113,13 +116,16 @@ API 側の変更への追随は保証しません。動かなくなった場合�
 | **Smooth Turn-Taking** | A(≥4 秒)→ 間(<0.4 秒)→ B(≥4 秒) | ターンを取る(TO=1) |
 | **Backchanneling** | A(≥3 秒)中に人間 B が相槌のみ | 相槌に留める(TO=0) (実験的。既定の `tasks` に含めない) |
 
-指標は 2 つです。
+主指標は 1 つ、実験的指標が 1 つです。
 
-- **TOR**(二値 Takeover Rate)— Full-Duplex-Bench と同じ定義。モデルがターンを取ったか否か。
-  モデル応答の ASR 転写から判定します。
-- **VAP-distance**(連続)— 同じ話者 A の音声に対し、**人間**の応答と**モデル**の応答をそれぞれ凍結
+- **TOR**(二値 Takeover Rate、主指標)— Full-Duplex-Bench と同じ定義。モデルがターンを取ったか否か。
+  モデル応答の ASR 転写から判定します。リーダーボードの順位はこの指標の適合率で付けます。
+- **VAP-distance**(連続、**実験的**)— 同じ話者 A の音声に対し、**人間**の応答と**モデル**の応答をそれぞれ凍結
   [VAP](https://github.com/inokoj/VAP-Realtime) に通し、次話者予測分布間の KL 距離を測ります。
-  二値が捨てる「タイミングの良し悪し」を連続値で捉えます。
+  二値が捨てる「タイミングの良し悪し」を連続値で捉える狙いですが、人手判断との相関・既存の自動指標との比較・
+  チェックポイントへの頑健性の検証がまだ終わっていません(別途、論文として検証中)。
+  既定の config では無効で、`metrics.vap_distance.enabled: true` にした場合だけ参考値として併記されます。
+  報告するときは「実験的指標」と添えてください。
 
 比較用に、同じ 256 クラス VAP 定式化を使う **TurnNat 系の尤度スコア**(`metrics/turnnat.py`)も
 実装しています。参照応答を必要としない絶対尺度で、位置づけは
@@ -220,6 +226,7 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 
 ## バージョン / 変更履歴
 
+- **(準備中)** VAP-distance を実験的指標に位置づけ直し、既定で無効に。リーダーボードの順位を TOR の適合率に変更(2026-10-12)。
 - **0.1.0(公開初版、準備中)** — `reconstruct` → `infer` → `transcribe` → `score-offline` の評価パイプライン、
   ASR バックエンド 3 種(ReazonSpeech NeMo / k2 / ESPnet+WhisperX)、
   TOR と VAP-distance、TurnNat 系スコア、退化ベースライン、Pause のギャップ長別分析、

@@ -17,9 +17,11 @@
 
   <section>
     <h2>総合ランキング</h2>
-    <p class="hint">総合 = 各タスクの平均。<b>VAP-distance↓</b>(人間の音声活動予測
-      分布との距離が小さいほど人間に近い)で順位付け。あわせて適合率↑(相手の
-      振る舞いに一致)・スコア↑(<code>exp(-&alpha;&middot;D<sub>KL</sub>)</code>)を掲載。</p>
+    <p class="hint">総合 = 各タスクの平均。<b>適合率↑</b>(本家 Full-Duplex-Bench と同じ
+      二値 TOR で、相手の振る舞いに一致した割合)で順位付け。
+      <b>VAP-distance↓</b>(人間の音声活動予測分布との距離)と
+      スコア↑(<code>exp(-&alpha;&middot;D<sub>KL</sub>)</code>)は<b>実験的指標</b>で、
+      人手判断との相関などの検証が済むまで参考値として併記します。</p>
     <div class="table-wrap"><table id="overall"></table></div>
   </section>
 
@@ -56,8 +58,8 @@
   <footer>
     <p>指標の定義: <b>TOR</b> = モデルがターンを取った割合。
       <b>適合率</b> = 相手(人間B)の実際の振る舞いに一致した割合。
-      <b>VAP-distance</b> = 人間の音声活動予測(VAP)分布とモデル応答の
-      分布の距離(D<sub>KL</sub>, 小さいほど自然)。</p>
+      <b>VAP-distance</b>(実験的) = 人間の音声活動予測(VAP)分布とモデル応答の
+      分布の距離(D<sub>KL</sub>, 小さいほど人間の応答に近い)。検証中のため参考値。</p>
     <p>コード: <a id="repo" href="#">llm-jp/full-duplex-bench-ja</a>
       (Apache-2.0)。評価データ(LLM-jp-Zoom1)は APSIPA 公表後に公開予定。</p>
     <p id="load-err" class="err"></p>

@@ -6,7 +6,10 @@ It brings the evaluation design of [Full-Duplex-Bench](https://github.com/Daniel
 interlocutor (speaker B) in a real dialogue corpus (LLM-jp-Zoom1) is used as the reference.
 
 The full README is in Japanese: [README.md](README.md). Leaderboard: <https://llm-jp.github.io/full-duplex-bench-ja/>
-(its VAP-distance columns were rescored on 2026-09-28 with the MIT default checkpoint below,
+(ranked by TOR agreement, the binary metric of the original Full-Duplex-Bench. **VAP-distance is an
+experimental metric**: its validation against human judgements is still in progress, so it is shown
+for reference only and is disabled in the default config (`metrics.vap_distance.enabled: true` to
+opt in). Its columns were rescored on 2026-09-28 with the MIT default checkpoint below,
 `maai-kyoto/vap_jp_kyoto`; values from different checkpoints are not comparable — see
 `vap_checkpoint` in `docs/results.json`. The leaderboard lists Pause Handling and Smooth Turn-Taking;
 the backchannel (bc) task stays in the code as an experimental task and is not scored by default).
@@ -39,7 +42,7 @@ uv run fdbja score-offline --config configs/default.yaml
 
 Pipeline: `reconstruct` (corpus -> events -> 20 s clips) -> `infer` (stream speaker A to a model
 adapter, record the response) -> `transcribe` (ASR of the response channel -> jchat) ->
-`score-offline` (binary TOR + VAP-distance -> `results.json`). TOR depends on the ASR backend;
+`score-offline` (binary TOR, plus VAP-distance when enabled -> `results.json`). TOR depends on the ASR backend;
 report the backend name with your numbers and use the same one when comparing runs.
 Run `uv run fdbja <command> --help` for arguments.
 
@@ -51,10 +54,12 @@ Run `uv run fdbja <command> --help` for arguments.
 | Smooth Turn-Taking | A (>=4 s) -> gap (<0.4 s) -> B (>=4 s) | take the turn (TO=1) |
 | Backchanneling | human B only backchannels during A (>=3 s) | backchannel only (TO=0) (experimental; not in the default `tasks`) |
 
-Metrics: **TOR** (binary takeover rate, ASR-based, same definition as Full-Duplex-Bench) and
-**VAP-distance** (KL divergence between next-speaker distributions of a frozen VAP model given the
-human response vs. the model response). Degenerate baselines (`silence`, `always_talk`) are
-reported on every task. A TurnNat-style likelihood score is included for comparison.
+Primary metric: **TOR** (binary takeover rate, ASR-based, same definition as Full-Duplex-Bench).
+Experimental metric (off by default): **VAP-distance** (KL divergence between next-speaker
+distributions of a frozen VAP model given the human response vs. the model response); its
+validation against human judgements and existing metrics is still in progress, so label it as
+experimental when reporting. Degenerate baselines (`silence`, `always_talk`) are reported on every
+task. A TurnNat-style likelihood score is included for comparison.
 
 ## Model adapters
 

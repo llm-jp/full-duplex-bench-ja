@@ -71,7 +71,9 @@ metrics:
   tor:
     enabled: true
   vap_distance:
-    enabled: true
+    # 実験的指標 (experimental). 既定では無効。人手判断との相関などの検証が済むまで
+    # 主指標は TOR とし、VAP-distance は true にした場合だけ参考値として併記する。
+    enabled: false
     # Japanese VAP checkpoint (MIT): https://huggingface.co/maai-kyoto/vap_jp_kyoto
     # Download into <VAP_REALTIME_ROOT>/asset/vap/ (or give an absolute path).
     vap_model: vap_state_dict_jp_kyoto_20hz_2500msec.pt
