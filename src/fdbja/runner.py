@@ -328,6 +328,13 @@ def _aggregate(rows, config: Config) -> Dict[str, Any]:
                     rec["human_freq"] = round(float(np.mean(hfreqs)), 4)
                 if jsds:
                     rec["jsd"] = round(float(np.mean(jsds)), 4)
+                # JSD is 1.0 whenever the model never backchannels, so also
+                # report how often it did and the JSD restricted to those events
+                anyb = [r for r in sub if r.get("bc_count")]
+                rec["bc_any_rate"] = round(len(anyb) / len(sub), 4)
+                jsd_c = [r["jsd"] for r in anyb if r.get("jsd") is not None]
+                if jsd_c:
+                    rec["jsd_cond"] = round(float(np.mean(jsd_c)), 4)
             dks = np.array([r["mean_dkl"] for r in sub if r["mean_dkl"] is not None])
             wrong = np.array([1 if r["TO"] != desired else 0
                               for r in sub if r["mean_dkl"] is not None])
