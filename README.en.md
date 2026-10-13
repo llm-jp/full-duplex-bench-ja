@@ -52,7 +52,7 @@ Run `uv run fdbja <command> --help` for arguments.
 |------|-------|-------------------|
 | Pause Handling | intra-turn pause (0.4-1.0 s), human B silent | stay silent (TO=0) |
 | Smooth Turn-Taking | A (>=4 s) -> gap (<0.4 s) -> B (>=4 s) | take the turn (TO=1) |
-| Backchanneling | human B only backchannels during A (>=3 s) | backchannel only (TO=0) (experimental; not in the default `tasks`) |
+| Backchanneling | human B only backchannels during A (>=3 s) | backchannel only (TO=0); also backchannel frequency (`bc_freq`, per second of A; human: `human_freq`) and the timing JSD against the human onsets in 0.2 s bins (`jsd`, 0-1, 1.0 when the model never backchannels), as in the original Backchannel task (experimental; not in the default `tasks`) |
 
 Primary metric: **TOR** (binary takeover rate, ASR-based, same definition as Full-Duplex-Bench).
 Experimental metric (off by default): **VAP-distance** (KL divergence between next-speaker

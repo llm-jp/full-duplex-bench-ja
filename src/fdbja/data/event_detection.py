@@ -175,12 +175,14 @@ def detect_backchannels(jchat: JChat, min_a_duration: float = 3.0,
             continue
         took_over = False
         bc_count = 0
+        bc_times: List[float] = []
         for b in b_utts:
             if intervals_overlap(b["start"], b["end"], a["start"], a["end"]):
                 if not is_backchannel(b, bc_max_chars, bc_max_duration):
                     took_over = True
                     break
                 bc_count += 1
+                bc_times.append(b["start"])
         # A backchannel opportunity must contain an observed human
         # backchannel.  Without this guard, ordinary A-only speech was
         # incorrectly labelled as a backchannel event.
@@ -192,6 +194,8 @@ def detect_backchannels(jchat: JChat, min_a_duration: float = 3.0,
                 "a_text": a["text"],
                 "human_bc_count": bc_count,
                 "human_freq": bc_count / a_dur if a_dur > 0 else 0,
+                # onset times of the human backchannels (for timing JSD)
+                "human_bc_times": bc_times,
             })
     return events
 

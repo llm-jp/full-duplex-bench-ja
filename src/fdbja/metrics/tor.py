@@ -12,11 +12,48 @@ ASR via ``group_chars_to_utterances``).
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import math
+from typing import Any, Dict, List, Optional, Sequence
+
+import numpy as np
 
 from fdbja.data.event_detection import intervals_overlap
 
 Utterance = Dict[str, Any]
+
+
+def timing_jsd(human_times: Sequence[float], model_times: Sequence[float],
+               start: float, end: float, bin_s: float = 0.2) -> float:
+    """Jensen-Shannon divergence between the human and model backchannel
+    onset histograms over the window [start, end] (bins of ``bin_s`` s).
+
+    Follows the Backchannel task of the original Full-Duplex-Bench: onsets are
+    binned at 0.2 s and the two histograms are compared with JSD; an event
+    where the model produced no backchannel at all scores 1.0.  We report the
+    base-2 JS *divergence* (range [0, 1]); the original scripts call
+    ``scipy.spatial.distance.jensenshannon``, which returns the JS *distance*
+    (square root, natural log), so the two are monotone but not identical.
+    """
+    n_bins = max(1, int(math.ceil((end - start) / bin_s)))
+
+    def hist(ts: Sequence[float]) -> np.ndarray:
+        h = np.zeros(n_bins)
+        for t in ts:
+            i = int((t - start) // bin_s)
+            h[min(max(i, 0), n_bins - 1)] += 1
+        return h
+
+    hh, hm = hist(human_times), hist(model_times)
+    if hh.sum() == 0 or hm.sum() == 0:
+        return 1.0
+    p, q = hh / hh.sum(), hm / hm.sum()
+    m = (p + q) / 2
+
+    def kl(a: np.ndarray, b: np.ndarray) -> float:
+        mask = a > 0
+        return float(np.sum(a[mask] * np.log2(a[mask] / b[mask])))
+
+    return 0.5 * kl(p, m) + 0.5 * kl(q, m)
 
 
 def eval_pause(events, model_b_utts: List[Utterance],
@@ -58,24 +95,31 @@ def eval_smooth_tt(events, model_b_utts: List[Utterance],
 def eval_bc(events, model_b_utts: List[Utterance],
             bc_max_chars: int = 6, bc_max_duration: float = 1.5):
     """During a backchannel opportunity the model should only backchannel
-    (desired TO=0); also report BC frequency."""
+    (desired TO=0); also report BC frequency (per second of A's utterance)
+    and the timing JSD against the human backchannel onsets (``jsd``; None
+    when the event carries no ``human_bc_times``)."""
     results = []
     for bc in events:
         a_start, a_end = bc["a_utt_start"], bc["a_utt_end"]
         a_dur = a_end - a_start
         bc_count = 0
+        bc_times: List[float] = []
         took_over = False
         for b in model_b_utts:
             if intervals_overlap(b["start"], b["end"], a_start, a_end):
                 if (b["num_chars"] <= bc_max_chars
                         and (b["end"] - b["start"]) <= bc_max_duration):
                     bc_count += 1
+                    bc_times.append(b["start"])
                 else:
                     took_over = True
+        human_times: Optional[Sequence[float]] = bc.get("human_bc_times")
         results.append({
             "TO": 1 if took_over else 0,
             "bc_count": bc_count,
             "freq": bc_count / a_dur if a_dur > 0 else 0,
+            "jsd": None if human_times is None
+            else timing_jsd(human_times, bc_times, a_start, a_end),
         })
     return results
 

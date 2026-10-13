@@ -117,6 +117,9 @@ def score_offline(config: Config, limit: int = 0,
                     elif task == "bc":
                         row["a_duration"] = ev["a_duration"]
                         row["human_bc_count"] = ev["human_bc_count"]
+                        row["human_freq"] = ev["human_freq"]
+                        row["bc_count"] = tr.get("bc_count")
+                        row["jsd"] = tr.get("jsd")
                     rows.append(row)
                 n_done += 1
             log(f"[{task}/{mname}] scored {n_done} clips")
@@ -313,6 +316,18 @@ def _aggregate(rows, config: Config) -> Dict[str, Any]:
             rec = {"task": task, "model": mname, "n": len(sub),
                    "domain": model.get("domain"), "TOR": round(tor, 4),
                    "desired_TO": desired}
+            if task == "bc":
+                # backchannel frequency (per second of A) and timing JSD,
+                # as in the original Full-Duplex-Bench Backchannel task
+                freqs = [r["freq"] for r in sub if r.get("freq") is not None]
+                hfreqs = [r["human_freq"] for r in sub if r.get("human_freq") is not None]
+                jsds = [r["jsd"] for r in sub if r.get("jsd") is not None]
+                if freqs:
+                    rec["bc_freq"] = round(float(np.mean(freqs)), 4)
+                if hfreqs:
+                    rec["human_freq"] = round(float(np.mean(hfreqs)), 4)
+                if jsds:
+                    rec["jsd"] = round(float(np.mean(jsds)), 4)
             dks = np.array([r["mean_dkl"] for r in sub if r["mean_dkl"] is not None])
             wrong = np.array([1 if r["TO"] != desired else 0
                               for r in sub if r["mean_dkl"] is not None])

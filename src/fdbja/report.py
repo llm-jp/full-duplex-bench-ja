@@ -18,6 +18,7 @@ def write_json(results: Dict[str, Any], out_dir: str,
 
 def format_table(results: Dict[str, Any]) -> str:
     cols = ["task", "model", "n", "domain", "TOR",
+            "bc_freq", "human_freq", "jsd",
             "event_mean_dkl", "AUC", "score"]
     header = " | ".join(f"{c:>14}" if c not in ("task", "model") else f"{c:<16}"
                         for c in cols)
