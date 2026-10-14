@@ -193,7 +193,7 @@ config 駆動で、**データはコードと別レイヤ**として扱います
 |---------|------|------|
 | VAP-Realtime(コード) | MIT | [inokoj/VAP-Realtime](https://github.com/inokoj/VAP-Realtime) |
 | 日本語 VAP チェックポイント `vap_state_dict_jp_kyoto_20hz_2500msec.pt`(既定) | MIT。本リポジトリには含めず、Hugging Face から取得 | [maai-kyoto/vap_jp_kyoto](https://huggingface.co/maai-kyoto/vap_jp_kyoto) |
-| 日本語 VAP チェックポイント `vap_state_dict_jp_20hz_2500msec.pt`(リーダーボード採点時に使用) | **学術目的のみ**(academic purposes only)。同じコード経路で読み込める | VAP-Realtime README「Lisence」節 |
+| 日本語 VAP チェックポイント `vap_state_dict_jp_20hz_2500msec.pt`(2026-07-08 版のリーダーボードで使用。現行版は MIT チェックポイントで再採点済み) | **学術目的のみ**(academic purposes only)。同じコード経路で読み込める | VAP-Realtime README「Lisence」節 |
 | CPC エンコーダ `60k_epoch4-d0f474de.pt` | MIT(facebookresearch/CPC_audio) | 同上 |
 | ReazonSpeech(コード、`reazonspeech-{nemo,k2,espnet}-asr`) | Apache-2.0 | [reazon-research/ReazonSpeech](https://github.com/reazon-research/ReazonSpeech) |
 | ReazonSpeech モデル(`reazonspeech-nemo-v2` / `reazonspeech-k2-v2` / `reazonspeech-espnet-v2`) | Apache-2.0(各モデルカード) | [Hugging Face: reazon-research](https://huggingface.co/reazon-research) |
@@ -235,7 +235,7 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
   人手評価バンドル生成と集計、リーダーボード(6 モデル: J-Moshi / J-Moshi-ext / LLM-jp-Moshi-v1 /
   Gemini Live / GPT-Realtime / Grok Voice)。
   VAP チェックポイントの既定を MIT の `maai-kyoto/vap_jp_kyoto`(20 Hz / 2.5 s)に変更(ビット順の再検証済み)。
-  リーダーボードの VAP-distance は旧チェックポイントの値のまま(再採点は 0.1.x で予定)。
+  リーダーボードの VAP-distance も同じチェックポイントで再採点(2026-09-28。TOR と事象数は 2026-07-08 版と同一)。
   試聴サンプルは 3 事象 × 2 モデルに絞り、D_KL の表示値は MIT チェックポイントで再計算。
 
 バージョンは `pyproject.toml` の `version` が正です。
