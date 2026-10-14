@@ -212,15 +212,17 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 
 ## 引用
 
-本ツールキットを使った場合は次を引用してください(書誌情報は確定後に更新します。
-[CITATION.cff](CITATION.cff) も参照)。
+本ツールキットを使った場合は、日本音響学会 2026 年秋季研究発表会の講演(2-7-12)を引用してください
+([CITATION.cff](CITATION.cff) にも同じ書誌情報があります)。
 
 ```bibtex
 @inproceedings{abe2026fdbja_asj,
-  title     = {TODO: 日本音響学会 2026 年秋季研究発表会 講演タイトル},
-  author    = {阿部 雄斗 and TODO},
+  title     = {Full-Duplex-Bench-JA: 日本語フルデュプレックス音声対話モデル評価のためのベンチマーク構築},
+  author    = {阿部 雄斗 and 佐伯 真於 and 高道 慎之介 and 藤江 真也 and 小川 哲司 and 東中 竜一郎},
   booktitle = {日本音響学会 2026 年秋季研究発表会 講演論文集},
-  year      = {2026}
+  note      = {2-7-12},
+  year      = {2026},
+  month     = sep
 }
 ```
 

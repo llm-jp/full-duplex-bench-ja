@@ -87,5 +87,8 @@ Code: Apache-2.0. Backends and data are **not** covered:
 
 ## Citation
 
-See [CITATION.cff](CITATION.cff) (ASJ Autumn 2026; bibliographic details will be updated once
-finalized).
+Please cite the ASJ Autumn 2026 talk (2-7-12): Yuto Abe, Mao Saeki, Shinnosuke Takamichi, Shinya Fujie,
+Tetsuji Ogawa and Ryuichiro Higashinaka, "Full-Duplex-Bench-JA: 日本語フルデュプレックス音声対話モデル評価のための
+ベンチマーク構築" (A benchmark for evaluating Japanese full-duplex spoken dialogue models), *Proceedings of the
+Autumn Meeting of the Acoustical Society of Japan*, Sept. 2026. The same entry is in [CITATION.cff](CITATION.cff)
+and as BibTeX in [README.md](README.md#引用).

@@ -1,4 +1,3 @@
-# TODO: 著者・ORCID・書誌情報を確定させてから公開する。
 cff-version: 1.2.0
 message: "If you use this toolkit, please cite it as below."
 type: software
@@ -7,20 +6,42 @@ abstract: "Turn-taking evaluation toolkit for Japanese full-duplex spoken dialog
 authors:
   - family-names: Abe
     given-names: Yuto
-    affiliation: "Waseda University / LLM-jp"
+    affiliation: "Waseda University / NII LLMC"
     orcid: "https://orcid.org/0009-0000-6500-0851"
-  # TODO: 共著者を追加
 repository-code: "https://github.com/llm-jp/full-duplex-bench-ja"
 url: "https://llm-jp.github.io/full-duplex-bench-ja/"
 license: Apache-2.0
 version: 0.1.0
-date-released: "2026-11-05"   # TODO: 公開日に合わせる
+date-released: "2026-11-05"   # public release at the LLM-jp symposium; adjust if the date moves
 preferred-citation:
   type: conference-paper
-  title: "TODO: 日本音響学会 2026 年秋季研究発表会 講演タイトル"
+  languages: [ja]
+  title: "Full-Duplex-Bench-JA: 日本語フルデュプレックス音声対話モデル評価のためのベンチマーク構築"
   authors:
     - family-names: Abe
       given-names: Yuto
-    # TODO: 共著者
+      affiliation: "Waseda University / NII LLMC"
+      orcid: "https://orcid.org/0009-0000-6500-0851"
+    - family-names: Saeki
+      given-names: Mao
+      affiliation: "Waseda University / Equmenopolis"
+    - family-names: Takamichi
+      given-names: Shinnosuke
+      affiliation: "Keio University"
+    - family-names: Fujie
+      given-names: Shinya
+      affiliation: "Chiba Institute of Technology / Waseda University"
+    - family-names: Ogawa
+      given-names: Tetsuji
+      affiliation: "Waseda University"
+    - family-names: Higashinaka
+      given-names: Ryuichiro
+      affiliation: "Nagoya University / NII LLMC"
   collection-title: "日本音響学会 2026 年秋季研究発表会 講演論文集"
+  conference:
+    name: "日本音響学会 2026 年秋季研究発表会 (Autumn Meeting of the Acoustical Society of Japan, 2026)"
+    location: "金沢工業大学 (Kanazawa Institute of Technology)"
+    date-start: "2026-09-09"
+  notes: "講演番号 2-7-12 (talk 2-7-12, 2026-09-09)"
   year: 2026
+  month: 9
