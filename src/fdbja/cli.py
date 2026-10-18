@@ -9,8 +9,8 @@ Config-driven evaluation. Pipeline:
                    (backend chosen by ``asr.backend``)
     score-offline: score precomputed model outputs (binary TOR + VAP-distance)
 
-``score-offline`` is fully wired; ``infer`` / ``reconstruct`` depend on live
-model servers / the corpus and are partially stubbed.
+``reconstruct`` needs the corpus and ``infer`` a model adapter (server or API
+key); ``examples/dummy/`` runs every stage on a synthetic corpus instead.
 
 Usage:
     fdbja --help

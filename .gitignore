@@ -33,6 +33,8 @@ dist/
 .pytest_cache/
 .ruff_cache/
 results/
+# sample-human-eval bundles (stimulus manifests point at corpus clips)
+/human_eval/
 wandb/
 
 # Allow small example manifests / tiny fixtures explicitly if needed:
