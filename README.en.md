@@ -21,7 +21,10 @@ the backchannel (bc) task stays in the code as an experimental task and is not s
   [VAP-Realtime](https://github.com/inokoj/VAP-Realtime) (ships the CPC encoder) and the Japanese VAP
   checkpoint `vap_state_dict_jp_kyoto_20hz_2500msec.pt` from
   [maai-kyoto/vap_jp_kyoto](https://huggingface.co/maai-kyoto/vap_jp_kyoto) (MIT) placed under
-  `<VAP_REALTIME_ROOT>/asset/vap/`. Set `VAP_REALTIME_ROOT`.
+  `<VAP_REALTIME_ROOT>/asset/vap/`. Set `VAP_REALTIME_ROOT`. The file was removed from the `main`
+  branch of the Hugging Face repository on 2026-10-01, so fetch it from a pinned revision:
+  `https://huggingface.co/maai-kyoto/vap_jp_kyoto/resolve/fe24ac60d8fcc80463edde97ed90e3ceca5e5b88/vap_state_dict_jp_kyoto_20hz_2500msec.pt`
+  (SHA-256 `7ad0bf0b59e17a30ee55cee2aa6db89b84d64b670881ccd3f74b52ccede05d29`, the file the leaderboard was scored with).
 - One ASR extra for `fdbja transcribe`, which turns the recorded responses into character-level,
   time-aligned "jchat" JSON: `.[asr-reazon-whisperx]` (default; ReazonSpeech-ESPnet segments +
   WhisperX character alignment, the pipeline behind the published numbers), `.[asr-nemo]`
@@ -33,9 +36,28 @@ the backchannel (bc) task stays in the code as an experimental task and is not s
 
 ## Quick start
 
+Smoke test on a synthetic corpus (no LLM-jp-Zoom1, model server, API key or speech model needed;
+the "speech" is modulated noise, so **the numbers are meaningless** and only check the wiring):
+
 ```bash
 git clone https://github.com/llm-jp/full-duplex-bench-ja.git && cd full-duplex-bench-ja
+uv sync
+uv run python examples/dummy/make_dummy_corpus.py --out data/dummy_zoom1
+uv run fdbja reconstruct --config examples/dummy/config.yaml
+uv run fdbja infer --config examples/dummy/config.yaml           # the two trivial baselines
+uv run python examples/dummy/energy_asr.py --config examples/dummy/config.yaml   # energy-based stand-in for ASR
+uv run fdbja score-offline --config examples/dummy/config.yaml
+```
+
+Expected: `silence_baseline` has TOR 0 on both tasks and `always_talk_baseline` TOR 1 on Pause.
+`examples/dummy/energy_asr.py` also shows how to register your own ASR with `fdbja.asr.register_backend`.
+
+Real evaluation (point `corpus.zoom1_root` in `configs/default.yaml` at LLM-jp-Zoom1 and list your models):
+
+```bash
 uv sync --extra asr-reazon-whisperx
+uv run fdbja reconstruct --config configs/default.yaml
+uv run fdbja infer --config configs/default.yaml
 uv run fdbja transcribe --config configs/default.yaml
 uv run fdbja score-offline --config configs/default.yaml
 ```
@@ -58,7 +80,7 @@ Primary metric: **TOR** (binary takeover rate, ASR-based, same definition as Ful
 Experimental metric (off by default): **VAP-distance** (KL divergence between next-speaker
 distributions of a frozen VAP model given the human response vs. the model response); its
 validation against human judgements and existing metrics is still in progress, so label it as
-experimental when reporting. Degenerate baselines (`silence`, `always_talk`) are reported on every
+experimental when reporting. Trivial baselines (`silence`, `always_talk`) are reported on every
 task. A TurnNat-style likelihood score is included for comparison.
 
 ## Model adapters
@@ -71,7 +93,7 @@ the protocols and model names available **as of 2026-08**; we do not guarantee t
 
 Code: Apache-2.0. Backends and data are **not** covered:
 
-- Default VAP checkpoint `vap_state_dict_jp_kyoto_20hz_2500msec.pt` (maai-kyoto/vap_jp_kyoto): MIT.
+- Default VAP checkpoint `vap_state_dict_jp_kyoto_20hz_2500msec.pt` (maai-kyoto/vap_jp_kyoto, revision `fe24ac6`): MIT.
   VAP-Realtime code: MIT. CPC encoder: MIT. With the default configuration there is no
   non-commercial restriction on the scores. The older VAP-Realtime Japanese checkpoint
   (`vap_state_dict_jp_20hz_2500msec.pt`) is academic-only and loads through the same code path;

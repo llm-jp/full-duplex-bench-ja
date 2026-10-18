@@ -75,12 +75,16 @@ metrics:
     # 主指標は TOR とし、VAP-distance は true にした場合だけ参考値として併記する。
     enabled: false
     # Japanese VAP checkpoint (MIT): https://huggingface.co/maai-kyoto/vap_jp_kyoto
-    # Download into <VAP_REALTIME_ROOT>/asset/vap/ (or give an absolute path).
+    # Removed from `main` on 2026-10-01; fetch the pinned revision used for the leaderboard:
+    #   https://huggingface.co/maai-kyoto/vap_jp_kyoto/resolve/fe24ac60d8fcc80463edde97ed90e3ceca5e5b88/vap_state_dict_jp_kyoto_20hz_2500msec.pt
+    #   (SHA-256 7ad0bf0b59e17a30ee55cee2aa6db89b84d64b670881ccd3f74b52ccede05d29)
+    # Download into <VAP_REALTIME_ROOT>/asset/vap/.
     vap_model: vap_state_dict_jp_kyoto_20hz_2500msec.pt
     # CPC encoder shipped with VAP-Realtime (asset/cpc/).
     cpc_model: 60k_epoch4-d0f474de.pt
     frame_rate: 20
     context_len_sec: 2.5
+    use_gpu: true        # falls back to CPU when CUDA is unavailable
     # exp(-alpha * D_KL); set null to auto-calibrate (median desired -> 0.5)
     alpha: null
 

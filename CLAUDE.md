@@ -10,6 +10,8 @@
 
 ## 落とし穴
 
+- 合成コーパスでの通し試験は `tests/test_dummy_pipeline.py`(`examples/dummy/` を読み込む)。`examples/dummy/` を変えたらこれも通す。
+
 - `score-offline` は GT の jchat とモデル出力の ASR jchat が**両方**あるクリップだけを採点し、無いものは黙ってスキップする。
   「scored 0 clips」はデータ配置の問題であることが多い。
 - ASR は `fdbja transcribe`(`asr/`)。バックエンドは `reazonspeech_whisperx`(既定。論文・リーダーボードの経路)/
@@ -22,4 +24,4 @@
   `docs/results.json` を更新するときは全モデルを 1 回の実行で採点し直す。
 - `sample-human-eval` はリポジトリ直下の `webui/` を `__file__` 相対で探す。wheel でインストールすると見つからない。
 - Gemini のモデル名は config(`gemini-live-2.5-flash-preview`)とアダプタの既定値(`gemini-3.1-flash-live-preview`)で異なる。config が優先される。
-- VAP チェックポイントはリポジトリに同梱しない。既定は MIT の `maai-kyoto/vap_jp_kyoto`(20 Hz / 2.5 s)。旧来の VAP-Realtime 配布版は学術目的限定。チェックポイントを替えたら `metrics/turnnat.py` の手順でビット順を再検証し、比較対象を全部同じ重みで採点し直す。
+- VAP チェックポイントはリポジトリに同梱しない。既定は MIT の `maai-kyoto/vap_jp_kyoto`(20 Hz / 2.5 s)。2026-10-01 に HF の `main` から外れたのでリビジョン `fe24ac6` で取得する(README「VAP-distance の準備」)。旧来の VAP-Realtime 配布版は学術目的限定。チェックポイントを替えたら `metrics/turnnat.py` の手順でビット順を再検証し、比較対象を全部同じ重みで採点し直す。

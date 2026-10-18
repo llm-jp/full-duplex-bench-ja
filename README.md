@@ -21,19 +21,45 @@
 | 用途 | 必要なもの |
 |------|-----------|
 | 採点(二値 TOR) | Python 3.10 以上、[uv](https://docs.astral.sh/uv/) |
-| 採点(VAP-distance) | 上に加えて `.[vap]`(torch)、[VAP-Realtime](https://github.com/inokoj/VAP-Realtime) のローカル clone(CPC エンコーダ同梱)、日本語 VAP チェックポイント [`maai-kyoto/vap_jp_kyoto`](https://huggingface.co/maai-kyoto/vap_jp_kyoto) の `vap_state_dict_jp_kyoto_20hz_2500msec.pt`(MIT)を `<VAP_REALTIME_ROOT>/asset/vap/` に置く |
+| 採点(VAP-distance) | 上に加えて `.[vap]`(torch)、[VAP-Realtime](https://github.com/inokoj/VAP-Realtime) のローカル clone(CPC エンコーダ同梱)、日本語 VAP チェックポイント [`maai-kyoto/vap_jp_kyoto`](https://huggingface.co/maai-kyoto/vap_jp_kyoto) の `vap_state_dict_jp_kyoto_20hz_2500msec.pt`(MIT。リビジョン固定で取得)を `<VAP_REALTIME_ROOT>/asset/vap/` に置く。手順は下の「VAP-distance の準備」 |
 | モデル出力の ASR 転写(`transcribe`) | いずれか 1 つの extra: `.[asr-reazon-whisperx]`(既定。ReazonSpeech-ESPnet + WhisperX。論文の数値を出した経路)/ `.[asr-nemo]`(ReazonSpeech NeMo v2、整列器なしで高速)/ `.[asr-k2]`(ReazonSpeech k2 v2、CPU 可)。モデルの重みは初回実行時に Hugging Face Hub から取得 |
 | 評価クリップの生成 | LLM-jp-Zoom1 のローカルコピー([DATASET.md](DATASET.md)) |
 | モデル推論(`infer`) | 評価対象に応じて Moshi 系 WebSocket サーバ、`GOOGLE_API_KEY`、`OPENAI_API_KEY`、`XAI_API_KEY` |
 
 ## クイックスタート
 
+### 1. 動作確認(合成データ)
+
+LLM-jp-Zoom1 が手元に無くても、合成の小さなコーパスでパイプライン全体
+(`reconstruct` → `infer` → `transcribe` → `score-offline`)を通せます。
+モデルサーバ・API キー・音声認識モデルは不要で、CPU で 1 分かかりません。
+音声は振幅変調した雑音、文字は仮の記号なので、**出てくる数値に意味はありません**(インストールと配線の確認用)。
+
 ```bash
 git clone https://github.com/llm-jp/full-duplex-bench-ja.git && cd full-duplex-bench-ja
-uv sync                                                        # コア + 開発ツール
-uv sync --extra asr-reazon-whisperx                            # ASR バックエンド(1 つ選ぶ。下の表を参照)
-uv run fdbja transcribe --config configs/default.yaml          # モデル応答を文字単位の jchat に転写
-uv run fdbja score-offline --config configs/default.yaml       # 評価ディレクトリの出力を採点
+uv sync                                                                          # コア + 開発ツール
+uv run python examples/dummy/make_dummy_corpus.py --out data/dummy_zoom1          # 合成コーパス(10 セッション)
+uv run fdbja reconstruct --config examples/dummy/config.yaml                     # 事象検出 → 20 秒クリップ + manifest
+uv run fdbja infer --config examples/dummy/config.yaml                           # 自明なベースライン 2 本の応答を生成
+uv run python examples/dummy/energy_asr.py --config examples/dummy/config.yaml   # 応答を jchat に(音量ベースの代用品)
+uv run fdbja score-offline --config examples/dummy/config.yaml                   # 採点 → results/dummy/results.json
+```
+
+常時沈黙(`silence_baseline`)が両タスクで TOR 0、常時発話(`always_talk_baseline`)が Pause で TOR 1 になれば正常です
+(代用品の転写は常時発話を 1 つの長い発話として返すので、Smooth TT の判定窓に発話の開始が無く TOR 0 になります)。
+`examples/dummy/energy_asr.py` は、自前の ASR を `fdbja.asr.register_backend` で登録して `transcribe` に使う例にもなっています。
+VAP-distance も確かめる場合は、下の「VAP-distance の準備」を済ませ、`examples/dummy/config.yaml` の
+`metrics.vap_distance.enabled` を `true` にして `score-offline` を再実行します(CPU で数分)。
+
+### 2. 実データで評価する
+
+```bash
+uv sync --extra asr-reazon-whisperx                         # ASR バックエンド(1 つ選ぶ。下の表を参照)
+# configs/default.yaml の corpus.zoom1_root を LLM-jp-Zoom1 の場所に、models を評価対象に合わせて書き換える
+uv run fdbja reconstruct --config configs/default.yaml      # LLM-jp-Zoom1 → 事象検出 → 20 秒クリップ + manifest
+uv run fdbja infer --config configs/default.yaml            # 話者 A の音声をモデルに流し応答を録る
+uv run fdbja transcribe --config configs/default.yaml       # モデル応答を文字単位の jchat に転写
+uv run fdbja score-offline --config configs/default.yaml    # 評価ディレクトリの出力を採点
 ```
 
 `score-offline` は `corpus.eval_dir`(既定 `./data/eval`)配下の次のファイルを読みます
@@ -52,6 +78,22 @@ data/eval/
 (2) 各クリップの `combined.wav` を上の場所に置く(または `ModelAdapter` を実装して `infer` で生成する)、
 (3) `transcribe` で応答側チャンネル(ch1)を jchat に転写する、(4) `score-offline` を走らせる、の 4 段です。
 config の `models` に `name` と `domain: in|out` を追加してください。
+
+### VAP-distance の準備(実験的指標を使う場合のみ)
+
+```bash
+uv sync --extra vap                                   # ASR の extra と併用するなら --extra を並べる
+git clone https://github.com/inokoj/VAP-Realtime.git ../VAP-Realtime   # CPC エンコーダ(asset/cpc/)を同梱
+curl -L -o ../VAP-Realtime/asset/vap/vap_state_dict_jp_kyoto_20hz_2500msec.pt \
+  https://huggingface.co/maai-kyoto/vap_jp_kyoto/resolve/fe24ac60d8fcc80463edde97ed90e3ceca5e5b88/vap_state_dict_jp_kyoto_20hz_2500msec.pt
+shasum -a 256 ../VAP-Realtime/asset/vap/vap_state_dict_jp_kyoto_20hz_2500msec.pt
+# -> 7ad0bf0b59e17a30ee55cee2aa6db89b84d64b670881ccd3f74b52ccede05d29
+export VAP_REALTIME_ROOT=$(cd ../VAP-Realtime && pwd)
+```
+
+このチェックポイントは 2026-10-01 に `maai-kyoto/vap_jp_kyoto` の `main` から外されたため、
+上のようにリビジョン(`fe24ac6`)を固定して取得します。リーダーボードの VAP-distance はこのファイル
+(SHA-256 が上と一致するもの)で採点しました。GPU が無い環境では config の `metrics.vap_distance.use_gpu: false` で CPU を使います。
 
 ## 主要コマンド
 
@@ -88,9 +130,7 @@ ESPnet の転写文は完全に再現され、文字の開始時刻の差は中�
 任意の音声を単発で転写するには
 `uv run fdbja transcribe --backend reazonspeech_nemo --wav response.wav --out ./text` が使えます。
 自前の ASR を使う場合は `fdbja.asr.ASRModel` を実装して `fdbja.asr.register_backend` で登録します。
-転写文の出どころ(ReazonSpeech-ESPnet)と文字の時刻付け(WhisperX の wav2vec 2.0 整列)は分かれているので、
-精度の高い日本語 ASR(例: kotoba-whisper、parakeet-tdt v3、ReazonSpeech の新版)に転写側だけ差し替える拡張は
-0.2 系の候補です。差し替えた場合も既定バックエンドの結果とは別枝として報告してください。
+自前の ASR に差し替えた場合は、既定バックエンドの結果とは別の条件として報告してください。
 
 ### モデルアダプタ
 
@@ -99,7 +139,7 @@ ESPnet の転写文は完全に再現され、文字の開始時刻の差は中�
 | `moshi_ws` | J-Moshi / J-Moshi-ext / LLM-jp-Moshi-v1 など Moshi 系の WebSocket サーバ | `.[infer]` |
 | `gemini_live` | Gemini Live API | `.[gemini]` |
 | `openai_realtime` | OpenAI Realtime プロトコル(GPT-Realtime、Grok Voice) | `.[realtime]` |
-| `silence` / `always_talk` | 退化ベースライン(常時沈黙 / 常時発話) | なし |
+| `silence` / `always_talk` | 自明なベースライン(常時沈黙 / 常時発話) | なし |
 
 商用 API のアダプタは **2026-08 時点**のプロトコルとモデル名
 (`gemini-live-2.5-flash-preview`、`gpt-realtime`、`grok-voice-latest`)で動作確認しています。
@@ -131,7 +171,7 @@ API 側の変更への追随は保証しません。動かなくなった場合�
 実装しています。参照応答を必要としない絶対尺度で、位置づけは
 [docs/related_metrics.md](docs/related_metrics.md) を参照。
 
-いずれの指標にも退化解があるため(沈黙し続ければ Pause / BC は「正解」、喋り続ければ Smooth TT は
+いずれの指標にも自明な解があるため(沈黙し続ければ Pause / BC は「正解」、喋り続ければ Smooth TT は
 「正解」)、`silence_baseline` と `always_talk_baseline` を全タスクで併記します。
 
 Backchannel はモデルの能力に依存する任意タスクとして扱います。サーバ側のターン検出により
@@ -170,9 +210,10 @@ src/fdbja/
   asr/                      # ASR バックエンド(reazonspeech_nemo / reazonspeech_k2 / reazonspeech_whisperx)
   human_eval.py  analyze_human_eval.py  pause_analysis.py
 configs/default.yaml        # 評価設定(検出閾値・モデル一覧・レイアウト)
+examples/dummy/             # 合成コーパスの生成・音量ベースの代用 ASR・動作確認用 config
 webui/                      # 人手評価用の静的 Web UI(依存ライブラリなし)
 docs/                       # リーダーボード(GitHub Pages)と設計メモ
-tests/                      # pytest(コアのみ、外部依存なし)
+tests/                      # pytest(コアのみ、外部依存なし。合成コーパスでの通し試験を含む)
 ```
 
 config 駆動で、**データはコードと別レイヤ**として扱います。自分のモデルを評価するには
@@ -192,7 +233,7 @@ config 駆動で、**データはコードと別レイヤ**として扱います
 | 構成要素 | 条件 | 出典 |
 |---------|------|------|
 | VAP-Realtime(コード) | MIT | [inokoj/VAP-Realtime](https://github.com/inokoj/VAP-Realtime) |
-| 日本語 VAP チェックポイント `vap_state_dict_jp_kyoto_20hz_2500msec.pt`(既定) | MIT。本リポジトリには含めず、Hugging Face から取得 | [maai-kyoto/vap_jp_kyoto](https://huggingface.co/maai-kyoto/vap_jp_kyoto) |
+| 日本語 VAP チェックポイント `vap_state_dict_jp_kyoto_20hz_2500msec.pt`(既定) | MIT。本リポジトリには含めず、Hugging Face からリビジョン `fe24ac6` を指定して取得 | [maai-kyoto/vap_jp_kyoto](https://huggingface.co/maai-kyoto/vap_jp_kyoto) |
 | 日本語 VAP チェックポイント `vap_state_dict_jp_20hz_2500msec.pt`(2026-07-08 版のリーダーボードで使用。現行版は MIT チェックポイントで再採点済み) | **学術目的のみ**(academic purposes only)。同じコード経路で読み込める | VAP-Realtime README「Lisence」節 |
 | CPC エンコーダ `60k_epoch4-d0f474de.pt` | MIT(facebookresearch/CPC_audio) | 同上 |
 | ReazonSpeech(コード、`reazonspeech-{nemo,k2,espnet}-asr`) | Apache-2.0 | [reazon-research/ReazonSpeech](https://github.com/reazon-research/ReazonSpeech) |
@@ -231,7 +272,7 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 - **(準備中)** VAP-distance を実験的指標に位置づけ直し、既定で無効に。リーダーボードの順位を TOR の適合率に変更(2026-10-12)。
 - **0.1.0(公開初版、準備中)** — `reconstruct` → `infer` → `transcribe` → `score-offline` の評価パイプライン、
   ASR バックエンド 3 種(ReazonSpeech NeMo / k2 / ESPnet+WhisperX)、
-  TOR と VAP-distance、TurnNat 系スコア、退化ベースライン、Pause のギャップ長別分析、
+  TOR と VAP-distance、TurnNat 系スコア、自明なベースライン、Pause のギャップ長別分析、
   人手評価バンドル生成と集計、リーダーボード(6 モデル: J-Moshi / J-Moshi-ext / LLM-jp-Moshi-v1 /
   Gemini Live / GPT-Realtime / Grok Voice)。
   VAP チェックポイントの既定を MIT の `maai-kyoto/vap_jp_kyoto`(20 Hz / 2.5 s)に変更(ビット順の再検証済み)。
@@ -248,7 +289,8 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 | `ASR backend '...' is missing a dependency` | バックエンドの extra が入っていません。`uv sync --extra asr-reazon-whisperx`(NeMo は `asr-nemo`、k2 は `asr-k2`)。extra 同士は排他なので環境を分けてください |
 | `.[asr-reazon-whisperx]` の import で `numpy.core.multiarray failed to import` | `ctc-segmentation` の wheel が numpy 1.x 向けにビルドされています。`uv pip install cython setuptools` の後、`uv pip install --no-build-isolation --no-cache --reinstall --no-binary ctc-segmentation ctc-segmentation` で手元の numpy に対して再ビルド |
 | Blackwell 世代の GPU(sm_120)で ASR が CPU に落ちる / CUDA エラー | `uv pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128` を extra より先に入れる(下の torch の行も参照) |
-| `metrics.vap_distance.vap_realtime_root or $VAP_REALTIME_ROOT must be set` | VAP-Realtime を clone し、`VAP_REALTIME_ROOT=/path/to/VAP-Realtime` を設定。`asset/cpc/` は clone に含まれる。`asset/vap/` には [maai-kyoto/vap_jp_kyoto](https://huggingface.co/maai-kyoto/vap_jp_kyoto) から `vap_state_dict_jp_kyoto_20hz_2500msec.pt` を置く |
+| `metrics.vap_distance.vap_realtime_root or $VAP_REALTIME_ROOT must be set` | VAP-Realtime を clone し、`VAP_REALTIME_ROOT=/path/to/VAP-Realtime` を設定。`asset/cpc/` は clone に含まれる。`asset/vap/` には「VAP-distance の準備」の手順で `vap_state_dict_jp_kyoto_20hz_2500msec.pt` を置く |
+| Hugging Face から `vap_state_dict_jp_kyoto_20hz_2500msec.pt` が見つからない(404) | 2026-10-01 に `main` から外されました。URL の `main` をリビジョン `fe24ac60d8fcc80463edde97ed90e3ceca5e5b88` に置き換える(「VAP-distance の準備」) |
 | VAP チェックポイントを替えたら D_KL の値が変わった | 仕様どおりです。VAP は凍結した計測器で、チェックポイントが違えば値は比較できません。比較する全モデルを同じチェックポイントで採点し直し、`results.json` の `vap_checkpoint` を確認してください |
 | torch が Blackwell GPU(sm_120)で動かない | `uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128` で cu128 以上を入れる |
 | α(`exp(-α·D_KL)` のスケール)がモデル追加のたびに変わる | α はモデル集合から自動較正されます。モデルを追加したら全モデルを 1 回の `score-offline` で採点し直してください |
