@@ -55,6 +55,9 @@ models:
     domain: out
   - name: always_talk_baseline
     adapter: always_talk
+    # Must be speech (TOR reads the ASR). Default loops the voiced frames of the input clip;
+    # set source_wav to a speech file to reproduce a fixed loop as in the v4_eval release.
+    source: auto
     domain: out
 
 # ASR of the model responses (``fdbja transcribe``) for binary TOR.
