@@ -69,6 +69,10 @@ models:
 asr:
   backend: reazonspeech_whisperx
   options: {}          # constructor kwargs, e.g. {device: cuda:1} or {char_seconds: 0.1, bridge_seconds: 0.5}
+  # A channel with no frame above min_rms (-80 dBFS) is not sent to the ASR (transcript = []):
+  # recognisers hallucinate on digital silence. drop_unvoiced_items also drops characters whose
+  # span has no voiced frame (off: the published numbers were computed without it).
+  silence_gate: {min_rms: 1.0e-4, drop_unvoiced_items: false}
 
 metrics:
   tor:
