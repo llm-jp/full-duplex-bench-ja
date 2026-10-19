@@ -155,7 +155,10 @@ def tbu_scores(nll: np.ndarray, boundaries: Sequence[float],
         lo = max(0, int(round((tau - context) * frame_rate)))
         hi = min(len(nll), int(round(tau * frame_rate)))
         if hi > lo:
-            out.append(float(nll[lo:hi].mean()))
+            win = nll[lo:hi]
+            win = win[~np.isnan(win)]   # frames without a VAP output (time-aligned input)
+            if len(win):
+                out.append(float(win.mean()))
     return np.asarray(out, dtype=np.float64)
 
 
@@ -177,14 +180,24 @@ def aggregate(unit_scores: np.ndarray, lam: float = 0.5,
 def turnnat_score(probs: np.ndarray, times: np.ndarray,
                   audio_a: np.ndarray, audio_b: np.ndarray, sample_rate: int,
                   frame_rate: int = 20, lam: float = 0.5, top_k: int = 5,
-                  msb_first: bool = True) -> Tuple[float, dict]:
+                  msb_first: bool = False) -> Tuple[float, dict]:
     """End-to-end score for one clip.
 
     Args:
         probs: ``(T, 256)`` VAP distributions for the stereo pair (A, B), as
             returned by ``fdbja.vap.base.VAPModel.probs``.
-        times: ``(T,)`` frame centres in seconds (used only for reporting).
+        times: ``(T,)`` time of each VAP frame in seconds = end of the audio
+            the frame has seen (``VAPRealtimeBackend.probs`` returns 0.07,
+            0.12, ...). Frame ``k`` is scored against the observed future
+            starting at voice-activity frame ``round(times[k] * frame_rate)``;
+            pass ``None`` to align by index from 0 (the pre-2026-10 behaviour).
         audio_a / audio_b: the same two mono channels the probs came from.
+        msb_first: class bit order. ``False`` (LSB-first) is the order verified
+            for both supported checkpoints (``pattern_to_class``). Until
+            2026-10-19 this defaulted to ``True``, contradicting that check;
+            on 40 human pause clips the mean frame NLL is 3.36 (paper
+            checkpoint) / 3.25 (MIT) with ``False`` vs 4.44 / 5.02 with the
+            reversed order, so scores computed with the old default are wrong.
 
     Returns ``(score, detail)``; ``detail`` carries the per-TBU scores so an
     event-level analysis can reuse them.
@@ -193,13 +206,20 @@ def turnnat_score(probs: np.ndarray, times: np.ndarray,
     va_b = voice_activity(audio_b, sample_rate, frame_rate)
     bits = future_pattern(va_a, va_b, frame_rate)
     classes = pattern_to_class(bits, msb_first=msb_first)
-    nll = nll_series(probs, classes)
+    if times is not None and len(times):
+        idx = np.rint(np.asarray(times) * frame_rate).astype(int)
+        keep = (idx >= 0) & (idx < len(classes))
+        # NLL frame j now refers to VA frame j, so tbu_scores' index arithmetic holds
+        nll = np.full(len(classes), np.nan)
+        nll[idx[keep]] = nll_series(probs[keep], classes[idx[keep]])
+    else:
+        nll = nll_series(probs, classes)
     units = tbu_scores(nll, boundary_times(va_a, va_b, frame_rate), frame_rate)
     return aggregate(units, lam=lam, top_k=top_k), {
         "n_tbu": int(len(units)),
         "mean_nll": float(units.mean()) if len(units) else float("nan"),
-        "frame_nll": nll,
+        "frame_nll": nll,   # indexed by voice-activity frame; NaN = no VAP output
         "unit_scores": units,
-        "n_frames": int(len(nll)),
-        "duration": float(times[-1]) if len(times) else 0.0,
+        "n_frames": int(np.isfinite(nll).sum()),
+        "duration": float(times[-1]) if times is not None and len(times) else 0.0,
     }
