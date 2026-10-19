@@ -63,10 +63,16 @@ class AlwaysTalkAdapter(ModelAdapter):
 
     name = "always_talk"
     SOURCES = ("auto", "wav", "input_loop", "noise")
+    #: how voiced runs are joined into the loop (2026-10-19 trial: "concat" made the ASR split the
+    #: loop at its seams, so smooth_tt counted a fresh B onset after A's turn end; TOR 0.40)
+    #:   concat    plain concatenation, plain tiling
+    #:   crossfade linear crossfade of ``fade_ms`` at every seam (between runs and between loops)
+    #:   longest   only the longest voiced run, ends faded over ``fade_ms``, plain tiling
+    JOINS = ("concat", "crossfade", "longest")
 
     def __init__(self, level: float = 0.035, seed: int = 0, source: str = "auto",
                  source_wav: str = None, frame_s: float = 0.05,
-                 voiced_rel: float = 0.1):
+                 voiced_rel: float = 0.1, join: str = "concat", fade_ms: float = 30.0):
         if source not in self.SOURCES:
             raise ValueError(f"source must be one of {self.SOURCES}: {source!r}")
         if source == "wav" and not source_wav:
@@ -77,21 +83,55 @@ class AlwaysTalkAdapter(ModelAdapter):
         self.source_wav = source_wav
         self.frame_s = float(frame_s)
         self.voiced_rel = float(voiced_rel)
+        if join not in self.JOINS:
+            raise ValueError(f"join must be one of {self.JOINS}: {join!r}")
+        self.join = join
+        self.fade_ms = float(fade_ms)
 
-    def _voiced(self, x: np.ndarray, sample_rate: int) -> np.ndarray:
-        """Samples of the frames whose RMS exceeds ``voiced_rel`` x the 99th percentile."""
+    def _voiced_runs(self, x: np.ndarray, sample_rate: int) -> list:
+        """Contiguous runs of frames whose RMS exceeds ``voiced_rel`` x the 99th percentile."""
         hop = max(1, int(round(self.frame_s * sample_rate)))
         n = len(x) // hop
         if n == 0:
-            return np.zeros(0, dtype=np.float32)
+            return []
         frames = x[:n * hop].reshape(n, hop)
         rms = np.sqrt((frames.astype(np.float64) ** 2).mean(axis=1))
         ref = np.percentile(rms, 99)
         if ref <= 0:
-            return np.zeros(0, dtype=np.float32)
-        return frames[rms > self.voiced_rel * ref].reshape(-1).astype(np.float32)
+            return []
+        on = rms > self.voiced_rel * ref
+        runs, i = [], 0
+        while i < n:
+            if not on[i]:
+                i += 1
+                continue
+            j = i
+            while j < n and on[j]:
+                j += 1
+            runs.append(frames[i:j].reshape(-1).astype(np.float32))
+            i = j
+        return runs
 
-    def _loop_source(self, sample_rate: int, input_audio: np.ndarray) -> np.ndarray:
+    def _voiced(self, x: np.ndarray, sample_rate: int) -> np.ndarray:
+        runs = self._voiced_runs(x, sample_rate)
+        return np.concatenate(runs) if runs else np.zeros(0, dtype=np.float32)
+
+    @staticmethod
+    def _xfade_join(segs: list, nf: int, n_out: int) -> np.ndarray:
+        """Join ``segs`` cyclically with an ``nf``-sample linear crossfade until ``n_out`` samples."""
+        out = segs[0].copy()
+        k = 1
+        while len(out) < n_out:
+            s = segs[k % len(segs)]
+            k += 1
+            f = min(nf, len(out), len(s))
+            if f > 0:
+                w = np.linspace(0.0, 1.0, f, dtype=np.float32)
+                out[-f:] = out[-f:] * (1 - w) + s[:f] * w
+            out = np.concatenate([out, s[f:]])
+        return out[:n_out]
+
+    def _loop_runs(self, sample_rate: int, input_audio: np.ndarray) -> list:
         if self.source == "wav":
             import soundfile as sf
             data, sr = sf.read(self.source_wav, dtype="float32")
@@ -101,11 +141,11 @@ class AlwaysTalkAdapter(ModelAdapter):
                 import torch
                 import torchaudio.functional as AF
                 data = AF.resample(torch.from_numpy(data), sr, sample_rate).numpy()
-            return self._voiced(data, sample_rate)
+            return self._voiced_runs(data, sample_rate)
         x = np.asarray(input_audio, dtype=np.float32)
         if x.ndim == 2:
             x = x.mean(axis=1)
-        return self._voiced(x, sample_rate)
+        return self._voiced_runs(x, sample_rate)
 
     def _noise(self, n: int) -> np.ndarray:
         rng = np.random.default_rng(self.seed)
@@ -120,12 +160,24 @@ class AlwaysTalkAdapter(ModelAdapter):
         if self.source == "noise":
             out = self._noise(n)
         else:
-            seg = self._loop_source(sample_rate, input_audio)
-            if len(seg) == 0:
+            runs = self._loop_runs(sample_rate, input_audio)
+            if not runs:
                 raise ValueError(
                     "always_talk: no voiced frames in the loop source "
                     f"({self.source}); give source_wav with speech")
-            out = np.resize(seg, n).astype(np.float32)   # tile, then cut to n
+            nf = int(round(self.fade_ms / 1000.0 * sample_rate))
+            if self.join == "crossfade":
+                out = self._xfade_join(runs, nf, n).astype(np.float32)
+            elif self.join == "longest":
+                seg = max(runs, key=len).copy()
+                f = min(nf, len(seg) // 2)
+                if f > 0:
+                    w = np.linspace(0.0, 1.0, f, dtype=np.float32)
+                    seg[:f] *= w
+                    seg[-f:] *= w[::-1]
+                out = np.resize(seg, n).astype(np.float32)
+            else:
+                out = np.resize(np.concatenate(runs), n).astype(np.float32)   # tile, cut to n
             rms = float(np.sqrt((out.astype(np.float64) ** 2).mean()))
             if rms > 0:
                 out *= self.level / rms

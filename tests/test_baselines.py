@@ -49,3 +49,16 @@ def test_always_talk_rejects_a_silent_source():
 def test_noise_mode_is_still_available():
     y = AlwaysTalkAdapter(source="noise", level=0.05).infer(np.zeros(SR, np.float32), SR).response_audio
     assert y.std() > 0
+
+
+@pytest.mark.parametrize("join", ["concat", "crossfade", "longest"])
+def test_always_talk_join_modes_fill_the_clip(join):
+    x = _speechy()
+    y = AlwaysTalkAdapter(join=join).infer(x, SR).response_audio
+    assert y.shape == x.shape
+    assert (frame_rms(y, SR, 0.05)[1:-1] > 0.002).all()
+
+
+def test_unknown_join_is_rejected():
+    with pytest.raises(ValueError):
+        AlwaysTalkAdapter(join="splice")
