@@ -48,7 +48,11 @@ class AlwaysTalkAdapter(ModelAdapter):
 
     ``source`` selects the signal:
 
-    * ``"auto"`` (default): ``source_wav`` if given, else ``"input_loop"``.
+    * ``"auto"`` (default): ``source_wav`` if given, else ``"bundled"``.
+    * ``"bundled"``: the 60 s Open JTalk loop (voice "Mei", CC BY 3.0; see
+      ``fdbja/assets/README.md``), synthesised on first use and cached
+      (:mod:`fdbja.adapters.always_talk_loop`). Needs ``pyopenjtalk``; without
+      it the adapter stops and asks for ``source_wav``.
     * ``"wav"``: loop the mono speech file ``source_wav`` over the clip.
     * ``"input_loop"``: concatenate the voiced frames of the input clip
       (speaker A) and loop them over the clip, so there is real speech without
@@ -57,12 +61,17 @@ class AlwaysTalkAdapter(ModelAdapter):
     * ``"noise"``: the old band-limited noise. Only meaningful with an
       energy-based stand-in ASR (``examples/dummy``); do not report it.
 
+    ``input_loop`` is kept for comparison only: with reazonspeech_whisperx its
+    seams make the ASR split the loop, so smooth_tt counts a fresh B onset
+    after A's turn end (TOR 0.20-0.40 on 10 held-out clips, any ``join``,
+    vs 0.00 for a fixed speech loop; 2026-10-19).
+
     Only voiced frames are looped, so the response has no pauses; it is then
     RMS-normalised to ``level`` (0.035 ~ the v4_eval loop, 0.0345).
     """
 
     name = "always_talk"
-    SOURCES = ("auto", "wav", "input_loop", "noise")
+    SOURCES = ("auto", "bundled", "wav", "input_loop", "noise")
     #: how voiced runs are joined into the loop (2026-10-19 trial: "concat" made the ASR split the
     #: loop at its seams, so smooth_tt counted a fresh B onset after A's turn end; TOR 0.40)
     #:   concat    plain concatenation, plain tiling
@@ -77,14 +86,19 @@ class AlwaysTalkAdapter(ModelAdapter):
             raise ValueError(f"source must be one of {self.SOURCES}: {source!r}")
         if source == "wav" and not source_wav:
             raise ValueError("source='wav' needs source_wav")
+        if join not in self.JOINS:
+            raise ValueError(f"join must be one of {self.JOINS}: {join!r}")
         self.level = float(level)
         self.seed = int(seed)
-        self.source = ("wav" if source_wav else "input_loop") if source == "auto" else source
+        if source == "auto":
+            source = "wav" if source_wav else "bundled"
+        if source == "bundled":
+            from fdbja.adapters.always_talk_loop import ensure_loop
+            source, source_wav = "wav", ensure_loop()
+        self.source = source
         self.source_wav = source_wav
         self.frame_s = float(frame_s)
         self.voiced_rel = float(voiced_rel)
-        if join not in self.JOINS:
-            raise ValueError(f"join must be one of {self.JOINS}: {join!r}")
         self.join = join
         self.fade_ms = float(fade_ms)
 

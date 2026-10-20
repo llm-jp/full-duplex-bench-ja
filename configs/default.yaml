@@ -55,8 +55,9 @@ models:
     domain: out
   - name: always_talk_baseline
     adapter: always_talk
-    # Must be speech (TOR reads the ASR). Default loops the voiced frames of the input clip;
-    # set source_wav to a speech file to reproduce a fixed loop as in the v4_eval release.
+    # Must be speech (TOR reads the ASR). Default: a 60 s Open JTalk loop (voice "Mei", CC BY 3.0)
+    # synthesised on first use into ~/.cache/fdbja (needs `pip install pyopenjtalk`);
+    # source_wav overrides it.
     source: auto
     domain: out
 

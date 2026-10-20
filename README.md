@@ -139,7 +139,7 @@ ESPnet の転写文は完全に再現され、文字の開始時刻の差は中�
 | `moshi_ws` | J-Moshi / J-Moshi-ext / LLM-jp-Moshi-v1 など Moshi 系の WebSocket サーバ | `.[infer]` |
 | `gemini_live` | Gemini Live API | `.[gemini]` |
 | `openai_realtime` | OpenAI Realtime プロトコル(GPT-Realtime、Grok Voice) | `.[realtime]` |
-| `silence` / `always_talk` | 自明なベースライン(常時沈黙 / 常時発話) | なし |
+| `silence` / `always_talk` | 自明なベースライン(常時沈黙 / 常時発話)。常時発話は初回に Open JTalk(声質 Mei、CC BY 3.0、帰属表示は [src/fdbja/assets/README.md](src/fdbja/assets/README.md))で 60 秒の音声ループを生成してキャッシュ | 常時発話のみ `pyopenjtalk`(無い場合は `source_wav` を指定) |
 
 商用 API のアダプタは **2026-08 時点**のプロトコルとモデル名
 (`gemini-live-2.5-flash-preview`、`gpt-realtime`、`grok-voice-latest`)で動作確認しています。
