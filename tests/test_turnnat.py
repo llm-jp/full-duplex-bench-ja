@@ -117,3 +117,34 @@ class AggregateTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TurnNatScoreDefaultsTest(unittest.TestCase):
+    """turnnat_score must use the verified LSB-first order and time alignment."""
+
+    def _clip(self):
+        from fdbja.metrics.turnnat import turnnat_score  # noqa: F401
+        sr = 16000
+        a = np.zeros(10 * sr, dtype=np.float32)
+        b = np.zeros(10 * sr, dtype=np.float32)
+        a[: 4 * sr] = 0.3          # A talks 0-4 s, B 5-9 s
+        b[5 * sr: 9 * sr] = 0.3
+        va_a, va_b = voice_activity(a, sr, FR), voice_activity(b, sr, FR)
+        cls = pattern_to_class(future_pattern(va_a, va_b, FR), msb_first=False)
+        # an oracle predictor: all mass on the true LSB-first class, frames timed
+        # like VAPRealtimeBackend (end of the seen audio, starting at 0.05 s)
+        n = len(cls) - 1
+        probs = np.full((n, 256), 1e-9)
+        probs[np.arange(n), cls[1:n + 1]] = 1.0
+        times = (np.arange(n) + 1) / FR
+        return probs, times, a, b, sr
+
+    def test_default_order_and_alignment_reward_an_oracle(self):
+        from fdbja.metrics.turnnat import turnnat_score
+        probs, times, a, b, sr = self._clip()
+        score, detail = turnnat_score(probs, times, a, b, sr, FR)
+        self.assertGreater(score, -1e-3)        # NLL ~ 0 for the oracle
+        reversed_score, _ = turnnat_score(probs, times, a, b, sr, FR, msb_first=True)
+        self.assertLess(reversed_score, score - 1.0)
+        index_aligned, _ = turnnat_score(probs, None, a, b, sr, FR)
+        self.assertLess(index_aligned, score)   # off by one frame at every boundary

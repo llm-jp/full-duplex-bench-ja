@@ -22,6 +22,7 @@ models:
     domain: out
   - name: always_talk_baseline
     adapter: always_talk
+    source: input_loop   # no Open JTalk needed; fine with the energy stand-in ASR (not for real numbers)
     domain: out
 
 asr:

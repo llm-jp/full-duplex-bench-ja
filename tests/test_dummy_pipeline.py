@@ -48,7 +48,7 @@ def test_dummy_pipeline_end_to_end(tmp_path):
     tor = {(r["task"], r["model"]): r["TOR"] for r in results["summary"]}
     assert set(tor) == {(t, m) for t in ("pause", "smooth_tt")
                         for m in ("silence_baseline", "always_talk_baseline")}
-    # silence never takes the floor; continuous noise always overlaps a pause
+    # silence never takes the floor; looped (stand-in) speech always overlaps a pause
     assert tor[("pause", "silence_baseline")] == 0.0
     assert tor[("smooth_tt", "silence_baseline")] == 0.0
     assert tor[("pause", "always_talk_baseline")] == 1.0

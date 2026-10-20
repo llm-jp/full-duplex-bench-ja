@@ -81,7 +81,7 @@ Experimental metric (off by default): **VAP-distance** (KL divergence between ne
 distributions of a frozen VAP model given the human response vs. the model response); its
 validation against human judgements and existing metrics is still in progress, so label it as
 experimental when reporting. Trivial baselines (`silence`, `always_talk`) are reported on every
-task. A TurnNat-style likelihood score is included for comparison.
+task. A TurnNat-style likelihood score is included for comparison. The `always_talk` speech loop is synthesised on first use with Open JTalk (voice "Mei", CC BY 3.0; attribution in [src/fdbja/assets/README.md](src/fdbja/assets/README.md)) and needs `pyopenjtalk`, or pass `source_wav`.
 
 ## Model adapters
 

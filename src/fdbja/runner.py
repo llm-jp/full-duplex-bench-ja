@@ -180,8 +180,9 @@ def run_transcribe(config: Config, limit: int = 0, models=None, tasks=None,
     options = dict(asr_cfg.get("options", {}) or {})
     if device:
         options["device"] = device
+    gate = dict(asr_cfg.get("silence_gate", {}) or {})
     asr = load_asr(name, **options)
-    log(f"[asr] backend={name} options={options}")
+    log(f"[asr] backend={name} options={options} silence_gate={gate or 'default'}")
 
     eval_dir = config.eval_dir
     layout = config.layout()
@@ -206,7 +207,7 @@ def run_transcribe(config: Config, limit: int = 0, models=None, tasks=None,
                 if os.path.exists(asr_json) and not overwrite:
                     skipped += 1
                     continue
-                transcribe_file(asr, model_wav, asr_json)
+                transcribe_file(asr, model_wav, asr_json, gate=gate)
                 done += 1
             log(f"[{task}/{mname}] transcribed {done} clips"
                 + (f" (kept {skipped} existing)" if skipped else ""))
@@ -215,20 +216,27 @@ def run_transcribe(config: Config, limit: int = 0, models=None, tasks=None,
 
 
 def transcribe_file(asr, wav_path: str, out_json: str, channel: int = 1,
-                    speaker: str = "B") -> List[Dict[str, Any]]:
+                    speaker: str = "B", gate: Dict[str, Any] = None
+                    ) -> List[Dict[str, Any]]:
     """Transcribe one response channel of ``wav_path`` and write jchat JSON.
 
     ``channel`` selects the response channel of a stereo file (ch1 = model
-    response in ``combined.wav``); a mono file is used as is.
+    response in ``combined.wav``); a mono file is used as is. ``gate``
+    overrides keys of :data:`fdbja.asr.base.DEFAULT_GATE` (config
+    ``asr.silence_gate``): a silent channel gets ``[]`` without calling the ASR.
     """
     import soundfile as sf
 
     from fdbja.asr import validate_jchat
+    from fdbja.asr.base import DEFAULT_GATE, silence_gate
 
     data, sr = sf.read(wav_path, dtype="float32")
     if data.ndim == 2:
         data = data[:, min(channel, data.shape[1] - 1)]
-    items = validate_jchat(asr.transcribe(np.ascontiguousarray(data), sr, speaker=speaker))
+    data = np.ascontiguousarray(data)
+    opts = {**DEFAULT_GATE, **(gate or {})}
+    items = validate_jchat(silence_gate(
+        data, sr, lambda: asr.transcribe(data, sr, speaker=speaker), **opts))
     os.makedirs(os.path.dirname(out_json) or ".", exist_ok=True)
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(items, f, ensure_ascii=False, indent=2)
