@@ -222,3 +222,101 @@ def reconstruct(config, limit_sessions: int = 0, log=print,
         _sample_extract(events, task, n, audio_dir,
                         os.path.join(eval_dir, task), seed, log,
                         boundaries=boundaries, roles=roles)
+
+
+def _clip_start_for(task: str, jchat: List[dict], duration: float,
+                    approx_start: float, tol: float = 0.051,
+                    clip_duration: float = CLIP_DURATION):
+    """Exact start of a published clip. Clip names carry the start rounded to
+    0.1 s; the exact value is ``event_time - clip_duration / 2`` (clamped to
+    the recording) of the event the clip was sampled for, so the event of
+    ``task`` whose clip start lies within ``tol`` of ``approx_start`` is
+    searched in the full recording. Returns (start, n_matches); ``None`` when
+    no event matches."""
+    best, n = None, 0
+    for ev in DETECTORS[task](jchat):
+        cs = _event_time(task, ev) - clip_duration / 2
+        cs = max(0.0, min(cs, duration - clip_duration))
+        if abs(cs - approx_start) <= tol:
+            n += 1
+            if best is None or abs(cs - approx_start) < abs(best - approx_start):
+                best = cs
+    return best, n
+
+
+def reconstruct_from_list(config, clips_csv: str, log=print) -> Dict[str, int]:
+    """Rebuild a published evaluation set from its clip list.
+
+    ``clips_csv`` needs the columns ``task``, ``clip_id``, ``recording_key``
+    (file stem of the LLM-jp-Zoom1 recording) and ``clip_start_s``. Each clip
+    is cut again from the corpus under ``corpus.eval_dir/{task}/{clip_id}``
+    with the same slicing as ``reconstruct``; events are then detected from
+    the clip as usual. Clips whose exact start cannot be located fall back to
+    ``clip_start_s`` and are reported.
+    """
+    import csv
+
+    import soundfile as sf
+    zoom1 = config.get("corpus", "zoom1_root")
+    text_dir = config.get("corpus", "text_dir", default=os.path.join(zoom1, "text"))
+    audio_dir = config.get("corpus", "audio_dir",
+                           default=os.path.join(zoom1, "audio_merged"))
+    eval_dir = config.eval_dir
+    index = {}
+    for root, _dirs, fs in os.walk(text_dir):
+        for f in fs:
+            if f.endswith(".json"):
+                index[f[:-5]] = (os.path.basename(root), os.path.join(root, f))
+    with open(clips_csv, encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    tasks = set(config.tasks)
+    done = {t: 0 for t in tasks}
+    missing, approx = [], []
+    manifests: Dict[str, list] = {t: [] for t in tasks}
+    for r in rows:
+        task = r["task"]
+        if task not in tasks:
+            continue
+        key = r["recording_key"]
+        if key not in index:
+            missing.append(r["clip_id"])
+            continue
+        sid, jpath = index[key]
+        audio_path = os.path.join(audio_dir, sid, f"{key}.wav")
+        if not os.path.exists(audio_path):
+            missing.append(r["clip_id"])
+            continue
+        with open(jpath, encoding="utf-8") as f:
+            jchat = json.load(f)
+        info = sf.info(audio_path)
+        cs, n = _clip_start_for(task, jchat, info.duration, float(r["clip_start_s"]))
+        if cs is None:
+            cs = float(r["clip_start_s"])
+            approx.append(r["clip_id"])
+        ce = cs + CLIP_DURATION
+        s0, s1 = int(cs * info.samplerate), int(ce * info.samplerate)
+        audio, sr = sf.read(audio_path, start=s0, stop=s1)
+        out_dir = os.path.join(eval_dir, task)
+        os.makedirs(out_dir, exist_ok=True)
+        sf.write(os.path.join(out_dir, f"{r['clip_id']}.wav"), audio, sr)
+        with open(os.path.join(out_dir, f"{r['clip_id']}.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump(slice_jchat(jchat, cs, ce), f, ensure_ascii=False, indent=2)
+        manifests[task].append({"clip": r["clip_id"], "session_id": sid, "key": key,
+                                "clip_start": round(cs, 3), "clip_end": round(ce, 3),
+                                "start_matched": n})
+        done[task] += 1
+    for task, man in manifests.items():
+        if not man:
+            continue
+        with open(os.path.join(eval_dir, task, "manifest.jsonl"), "w",
+                  encoding="utf-8") as f:
+            for m in man:
+                f.write(json.dumps(m, ensure_ascii=False) + "\n")
+    log("rebuilt: " + ", ".join(f"{t}={n}" for t, n in sorted(done.items())))
+    if missing:
+        log(f"recordings not found in the corpus: {len(missing)} clips (e.g. {missing[:3]})")
+    if approx:
+        log(f"exact start not located, used the rounded start: {len(approx)} clips "
+            f"(e.g. {approx[:3]})")
+    return done

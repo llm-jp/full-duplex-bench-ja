@@ -40,6 +40,10 @@ def main(argv=None) -> int:
                    help="text file with one recording id per line; only these "
                         "sessions are scanned (e.g. a model's held-out split, "
                         "to build a domain: out evaluation set)")
+    p.add_argument("--clips", default=None, metavar="CSV",
+                   help="rebuild a published evaluation set from its clip list "
+                        "(columns task, clip_id, recording_key, clip_start_s) "
+                        "instead of sampling")
 
     p = sub.add_parser("infer", help="run a model adapter over the eval clips")
     p.add_argument("--config", required=True)
@@ -114,7 +118,10 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "reconstruct":
-        from fdbja.data.reconstruct import reconstruct
+        from fdbja.data.reconstruct import reconstruct, reconstruct_from_list
+        if args.clips:
+            reconstruct_from_list(Config.load(args.config), args.clips)
+            return 0
         reconstruct(Config.load(args.config),
                     limit_sessions=args.limit_sessions,
                     sessions_file=args.sessions)
