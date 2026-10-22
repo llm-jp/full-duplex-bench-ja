@@ -17,6 +17,11 @@ detection:
   pause:     { min_gap: 0.4, max_gap: 1.0, min_a_turn_duration: 5.0 }
   smooth_tt: { min_a_duration: 4.0, max_gap: 0.4, min_b_duration: 4.0 }
   bc:        { min_a_duration: 3.0, bc_max_chars: 6, bc_max_duration: 1.5 }
+  # Event boundaries: "transcript" = character timestamps (v4.0, the published
+  # numbers); "audio" = the same events with boundaries moved onto the human
+  # speech of the GT clip (v4.1, data/event_boundaries.py). The character
+  # timestamps run ~0.15-0.3 s early against the audio on LLM-jp-Zoom1.
+  boundaries: transcript
   clips_per_task: 200
   clip_seconds: 20
 

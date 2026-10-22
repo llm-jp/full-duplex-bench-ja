@@ -53,3 +53,36 @@ def test_dummy_pipeline_end_to_end(tmp_path):
     assert tor[("smooth_tt", "silence_baseline")] == 0.0
     assert tor[("pause", "always_talk_baseline")] == 1.0
     assert all(r["n"] > 0 for r in results["summary"])
+
+
+def test_dummy_pipeline_audio_boundaries(tmp_path):
+    """Same pipeline with ``detection.boundaries: audio`` (v4.1)."""
+    import json
+
+    corpus = _load("make_dummy_corpus")
+    _load("energy_asr")
+    corpus.make_dummy_corpus(str(tmp_path / "zoom1"), n_sessions=4, seed=0)
+    with open(os.path.join(DUMMY, "config.yaml"), encoding="utf-8") as f:
+        raw = yaml.safe_load(f)
+    raw["corpus"] = {"zoom1_root": str(tmp_path / "zoom1"),
+                     "eval_dir": str(tmp_path / "eval")}
+    raw["detection"]["clips_per_task"] = 3
+    raw["detection"]["boundaries"] = "audio"
+    raw["output"]["dir"] = str(tmp_path / "results")
+    config = Config(raw)
+    quiet = lambda *a, **k: None  # noqa: E731
+
+    reconstruct(config, log=quiet)
+    with open(tmp_path / "eval" / "pause" / "manifest.jsonl", encoding="utf-8") as f:
+        entries = [json.loads(line) for line in f]
+    assert entries and all("events" in e for e in entries)
+    assert all({"transcript", "audio", "flags"} <= set(ev) for e in entries for ev in e["events"])
+
+    run_infer(config, log=quiet)
+    run_transcribe(config, log=quiet)
+    results = score_offline(config, log=quiet)
+    tor = {(r["task"], r["model"]): r["TOR"] for r in results["summary"]}
+    assert tor[("pause", "silence_baseline")] == 0.0
+    assert tor[("smooth_tt", "silence_baseline")] == 0.0
+    assert all(r["n"] > 0 for r in results["summary"])
+    assert all("boundary_flags" in r for r in results["events"])

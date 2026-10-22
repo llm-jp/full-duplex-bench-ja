@@ -113,7 +113,33 @@ def collect_events(text_dir: str, tasks: List[str], limit_sessions: int = 0,
     return events
 
 
-def _sample_extract(events, task, n_samples, audio_dir, out_dir, seed, log):
+_BOUNDARY_KEYS = {"pause": ("start", "end"), "smooth_tt": ("a_end", "b_start"),
+                  "bc": ("a_utt_start", "a_utt_end")}
+
+
+def clip_event_boundaries(task: str, sliced: List[dict], audio, sr: int) -> List[dict]:
+    """Events of one extracted clip with transcript and audio (v4.1) boundaries.
+
+    Written to the manifest so that a distributed evaluation set records which
+    window each event is judged on. Scoring recomputes them from the clip
+    (``detection.boundaries: audio``), so this is documentation, not input.
+    """
+    from fdbja.data.event_boundaries import DEFAULT_VAD, refine_events, voice_activity
+    events = DETECTORS[task](sliced)
+    va_a = voice_activity(audio[:, 0], sr, DEFAULT_VAD)
+    va_b = voice_activity(audio[:, 1], sr, DEFAULT_VAD) if audio.shape[1] > 1 else None
+    out = []
+    for ev in refine_events(task, events, va_a, va_b, DEFAULT_VAD):
+        k0, k1 = _BOUNDARY_KEYS[task]
+        out.append({"transcript": {k0: round(ev["boundary"]["asr"][k0], 3),
+                                   k1: round(ev["boundary"]["asr"][k1], 3)},
+                    "audio": {k0: ev[k0], k1: ev[k1]},
+                    "flags": ev["boundary"]["flags"]})
+    return out
+
+
+def _sample_extract(events, task, n_samples, audio_dir, out_dir, seed, log,
+                    boundaries: str = "transcript"):
     import soundfile as sf
     cand_pool = events[task]
     rng = random.Random(seed)
@@ -142,9 +168,12 @@ def _sample_extract(events, task, n_samples, audio_dir, out_dir, seed, log):
         with open(os.path.join(out_dir, f"{stem}.json"), "w",
                   encoding="utf-8") as f:
             json.dump(sliced, f, ensure_ascii=False, indent=2)
-        manifest.append({"clip": stem, "session_id": sid, "key": key,
-                         "event_time": round(cand["event_time"], 3),
-                         "clip_start": round(cs, 3), "clip_end": round(ce, 3)})
+        entry = {"clip": stem, "session_id": sid, "key": key,
+                 "event_time": round(cand["event_time"], 3),
+                 "clip_start": round(cs, 3), "clip_end": round(ce, 3)}
+        if boundaries == "audio" and getattr(audio, "ndim", 1) == 2:
+            entry["events"] = clip_event_boundaries(task, sliced, audio, sr)
+        manifest.append(entry)
         used_sessions.add(sid)
         success += 1
     with open(os.path.join(out_dir, "manifest.jsonl"), "w",
@@ -168,6 +197,7 @@ def reconstruct(config, limit_sessions: int = 0, log=print,
     tasks = config.tasks
     n = config.get("detection", "clips_per_task", default=200)
     seed = config.get("detection", "seed", default=42)
+    boundaries = config.get("detection", "boundaries", default="transcript")
 
     sessions = load_session_list(sessions_file) if sessions_file else None
     events = collect_events(text_dir, tasks, limit_sessions, log,
@@ -175,4 +205,5 @@ def reconstruct(config, limit_sessions: int = 0, log=print,
     log("totals: " + ", ".join(f"{t}={len(events[t])}" for t in tasks))
     for task in tasks:
         _sample_extract(events, task, n, audio_dir,
-                        os.path.join(eval_dir, task), seed, log)
+                        os.path.join(eval_dir, task), seed, log,
+                        boundaries=boundaries)

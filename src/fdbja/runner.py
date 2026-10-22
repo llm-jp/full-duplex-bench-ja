@@ -45,8 +45,26 @@ def _load_jchat(path: str):
         return json.load(f)
 
 
-def _tor_events(task, gt_jchat, model_asr_jchat):
+def _detect_events(task, gt_jchat, gt_wav=None, boundaries="transcript"):
+    """Events of a GT clip. ``boundaries="audio"`` (FDB-JA v4.1) keeps the
+    events found in the transcript but moves their boundaries onto the human
+    speech of the GT wav (``data/event_boundaries.py``); ``"transcript"`` is
+    the v4.0 definition (character timestamps)."""
     events = ed.DETECTORS[task](gt_jchat)
+    if boundaries == "audio":
+        if gt_wav is None or not os.path.exists(gt_wav):
+            raise FileNotFoundError(
+                f"detection.boundaries=audio needs the GT wav: {gt_wav}")
+        from fdbja.data.event_boundaries import refine_from_wav
+        events = refine_from_wav(task, events, gt_wav)
+    elif boundaries != "transcript":
+        raise ValueError(f"detection.boundaries must be transcript|audio, got {boundaries!r}")
+    return events
+
+
+def _tor_events(task, gt_jchat, model_asr_jchat, events=None):
+    if events is None:
+        events = ed.DETECTORS[task](gt_jchat)
     model_b = ed.group_chars_to_utterances(model_asr_jchat, "B")
     return events, tor_metric.EVALUATORS[task](events, model_b)
 
@@ -61,6 +79,8 @@ def score_offline(config: Config, limit: int = 0,
     vap_cfg = config.get("metrics", "vap_distance", default={}) or {}
     use_vap = vap_cfg.get("enabled", False)
     vap_backend = _build_vap_backend(config) if use_vap else None
+    boundaries = config.get("detection", "boundaries", default="transcript")
+    event_cache: Dict[Any, list] = {}
 
     rows: List[Dict[str, Any]] = []   # per-event joined records
     for task in tasks:
@@ -84,8 +104,16 @@ def score_offline(config: Config, limit: int = 0,
                 if not (os.path.exists(gt_json) and os.path.exists(asr_json)):
                     continue
                 gt_jchat = _load_jchat(gt_json)
+                key = (task, clip)
+                if key not in event_cache:
+                    event_cache[key] = _detect_events(
+                        task, gt_jchat,
+                        os.path.join(eval_dir, layout["gt_wav"].format(
+                            task=task, clip=clip, model=mname)),
+                        boundaries)
                 events, tor_results = _tor_events(task, gt_jchat,
-                                                  _load_jchat(asr_json))
+                                                  _load_jchat(asr_json),
+                                                  events=event_cache[key])
 
                 dkl_per_event = [None] * len(events)
                 if vap_backend is not None:
@@ -110,6 +138,8 @@ def score_offline(config: Config, limit: int = 0,
                     }
                     # Preserve conditioning variables needed for stratified
                     # analyses without copying transcript text into results.
+                    if "boundary" in ev:
+                        row["boundary_flags"] = "|".join(ev["boundary"]["flags"])
                     if task == "pause":
                         row["gap_duration"] = ev["duration"]
                     elif task == "smooth_tt":
