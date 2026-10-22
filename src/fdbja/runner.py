@@ -45,18 +45,24 @@ def _load_jchat(path: str):
         return json.load(f)
 
 
-def _detect_events(task, gt_jchat, gt_wav=None, boundaries="transcript"):
+def _detect_events(task, gt_jchat, gt_wav=None, boundaries="transcript",
+                   roles=None):
     """Events of a GT clip. ``boundaries="audio"`` (FDB-JA v4.1) keeps the
     events found in the transcript but moves their boundaries onto the human
     speech of the GT wav (``data/event_boundaries.py``); ``"transcript"`` is
-    the v4.0 definition (character timestamps)."""
-    events = ed.DETECTORS[task](gt_jchat)
+    the v4.0 definition (character timestamps). ``roles``
+    (``ed.SmoothTTRoles``, v4.2) drops Smooth TT events that are not a
+    hand-over from A to B (text checks; with audio boundaries also B's voice
+    activity before ``a_end``)."""
+    events = ed.detect(task, gt_jchat, roles)
     if boundaries == "audio":
         if gt_wav is None or not os.path.exists(gt_wav):
             raise FileNotFoundError(
                 f"detection.boundaries=audio needs the GT wav: {gt_wav}")
-        from fdbja.data.event_boundaries import refine_from_wav
-        events = refine_from_wav(task, events, gt_wav)
+        from fdbja.data.event_boundaries import drop_role_flagged, refine_from_wav
+        events = refine_from_wav(task, events, gt_wav, roles=roles)
+        if task == "smooth_tt" and roles is not None and roles.enabled:
+            events = drop_role_flagged(events)
     elif boundaries != "transcript":
         raise ValueError(f"detection.boundaries must be transcript|audio, got {boundaries!r}")
     return events
@@ -80,6 +86,8 @@ def score_offline(config: Config, limit: int = 0,
     use_vap = vap_cfg.get("enabled", False)
     vap_backend = _build_vap_backend(config) if use_vap else None
     boundaries = config.get("detection", "boundaries", default="transcript")
+    roles = ed.SmoothTTRoles.from_config(
+        config.get("detection", "smooth_tt_roles", default=None))
     event_cache: Dict[Any, list] = {}
 
     rows: List[Dict[str, Any]] = []   # per-event joined records
@@ -110,7 +118,7 @@ def score_offline(config: Config, limit: int = 0,
                         task, gt_jchat,
                         os.path.join(eval_dir, layout["gt_wav"].format(
                             task=task, clip=clip, model=mname)),
-                        boundaries)
+                        boundaries, roles)
                 events, tor_results = _tor_events(task, gt_jchat,
                                                   _load_jchat(asr_json),
                                                   events=event_cache[key])
@@ -130,7 +138,8 @@ def score_offline(config: Config, limit: int = 0,
                         zip(events, tor_results, dkl_per_event)):
                     row = {
                         "task": task, "model": mname, "clip": clip,
-                        "event_index": i,
+                        # v4.2 drops Smooth TT events; keep the v4.0 index
+                        "event_index": ev.get("source_index", i),
                         "TO": tr["TO"],
                         "latency": tr.get("latency"),
                         "freq": tr.get("freq"),

@@ -86,3 +86,34 @@ def test_dummy_pipeline_audio_boundaries(tmp_path):
     assert tor[("smooth_tt", "silence_baseline")] == 0.0
     assert all(r["n"] > 0 for r in results["summary"])
     assert all("boundary_flags" in r for r in results["events"])
+
+
+def test_dummy_pipeline_smooth_tt_roles(tmp_path):
+    """``detection.smooth_tt_roles.enabled`` (v4.2) with audio boundaries.
+
+    The dummy corpus writes speaker A as a run of "あ", which the backchannel
+    word list removes entirely, so every Smooth TT event fails check (a) and is
+    dropped while Pause is untouched."""
+    corpus = _load("make_dummy_corpus")
+    _load("energy_asr")
+    corpus.make_dummy_corpus(str(tmp_path / "zoom1"), n_sessions=4, seed=0)
+    with open(os.path.join(DUMMY, "config.yaml"), encoding="utf-8") as f:
+        raw = yaml.safe_load(f)
+    raw["corpus"] = {"zoom1_root": str(tmp_path / "zoom1"),
+                     "eval_dir": str(tmp_path / "eval")}
+    raw["detection"]["clips_per_task"] = 3
+    raw["detection"]["boundaries"] = "audio"
+    raw["output"]["dir"] = str(tmp_path / "results")
+    quiet = lambda *a, **k: None  # noqa: E731
+    reconstruct(Config(raw), log=quiet)
+    run_infer(Config(raw), log=quiet)
+    run_transcribe(Config(raw), log=quiet)
+    before = score_offline(Config(raw), log=quiet)
+    raw["detection"]["smooth_tt_roles"] = {"enabled": True}
+    after = score_offline(Config(raw), log=quiet)
+
+    def n_events(res, task):
+        return sum(1 for e in res["events"] if e["task"] == task)
+    assert n_events(before, "smooth_tt") > 0
+    assert n_events(after, "smooth_tt") == 0
+    assert n_events(after, "pause") == n_events(before, "pause")

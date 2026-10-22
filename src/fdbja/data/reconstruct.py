@@ -16,7 +16,7 @@ import os
 import random
 from typing import Dict, List
 
-from fdbja.data.event_detection import DETECTORS
+from fdbja.data.event_detection import DETECTORS, SmoothTTRoles, detect, smooth_tt_role_flags
 
 CLIP_DURATION = 20.0
 _TOL = 0.05
@@ -78,7 +78,8 @@ def load_session_list(path: str) -> set:
 
 
 def collect_events(text_dir: str, tasks: List[str], limit_sessions: int = 0,
-                   log=print, sessions: set | None = None) -> Dict[str, list]:
+                   log=print, sessions: set | None = None,
+                   roles: SmoothTTRoles | None = None) -> Dict[str, list]:
     files = []
     for root, _dirs, fs in os.walk(text_dir):
         for f in sorted(fs):
@@ -104,7 +105,7 @@ def collect_events(text_dir: str, tasks: List[str], limit_sessions: int = 0,
         if not data:
             continue
         for task in tasks:
-            for ev in DETECTORS[task](data):
+            for ev in detect(task, data, roles):
                 events[task].append({**finfo, "event": ev,
                                      "event_time": _event_time(task, ev)})
         if (i + 1) % 200 == 0:
@@ -117,29 +118,41 @@ _BOUNDARY_KEYS = {"pause": ("start", "end"), "smooth_tt": ("a_end", "b_start"),
                   "bc": ("a_utt_start", "a_utt_end")}
 
 
-def clip_event_boundaries(task: str, sliced: List[dict], audio, sr: int) -> List[dict]:
+def clip_event_boundaries(task: str, sliced: List[dict], audio, sr: int,
+                          roles: SmoothTTRoles | None = None) -> List[dict]:
     """Events of one extracted clip with transcript and audio (v4.1) boundaries.
 
     Written to the manifest so that a distributed evaluation set records which
     window each event is judged on. Scoring recomputes them from the clip
     (``detection.boundaries: audio``), so this is documentation, not input.
+    With ``roles.enabled`` (v4.2) every Smooth TT event is listed with its
+    failed role checks (``role_flags``, text and audio); scoring drops the
+    events whose list is not empty.
     """
     from fdbja.data.event_boundaries import DEFAULT_VAD, refine_events, voice_activity
+    use_roles = task == "smooth_tt" and roles is not None and roles.enabled
     events = DETECTORS[task](sliced)
+    if use_roles:
+        events = [{**ev, "role_flags": smooth_tt_role_flags(ev, sliced, roles)}
+                  for ev in events]
     va_a = voice_activity(audio[:, 0], sr, DEFAULT_VAD)
     va_b = voice_activity(audio[:, 1], sr, DEFAULT_VAD) if audio.shape[1] > 1 else None
     out = []
-    for ev in refine_events(task, events, va_a, va_b, DEFAULT_VAD):
+    for ev in refine_events(task, events, va_a, va_b, DEFAULT_VAD, roles=roles):
         k0, k1 = _BOUNDARY_KEYS[task]
-        out.append({"transcript": {k0: round(ev["boundary"]["asr"][k0], 3),
-                                   k1: round(ev["boundary"]["asr"][k1], 3)},
-                    "audio": {k0: ev[k0], k1: ev[k1]},
-                    "flags": ev["boundary"]["flags"]})
+        rec = {"transcript": {k0: round(ev["boundary"]["asr"][k0], 3),
+                              k1: round(ev["boundary"]["asr"][k1], 3)},
+               "audio": {k0: ev[k0], k1: ev[k1]},
+               "flags": ev["boundary"]["flags"]}
+        if use_roles:
+            rec["role_flags"] = ev["role_flags"]
+        out.append(rec)
     return out
 
 
 def _sample_extract(events, task, n_samples, audio_dir, out_dir, seed, log,
-                    boundaries: str = "transcript"):
+                    boundaries: str = "transcript",
+                    roles: SmoothTTRoles | None = None):
     import soundfile as sf
     cand_pool = events[task]
     rng = random.Random(seed)
@@ -172,7 +185,7 @@ def _sample_extract(events, task, n_samples, audio_dir, out_dir, seed, log,
                  "event_time": round(cand["event_time"], 3),
                  "clip_start": round(cs, 3), "clip_end": round(ce, 3)}
         if boundaries == "audio" and getattr(audio, "ndim", 1) == 2:
-            entry["events"] = clip_event_boundaries(task, sliced, audio, sr)
+            entry["events"] = clip_event_boundaries(task, sliced, audio, sr, roles)
         manifest.append(entry)
         used_sessions.add(sid)
         success += 1
@@ -198,12 +211,14 @@ def reconstruct(config, limit_sessions: int = 0, log=print,
     n = config.get("detection", "clips_per_task", default=200)
     seed = config.get("detection", "seed", default=42)
     boundaries = config.get("detection", "boundaries", default="transcript")
+    roles = SmoothTTRoles.from_config(
+        config.get("detection", "smooth_tt_roles", default=None))
 
     sessions = load_session_list(sessions_file) if sessions_file else None
     events = collect_events(text_dir, tasks, limit_sessions, log,
-                            sessions=sessions)
+                            sessions=sessions, roles=roles)
     log("totals: " + ", ".join(f"{t}={len(events[t])}" for t in tasks))
     for task in tasks:
         _sample_extract(events, task, n, audio_dir,
                         os.path.join(eval_dir, task), seed, log,
-                        boundaries=boundaries)
+                        boundaries=boundaries, roles=roles)

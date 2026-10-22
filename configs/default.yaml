@@ -22,6 +22,20 @@ detection:
   # speech of the GT clip (v4.1, data/event_boundaries.py). The character
   # timestamps run ~0.15-0.3 s early against the audio on LLM-jp-Zoom1.
   boundaries: transcript
+  # v4.2 (optional): keep a Smooth TT event only when A actually hands the turn
+  # to B. (a) A's utterance is not backchannel-dominant, (b) B is not speaking
+  # in the 2 s before a_end (characters; with boundaries: audio also B's voice
+  # activity), (c) B's utterance is not a chain of backchannels
+  # (data/event_detection.py: SmoothTTRoles). false = v4.0 / v4.1 event set.
+  smooth_tt_roles:
+    enabled: false
+    a_max_resid_chars: 6     # (a) characters left after removing backchannel words
+    a_min_resid_cps: 1.5     # (a) ... per second of A's utterance
+    a_min_resid_ratio: 0.4   # (a) ... share of A's characters
+    b_pre_window: 2.0        # (b) seconds before a_end
+    b_pre_max: 0.5           # (b) max seconds of B speech in that window
+    b_max_resid_chars: 2     # (c)
+    b_min_resid_ratio: 0.3   # (c)
   clips_per_task: 200
   clip_seconds: 20
 

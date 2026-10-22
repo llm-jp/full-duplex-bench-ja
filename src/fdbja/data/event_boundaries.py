@@ -231,13 +231,27 @@ def refine_onset(va: np.ndarray, t: float,
     return round(min(cands, key=lambda x: abs(x - t)), 3) if cands else None
 
 
+def voiced_seconds(va: np.ndarray, t0: float, t1: float,
+                   cfg: VADConfig = DEFAULT_VAD) -> float:
+    """Seconds of voice activity of ``va`` in [t0, t1]."""
+    i0 = max(0, int(round(t0 / cfg.frame)))
+    i1 = min(len(va), int(round(t1 / cfg.frame)))
+    return float(va[i0:i1].sum() * cfg.frame) if i1 > i0 else 0.0
+
+
 def refine_events(task: str, events: Sequence[Dict], va_a: np.ndarray,
                   va_b: Optional[np.ndarray] = None,
-                  cfg: VADConfig = DEFAULT_VAD) -> List[Dict]:
+                  cfg: VADConfig = DEFAULT_VAD, roles=None) -> List[Dict]:
     """Copies of ``events`` with boundaries moved onto the audio.
 
     ``va_a`` / ``va_b`` are the voice activity of the human speaker A and the
     human interlocutor B (``voice_activity`` of the GT clip's channels).
+
+    ``roles`` (``event_detection.SmoothTTRoles``, v4.2): when enabled, a
+    Smooth TT event whose B channel is voiced for more than ``b_pre_max``
+    seconds in the ``b_pre_window`` before the (re-anchored) ``a_end`` gets
+    ``"b_voiced_before"`` in ``role_flags``. Events are still never dropped
+    here; ``drop_role_flagged`` removes them.
     """
     out = []
     for ev in events:
@@ -268,6 +282,12 @@ def refine_events(task: str, events: Sequence[Dict], va_a: np.ndarray,
                     ev2["b_start"] = b_start
             ev2["gap"] = round(ev2["b_start"] - ev2["a_end"], 3)
             ev2["latency"] = ev2["gap"]
+            if roles is not None and roles.enabled and va_b is not None:
+                rf = list(ev2.get("role_flags", []))
+                if voiced_seconds(va_b, ev2["a_end"] - roles.b_pre_window,
+                                  ev2["a_end"], cfg) > roles.b_pre_max:
+                    rf.append("b_voiced_before")
+                ev2["role_flags"] = rf
         elif task == "bc":
             asr = {"a_utt_start": ev["a_utt_start"], "a_utt_end": ev["a_utt_end"]}
             s = refine_onset(va_a, ev["a_utt_start"], cfg)
@@ -293,11 +313,16 @@ def refine_events(task: str, events: Sequence[Dict], va_a: np.ndarray,
     return out
 
 
+def drop_role_flagged(events: Sequence[Dict]) -> List[Dict]:
+    """Events without v4.2 ``role_flags`` (events without the key are kept)."""
+    return [ev for ev in events if not ev.get("role_flags")]
+
+
 def refine_from_wav(task: str, events: Sequence[Dict], wav_path: str,
-                    cfg: VADConfig = DEFAULT_VAD) -> List[Dict]:
+                    cfg: VADConfig = DEFAULT_VAD, roles=None) -> List[Dict]:
     """``refine_events`` on a stereo GT clip (ch0 = A, ch1 = human B)."""
     import soundfile as sf
     x, sr = sf.read(wav_path, dtype="float32", always_2d=True)
     va_a = voice_activity(x[:, 0], sr, cfg)
     va_b = voice_activity(x[:, 1], sr, cfg) if x.shape[1] > 1 else None
-    return refine_events(task, events, va_a, va_b, cfg)
+    return refine_events(task, events, va_a, va_b, cfg, roles=roles)
