@@ -83,6 +83,17 @@ validation against human judgements and existing metrics is still in progress, s
 experimental when reporting. Trivial baselines (`silence`, `always_talk`) are reported on every
 task. A TurnNat-style likelihood score is included for comparison. The `always_talk` speech loop is synthesised on first use with Open JTalk (voice "Mei", CC BY 3.0; attribution in [src/fdbja/assets/README.md](src/fdbja/assets/README.md)) and needs `pyopenjtalk`, or pass `source_wav`.
 
+### Speech intervals for the binary TOR (`detection.system_activity`)
+
+`transcript` (default) takes the model's speech intervals from the character timestamps of the ASR, so the TOR
+depends on how the ASR backend places character boundaries (an aligner may stretch the last character of a segment
+over the following silence, which then counts as talking through a pause). `audio` takes the intervals from the
+model channel of `combined.wav` with the same energy-based detector as `detection.boundaries: audio`, joins silences
+of up to 0.3 s, and uses the ASR only for the character counts (shared among the speech intervals each ASR
+utterance overlaps). On the evaluation set, two ASR backends disagree on 1-18 of 240 Pause events with `audio`
+versus 17-73 with `transcript`. The published numbers are reproduced only with `transcript` and the transcripts
+used for the paper; report `audio` as a separate condition. VAP-distance is unaffected.
+
 ## Model adapters
 
 `moshi_ws` (Moshi-family WebSocket servers), `gemini_live` (Gemini Live API), `openai_realtime`

@@ -132,6 +132,37 @@ ESPnet の転写文は完全に再現され、文字の開始時刻の差は中�
 自前の ASR を使う場合は `fdbja.asr.ASRModel` を実装して `fdbja.asr.register_backend` で登録します。
 自前の ASR に差し替えた場合は、既定バックエンドの結果とは別の条件として報告してください。
 
+### TOR の判定に使う発話区間(`detection.system_activity`)
+
+二値の TOR は「モデルがいつ話しているか」(Pause の無音に掛かったか、Smooth TT で相手の発話終了直後に話し始めたか)と
+「何を話したか」(文字数で相槌と発話権の取得を区別する)の両方を見ます。
+
+| 設定 | いつ話しているか | 何を話したか |
+|------|----------------|-------------|
+| `transcript`(既定) | ASR の文字の開始・終了時刻を 0.3 秒の間で発話にまとめたもの | ASR の文字数 |
+| `audio` | モデル応答チャンネル(ch1)の音声区間。`detection.boundaries: audio` と同じ音量ベースの検出器(20 ms フレーム、ITU-T P.56 型の閾値)で取り、0.3 秒以下の無音はつなぐ | ASR の発話の文字数を、その発話と重なる音声区間に重なりの長さで按分 |
+
+`transcript` では時刻が ASR の実装に依存します。整列器が区間末の文字を後ろの無音まで伸ばすと
+(例: 「ん」が 2.08〜5.30 秒)、モデルが Pause の無音に話し掛けたと判定されます。
+評価セットの 240 事象(Pause)で、同じ音声を 2 種類の ASR で書き起こした場合に判定が食い違った事象は
+`transcript` で 17〜73 件、`audio` で 1〜18 件でした(4 システム)。2 種類の ASR の TOR の差は `audio` で最大 0.03 です(Smooth TT を話者交替の事象に絞った 72 事象では最大 0.07)。
+
+```yaml
+detection:
+  system_activity: audio      # transcript(既定)| audio
+  system_vad: {}              # 任意。merge_gap(0.3)/ max_offset(0.5)/ min_chars(0.5)/ 検出器の設定(margin_db など)
+```
+
+- `audio` は `combined.wav` を読みます(`transcript` は ASR の jchat だけ)。ASR は文字数を得るためだけに使います。
+  VAP-distance は ASR を使わないので、どちらの設定でも変わりません。
+- **既存の数値(リーダーボード・論文)は `transcript` と論文時の書き起こしの組み合わせでのみ再現します。**
+  既定の `reazonspeech_whisperx` で書き起こし直すと、文字の終端の付け方が違うため Pause の TOR が上がります
+  (J-Moshi-ext 0.242 → 0.425)。`audio` の値は ASR に依存しない代わりに既存の数値とも一致しない
+  (同じ J-Moshi-ext で Pause 0.175 / Smooth TT 0.558)ので、別の条件として報告してください。
+- 0.3 秒のつなぎ幅を大きくすると、話し続けている途中の間で発話が切れにくくなり、Smooth TT の TOR が下がり
+  Pause の TOR が上がります。0.3 秒は `transcript` の文字のまとめ方と同じ値で、人間の話し手(評価クリップの ch1)を
+  同じ手順で採点したときに `transcript` の判定に最も近くなります。
+
 ### モデルアダプタ
 
 | アダプタ | 対象 | 追加依存 |

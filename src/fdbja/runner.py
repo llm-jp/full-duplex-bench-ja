@@ -7,6 +7,8 @@ Given, per task and model:
 
 compute, per detected event:
   - binary TO (Takeover) via the ASR transcript          -> TOR
+    (``detection.system_activity: audio``: the model's speech intervals from
+    the output wav, the ASR only for the characters)
   - VAP-distance (mean d_t in the event window)           -> continuous score
 
 then aggregate per task/model (TOR, event-mean D_KL, AUC, exp(-alpha) score).
@@ -68,11 +70,29 @@ def _detect_events(task, gt_jchat, gt_wav=None, boundaries="transcript",
     return events
 
 
-def _tor_events(task, gt_jchat, model_asr_jchat, events=None):
+def _tor_events(task, gt_jchat, model_asr_jchat, events=None,
+                system_activity="transcript", model_wav=None, sys_cfg=None):
+    """Events and their TO results. ``system_activity="audio"`` takes the
+    model's speech intervals from the output wav (``data/system_activity.py``)
+    and uses the ASR only for the characters; ``"transcript"`` takes both from
+    the ASR character timestamps (the published definition). The third value
+    is ``None`` or the per-clip statistics of the audio path."""
     if events is None:
         events = ed.DETECTORS[task](gt_jchat)
-    model_b = ed.group_chars_to_utterances(model_asr_jchat, "B")
-    return events, tor_metric.EVALUATORS[task](events, model_b)
+    stats = None
+    if system_activity == "audio":
+        if model_wav is None or not os.path.exists(model_wav):
+            raise FileNotFoundError(
+                f"detection.system_activity=audio needs the model wav: {model_wav}")
+        from fdbja.data import system_activity as sa
+        model_b, stats = sa.utterances_from_wav(
+            model_asr_jchat, model_wav, "B", sys_cfg or sa.DEFAULT_SYSTEM_ACTIVITY)
+    elif system_activity == "transcript":
+        model_b = ed.group_chars_to_utterances(model_asr_jchat, "B")
+    else:
+        raise ValueError("detection.system_activity must be transcript|audio, "
+                         f"got {system_activity!r}")
+    return events, tor_metric.EVALUATORS[task](events, model_b), stats
 
 
 def score_offline(config: Config, limit: int = 0,
@@ -88,6 +108,15 @@ def score_offline(config: Config, limit: int = 0,
     boundaries = config.get("detection", "boundaries", default="transcript")
     roles = ed.SmoothTTRoles.from_config(
         config.get("detection", "smooth_tt_roles", default=None))
+    system_activity = config.get("detection", "system_activity", default="transcript")
+    sys_cfg = None
+    if system_activity == "audio":
+        from fdbja.data.system_activity import SystemActivityConfig
+        sys_cfg = SystemActivityConfig.from_config(
+            config.get("detection", "system_vad", default=None))
+    elif system_activity != "transcript":
+        raise ValueError("detection.system_activity must be transcript|audio, "
+                         f"got {system_activity!r}")
     event_cache: Dict[Any, list] = {}
 
     rows: List[Dict[str, Any]] = []   # per-event joined records
@@ -119,15 +148,16 @@ def score_offline(config: Config, limit: int = 0,
                         os.path.join(eval_dir, layout["gt_wav"].format(
                             task=task, clip=clip, model=mname)),
                         boundaries, roles)
-                events, tor_results = _tor_events(task, gt_jchat,
-                                                  _load_jchat(asr_json),
-                                                  events=event_cache[key])
+                model_wav = os.path.join(eval_dir, layout["model_wav"].format(
+                    task=task, clip=clip, model=mname))
+                events, tor_results, sys_stats = _tor_events(
+                    task, gt_jchat, _load_jchat(asr_json), events=event_cache[key],
+                    system_activity=system_activity, model_wav=model_wav,
+                    sys_cfg=sys_cfg)
 
                 dkl_per_event = [None] * len(events)
                 if vap_backend is not None:
                     gt_wav = os.path.join(eval_dir, layout["gt_wav"].format(
-                        task=task, clip=clip, model=mname))
-                    model_wav = os.path.join(eval_dir, layout["model_wav"].format(
                         task=task, clip=clip, model=mname))
                     if os.path.exists(gt_wav) and os.path.exists(model_wav):
                         dkl_per_event = _vap_distance_events(
@@ -147,6 +177,9 @@ def score_offline(config: Config, limit: int = 0,
                     }
                     # Preserve conditioning variables needed for stratified
                     # analyses without copying transcript text into results.
+                    if sys_stats is not None:
+                        # per-clip: ASR characters that no speech segment took
+                        row["sys_unassigned_chars"] = sys_stats["unassigned_chars"]
                     if "boundary" in ev:
                         row["boundary_flags"] = "|".join(ev["boundary"]["flags"])
                     if task == "pause":

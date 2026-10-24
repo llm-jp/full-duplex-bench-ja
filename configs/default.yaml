@@ -36,6 +36,14 @@ detection:
     b_pre_max: 0.5           # (b) max seconds of B speech in that window
     b_max_resid_chars: 2     # (c)
     b_min_resid_ratio: 0.3   # (c)
+  # Model speech intervals for the binary TOR: "transcript" = character
+  # timestamps of the model-output ASR (the published numbers); "audio" = voice
+  # activity of the model channel of combined.wav (same detector as
+  # boundaries: audio, silences <= 0.3 s joined), the ASR only for the
+  # character counts (data/system_activity.py). Independent of how the ASR
+  # backend places character ends; not comparable with the published numbers.
+  system_activity: transcript
+  system_vad: {}   # optional: merge_gap / max_offset / min_chars / VAD fields (margin_db, mode, ...)
   clips_per_task: 200
   clip_seconds: 20
 
