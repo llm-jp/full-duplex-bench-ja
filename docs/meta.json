@@ -106,7 +106,7 @@
  "events_note": "公開版の掲載は pause / smooth_tt の 2 タスク。bc(相槌)は転写の閾値に依存する実験的タスクとしてコードにのみ残す（公開コードの検出器で 125 事象、07-08 の 314 とは比較不可）。相槌・割り込みはシステム/ユーザ × 相槌/割り込みの 2×2 で別途測る。",
  "scoring": {
   "boundaries": "音声の境界(人間側 A・B の発話境界を音声の VAD で付け直す。ツールキットでは detection.boundaries: audio、既定は transcript)",
-  "asr": "ReazonSpeech-ESPnet + WhisperX(AsReX。論文と同じ転写)",
+  "asr": "ReazonSpeech-ESPnet で書き起こし、WhisperX で文字の時刻を整列(論文と同じ転写)",
   "vap": "maai-kyoto/vap_jp_kyoto(MIT、20 Hz / 2.5 s、リビジョン fe24ac6)",
   "ci": "95% 区間 = 事象の再標本化(2,000 回、percentile)",
   "events": {

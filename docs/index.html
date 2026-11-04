@@ -22,7 +22,7 @@
     <p class="hint">総合 = 2 課題の平均。<b>適合率↑</b>(本家 Full-Duplex-Bench と同じ
       二値 TOR で、相手(人間 B)の実際の振る舞いに一致した割合)で順位付け。
       人間側の発話境界は<b>音声の境界</b>(人間側の音声の VAD で付け直したもの)、
-      モデル応答の転写は論文と同じ AsReX(ReazonSpeech-ESPnet + WhisperX)。
+      モデル応答の転写は論文と同じ手順(ReazonSpeech-ESPnet で書き起こし、WhisperX で文字の時刻を整列)。
       <b>VAP-distance↓</b>(人間の音声活動予測分布との距離)は<b>実験的指標</b>で、参考値として併記します。
       自明なベースライン(常時沈黙・常時発話)は比較のための基準で、順位の対象外です。
       Pause の適合率は「黙るほど高い」定義のため、下の「人の判断との検証」もあわせて見てください。</p>
@@ -87,7 +87,7 @@
       <b>VAP-distance</b>(実験的) = 人間の音声活動予測(VAP)分布とモデル応答の
       分布の距離(D<sub>KL</sub>, 小さいほど人間の応答に近い)。検証中のため参考値。</p>
     <p>ツールキットの既定(<code>detection.boundaries: transcript</code>)は文字の境界です。
-      この表の値は <code>detection.boundaries: audio</code> と AsReX の転写で採点したもので、
+      この表の値は <code>detection.boundaries: audio</code> と論文と同じ転写(ReazonSpeech-ESPnet + WhisperX 整列)で採点したもので、
       ツールキット既定の ASR で一から回すと TOR は一致しません(文字の終端が後ろの無音まで伸びるため)。</p>
     <p>コード: <a id="repo" href="#">llm-jp/full-duplex-bench-ja</a>
       (Apache-2.0)。評価データ(LLM-jp-Zoom1)は APSIPA 公表後に公開予定。</p>

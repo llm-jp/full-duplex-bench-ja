@@ -861,7 +861,7 @@
   }
  ],
  "boundaries": "audio (human-side VAD; detection.boundaries: audio). Same events as the transcript-boundary release; only the human A/B boundaries are re-placed from the audio. Model speech times come from the ASR transcript.",
- "asr": "AsReX (ReazonSpeech-ESPnet + WhisperX alignment), the transcripts used in the paper. Running the toolkit's default ASR end-to-end does not reproduce these TOR values exactly (it extends the last character into the following silence).",
+ "asr": "ReazonSpeech-ESPnet transcription with WhisperX alignment, the transcripts used in the paper. Running the toolkit's default ASR end-to-end does not reproduce these TOR values exactly (it extends the last character into the following silence).",
  "vap_checkpoint": "vap_state_dict_jp_kyoto_20hz_2500msec.pt (maai-kyoto/vap_jp_kyoto rev fe24ac6, MIT; 20 Hz / 2.5 s)",
  "ci": "95% bootstrap intervals over events",
  "rescored": "2026-11-04"

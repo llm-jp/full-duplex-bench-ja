@@ -12,7 +12,7 @@
   **VAP-distance は実験的指標**です。人手判断との相関や既存指標との比較による検証が済んでいないため参考値として併記し、
   既定の config では無効にしています(`metrics.vap_distance.enabled: true` で有効化)。
   掲載中の値(2026-11-04、9 システム)は、人間側の発話境界を音声で付け直す設定(`detection.boundaries: audio`)、
-  論文と同じ書き起こし(AsReX: ReazonSpeech-ESPnet + WhisperX)、既定の MIT チェックポイント(`maai-kyoto/vap_jp_kyoto`、下記)で採点したもので、
+  論文と同じ書き起こし(ReazonSpeech-ESPnet で書き起こし、WhisperX で文字の時刻を整列)、既定の MIT チェックポイント(`maai-kyoto/vap_jp_kyoto`、下記)で採点したもので、
   **境界・書き起こし・チェックポイントが違う値は比較できません**(`docs/results.json` の `boundaries` / `asr` / `vap_checkpoint` に記録しています)。
   掲載は Pause Handling と Smooth Turn-Taking の 2 タスクです。bc(相槌)は転写の閾値に依存する実験的タスクとしてコードにだけ残し、既定では採点しません。
   人の判断との検証(2026-11、クラウドソーシング 150 人)の要点もリーダーボードに載せています。
