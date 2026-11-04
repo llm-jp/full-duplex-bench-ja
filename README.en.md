@@ -9,10 +9,15 @@ The full README is in Japanese: [README.md](README.md). Leaderboard: <https://ll
 (ranked by TOR agreement, the binary metric of the original Full-Duplex-Bench. **VAP-distance is an
 experimental metric**: its validation against human judgements is still in progress, so it is shown
 for reference only and is disabled in the default config (`metrics.vap_distance.enabled: true` to
-opt in). Its columns were rescored on 2026-09-28 with the MIT default checkpoint below,
-`maai-kyoto/vap_jp_kyoto`; values from different checkpoints are not comparable — see
-`vap_checkpoint` in `docs/results.json`. The leaderboard lists Pause Handling and Smooth Turn-Taking;
-the backchannel (bc) task stays in the code as an experimental task and is not scored by default).
+opt in). The current table (2026-11-04, nine systems) was scored with human-side boundaries
+re-placed on the audio (`detection.boundaries: audio`; the default stays `transcript`), the paper's
+transcripts (AsReX: ReazonSpeech-ESPnet + WhisperX) and the MIT default checkpoint below,
+`maai-kyoto/vap_jp_kyoto`; values from different boundaries, transcripts or checkpoints are not
+comparable — see `boundaries`, `asr` and `vap_checkpoint` in `docs/results.json`. The leaderboard lists
+Pause Handling and Smooth Turn-Taking; the backchannel (bc) task stays in the code as an experimental
+task and is not scored by default. A summary of the human-judgement study (2026-11) is on the page).
+Optional settings: `detection.boundaries: audio`, `detection.smooth_tt_roles.enabled: true` (Smooth TT
+restricted to genuine turn transitions, 197 → 72 events) and `detection.system_activity: audio`.
 
 ## Requirements
 

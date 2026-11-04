@@ -11,9 +11,11 @@
   順位は **TOR の適合率**(本家 Full-Duplex-Bench と同じ二値指標)で付けています。
   **VAP-distance は実験的指標**です。人手判断との相関や既存指標との比較による検証が済んでいないため参考値として併記し、
   既定の config では無効にしています(`metrics.vap_distance.enabled: true` で有効化)。
-  掲載中の VAP-distance は既定の MIT チェックポイント(`maai-kyoto/vap_jp_kyoto`、下記)で 2026-09-28 に採点し直した値で、
-  **チェックポイントが違う値は比較できません**(`docs/results.json` の `vap_checkpoint` に採点に使った重みを記録しています)。
+  掲載中の値(2026-11-04、9 システム)は、人間側の発話境界を音声で付け直す設定(`detection.boundaries: audio`)、
+  論文と同じ書き起こし(AsReX: ReazonSpeech-ESPnet + WhisperX)、既定の MIT チェックポイント(`maai-kyoto/vap_jp_kyoto`、下記)で採点したもので、
+  **境界・書き起こし・チェックポイントが違う値は比較できません**(`docs/results.json` の `boundaries` / `asr` / `vap_checkpoint` に記録しています)。
   掲載は Pause Handling と Smooth Turn-Taking の 2 タスクです。bc(相槌)は転写の閾値に依存する実験的タスクとしてコードにだけ残し、既定では採点しません。
+  人の判断との検証(2026-11、クラウドソーシング 150 人)の要点もリーダーボードに載せています。
 - 英語版 README: [README.en.md](README.en.md)
 
 ## 前提条件
@@ -155,13 +157,32 @@ detection:
 
 - `audio` は `combined.wav` を読みます(`transcript` は ASR の jchat だけ)。ASR は文字数を得るためだけに使います。
   VAP-distance は ASR を使わないので、どちらの設定でも変わりません。
-- **既存の数値(リーダーボード・論文)は `transcript` と論文時の書き起こしの組み合わせでのみ再現します。**
+- **既存の数値(リーダーボード・論文)は `system_activity: transcript` と論文時の書き起こしの組み合わせでのみ再現します**
+  (論文は `boundaries: transcript`、2026-11-04 のリーダーボードは `boundaries: audio`。下の節)。
   既定の `reazonspeech_whisperx` で書き起こし直すと、文字の終端の付け方が違うため Pause の TOR が上がります
   (J-Moshi-ext 0.242 → 0.425)。`audio` の値は ASR に依存しない代わりに既存の数値とも一致しない
   (同じ J-Moshi-ext で Pause 0.175 / Smooth TT 0.558)ので、別の条件として報告してください。
 - 0.3 秒のつなぎ幅を大きくすると、話し続けている途中の間で発話が切れにくくなり、Smooth TT の TOR が下がり
   Pause の TOR が上がります。0.3 秒は `transcript` の文字のまとめ方と同じ値で、人間の話し手(評価クリップの ch1)を
   同じ手順で採点したときに `transcript` の判定に最も近くなります。
+
+### 事象の境界(`detection.boundaries`)と話者交替への限定(`detection.smooth_tt_roles`)
+
+| 設定 | 既定 | 内容 |
+|------|------|------|
+| `boundaries: transcript` | ✓ | 人間側(A・B)の発話境界を書き起こしの文字の時刻で置く(論文の定義) |
+| `boundaries: audio` | | 同じ事象のまま、人間側の境界を正解クリップの音声区間に付け直す(`data/event_boundaries.py`)。LLM-jp-Zoom1 では文字の時刻が音声より 0.15〜0.3 秒ほど早いため。2026-11-04 のリーダーボードはこの設定 |
+| `smooth_tt_roles.enabled: true` | 無効 | Smooth TT を A から B へ本当にターンが渡る事象に限る((a) A の発話が相槌主体でない (b) A の終わりの直前 2 秒に B が 0.5 秒を超えて話していない (c) B の発話が相槌の連なりでない)。評価セットでは 197 事象 → 72 事象 |
+
+```yaml
+detection:
+  boundaries: audio           # transcript(既定)| audio
+  smooth_tt_roles:
+    enabled: true             # 既定は false
+```
+
+`reconstruct` と `score-offline` の両方が同じ設定を読みます。既定を変えると事象の時刻(と `smooth_tt_roles` では事象の数)が変わるので、
+結果には設定を添えて報告してください。
 
 ### モデルアダプタ
 
@@ -300,8 +321,15 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 
 ## バージョン / 変更履歴
 
-- **(準備中)** VAP-distance を実験的指標に位置づけ直し、既定で無効に。リーダーボードの順位を TOR の適合率に変更(2026-10-12)。
-- **0.1.0(公開初版、準備中)** — `reconstruct` → `infer` → `transcribe` → `score-offline` の評価パイプライン、
+- **0.1.0(公開初版、2026-11-05)**
+  - 事象の境界を人間側の音声で付け直す設定(`detection.boundaries: audio`)、Smooth TT を話者交替の事象に限る設定
+    (`detection.smooth_tt_roles`)、TOR の発話区間をモデル応答の音声から取る設定(`detection.system_activity: audio`)、
+    公開した評価セットをクリップ一覧から作り直す `reconstruct --clips` を追加。既定値はいずれも従来どおり。
+  - 常時発話のベースラインを Open JTalk の音声ループに、無音チャンネルで ASR を飛ばす(幽霊転写の防止)、TurnNat のビット順の修正。
+  - リーダーボードを音声の境界・9 システム(LLM-jp-Live と自明なベースライン 2 本を追加、ベースラインは順位の対象外)で
+    採点し直し、95% 区間と「人の判断との検証(2026-11)」を掲載(2026-11-04)。
+  - VAP-distance を実験的指標に位置づけ直し、既定で無効に。リーダーボードの順位を TOR の適合率に変更(2026-10-12)。
+- **0.0.1(2026-09、非公開版)** — `reconstruct` → `infer` → `transcribe` → `score-offline` の評価パイプライン、
   ASR バックエンド 3 種(ReazonSpeech NeMo / k2 / ESPnet+WhisperX)、
   TOR と VAP-distance、TurnNat 系スコア、自明なベースライン、Pause のギャップ長別分析、
   人手評価バンドル生成と集計、リーダーボード(6 モデル: J-Moshi / J-Moshi-ext / LLM-jp-Moshi-v1 /
