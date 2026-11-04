@@ -17,16 +17,16 @@ detection:
   pause:     { min_gap: 0.4, max_gap: 1.0, min_a_turn_duration: 5.0 }
   smooth_tt: { min_a_duration: 4.0, max_gap: 0.4, min_b_duration: 4.0 }
   bc:        { min_a_duration: 3.0, bc_max_chars: 6, bc_max_duration: 1.5 }
-  # Event boundaries: "transcript" = character timestamps (v4.0, the published
+  # Event boundaries: "transcript" = character timestamps (the published
   # numbers); "audio" = the same events with boundaries moved onto the human
-  # speech of the GT clip (v4.1, data/event_boundaries.py). The character
+  # speech of the GT clip (data/event_boundaries.py). The character
   # timestamps run ~0.15-0.3 s early against the audio on LLM-jp-Zoom1.
   boundaries: transcript
-  # v4.2 (optional): keep a Smooth TT event only when A actually hands the turn
+  # Turn-transition checks (optional): keep a Smooth TT event only when A actually hands the turn
   # to B. (a) A's utterance is not backchannel-dominant, (b) B is not speaking
   # in the 2 s before a_end (characters; with boundaries: audio also B's voice
   # activity), (c) B's utterance is not a chain of backchannels
-  # (data/event_detection.py: SmoothTTRoles). false = v4.0 / v4.1 event set.
+  # (data/event_detection.py: SmoothTTRoles). false = event set without these checks.
   smooth_tt_roles:
     enabled: false
     a_max_resid_chars: 6     # (a) characters left after removing backchannel words

@@ -1,4 +1,4 @@
-"""Re-anchor event boundaries on the speech audio (FDB-JA v4.1).
+"""Re-anchor event boundaries on the speech audio (audio boundaries).
 
 The detectors in ``event_detection`` find events from the character-level
 transcript, so their boundaries are character timestamps of the forced
@@ -247,7 +247,7 @@ def refine_events(task: str, events: Sequence[Dict], va_a: np.ndarray,
     ``va_a`` / ``va_b`` are the voice activity of the human speaker A and the
     human interlocutor B (``voice_activity`` of the GT clip's channels).
 
-    ``roles`` (``event_detection.SmoothTTRoles``, v4.2): when enabled, a
+    ``roles`` (``event_detection.SmoothTTRoles``): when enabled, a
     Smooth TT event whose B channel is voiced for more than ``b_pre_max``
     seconds in the ``b_pre_window`` before the (re-anchored) ``a_end`` gets
     ``"b_voiced_before"`` in ``role_flags``. Events are still never dropped
@@ -314,7 +314,7 @@ def refine_events(task: str, events: Sequence[Dict], va_a: np.ndarray,
 
 
 def drop_role_flagged(events: Sequence[Dict]) -> List[Dict]:
-    """Events without v4.2 ``role_flags`` (events without the key are kept)."""
+    """Events without ``role_flags`` (events without the key are kept)."""
     return [ev for ev in events if not ev.get("role_flags")]
 
 

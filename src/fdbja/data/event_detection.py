@@ -9,7 +9,7 @@ Full-Duplex-Bench (Lin et al., 2025):
   - Smooth Turn-Taking: A (>=4s) -> gap (<0.4s) -> B (>=4s), no overlap
   - Backchannel       : A utterance (>=3s) during which human B only backchannels
 
-FDB-JA v4.2 (optional, ``SmoothTTRoles``): a Smooth TT event additionally
+Turn-transition checks (optional, ``SmoothTTRoles``): a Smooth TT event additionally
 requires that A is actually the speaker who hands the turn over. Without it,
 ``group_chars_to_utterances`` joins a run of backchannels ("うんうんうん。")
 into one >=4 s "utterance" of A, and B's ongoing turn (shorter pieces of it
@@ -81,7 +81,7 @@ def is_backchannel(utt: Utterance, max_chars: int = 6,
 
 
 # ---------------------------------------------------------------------------
-# Backchannel words in text (v4.2 Smooth TT role checks)
+# Backchannel words in text (Smooth TT turn-transition checks)
 # ---------------------------------------------------------------------------
 
 # Response tokens / backchannels (hiragana, kanji, katakana variants). Single
@@ -111,7 +111,7 @@ def backchannel_residual(text: str) -> Tuple[int, int]:
 
 @dataclass(frozen=True)
 class SmoothTTRoles:
-    """v4.2 checks that a Smooth TT event is a hand-over from A to B.
+    """Checks that a Smooth TT event is a hand-over from A to B.
 
     (a) A's utterance is not backchannel-dominant: after removing backchannel
         words it keeps more than ``a_max_resid_chars`` characters (the
@@ -124,7 +124,7 @@ class SmoothTTRoles:
         ``b_max_resid_chars`` characters and a share of at least
         ``b_min_resid_ratio`` after removing backchannel words.
 
-    ``enabled=False`` (default) reproduces v4.0 / v4.1 exactly.
+    ``enabled=False`` (default) reproduces the unrestricted event set exactly.
     """
     enabled: bool = False
     a_max_resid_chars: int = 6
@@ -165,7 +165,7 @@ def _covered_seconds(intervals, t0: float, t1: float) -> float:
 
 def smooth_tt_role_flags(event: Dict[str, Any], jchat: JChat,
                          roles: SmoothTTRoles = SmoothTTRoles()) -> List[str]:
-    """Text-side v4.2 checks of one Smooth TT event (``detect_smooth_tt``
+    """Text-side turn-transition checks of one Smooth TT event (``detect_smooth_tt``
     output). Returns the failed checks: ``a_backchannel`` (a),
     ``b_talking_before`` (b, characters), ``b_backchannel`` (c)."""
     flags: List[str] = []
@@ -247,10 +247,10 @@ def detect_smooth_tt(jchat: JChat, min_a_duration: float = 4.0,
                      ) -> List[Dict[str, Any]]:
     """Smooth inter-turn transitions A->B (desired TO=1).
 
-    With ``roles.enabled`` (v4.2) the events failing the text checks of
+    With ``roles.enabled`` the events failing the text checks of
     ``smooth_tt_role_flags`` are dropped; the kept events carry
     ``source_index`` (their index without the checks, so that results stay
-    joinable with v4.0 / v4.1) and an empty ``role_flags`` list that the audio
+    joinable with the unrestricted event set) and an empty ``role_flags`` list that the audio
     check (``event_boundaries.refine_events``) may fill."""
     a_utts = group_chars_to_utterances(jchat, "A")
     b_utts = group_chars_to_utterances(jchat, "B")
@@ -332,7 +332,7 @@ DESIRED_TO = {"pause": 0, "smooth_tt": 1, "bc": 0}
 
 def detect(task: str, jchat: JChat,
            roles: Optional[SmoothTTRoles] = None) -> List[Dict[str, Any]]:
-    """``DETECTORS[task]`` with the v4.2 Smooth TT checks when enabled."""
+    """``DETECTORS[task]`` with the Smooth TT turn-transition checks when enabled."""
     if task == "smooth_tt" and roles is not None and roles.enabled:
         return detect_smooth_tt(jchat, roles=roles)
     return DETECTORS[task](jchat)

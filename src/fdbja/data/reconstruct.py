@@ -120,12 +120,12 @@ _BOUNDARY_KEYS = {"pause": ("start", "end"), "smooth_tt": ("a_end", "b_start"),
 
 def clip_event_boundaries(task: str, sliced: List[dict], audio, sr: int,
                           roles: SmoothTTRoles | None = None) -> List[dict]:
-    """Events of one extracted clip with transcript and audio (v4.1) boundaries.
+    """Events of one extracted clip with transcript and audio boundaries.
 
     Written to the manifest so that a distributed evaluation set records which
     window each event is judged on. Scoring recomputes them from the clip
     (``detection.boundaries: audio``), so this is documentation, not input.
-    With ``roles.enabled`` (v4.2) every Smooth TT event is listed with its
+    With ``roles.enabled`` every Smooth TT event is listed with its
     failed role checks (``role_flags``, text and audio); scoring drops the
     events whose list is not empty.
     """

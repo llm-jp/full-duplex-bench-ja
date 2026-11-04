@@ -49,11 +49,11 @@ def _load_jchat(path: str):
 
 def _detect_events(task, gt_jchat, gt_wav=None, boundaries="transcript",
                    roles=None):
-    """Events of a GT clip. ``boundaries="audio"`` (FDB-JA v4.1) keeps the
+    """Events of a GT clip. ``boundaries="audio"`` keeps the
     events found in the transcript but moves their boundaries onto the human
     speech of the GT wav (``data/event_boundaries.py``); ``"transcript"`` is
-    the v4.0 definition (character timestamps). ``roles``
-    (``ed.SmoothTTRoles``, v4.2) drops Smooth TT events that are not a
+    the transcript-boundary definition (character timestamps). ``roles``
+    (``ed.SmoothTTRoles``) drops Smooth TT events that are not a
     hand-over from A to B (text checks; with audio boundaries also B's voice
     activity before ``a_end``)."""
     events = ed.detect(task, gt_jchat, roles)
@@ -168,7 +168,7 @@ def score_offline(config: Config, limit: int = 0,
                         zip(events, tor_results, dkl_per_event)):
                     row = {
                         "task": task, "model": mname, "clip": clip,
-                        # v4.2 drops Smooth TT events; keep the v4.0 index
+                        # the role checks drop Smooth TT events; keep the unrestricted index
                         "event_index": ev.get("source_index", i),
                         "TO": tr["TO"],
                         "latency": tr.get("latency"),

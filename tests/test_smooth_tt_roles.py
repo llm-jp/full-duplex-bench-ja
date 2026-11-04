@@ -1,4 +1,4 @@
-"""v4.2 Smooth TT role checks (``detection.smooth_tt_roles``)."""
+"""Smooth TT turn-transition checks (``detection.smooth_tt_roles``)."""
 
 import json
 import os

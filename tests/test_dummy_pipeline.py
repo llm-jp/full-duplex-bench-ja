@@ -56,7 +56,7 @@ def test_dummy_pipeline_end_to_end(tmp_path):
 
 
 def test_dummy_pipeline_audio_boundaries(tmp_path):
-    """Same pipeline with ``detection.boundaries: audio`` (v4.1)."""
+    """Same pipeline with ``detection.boundaries: audio``."""
     import json
 
     corpus = _load("make_dummy_corpus")
@@ -89,7 +89,7 @@ def test_dummy_pipeline_audio_boundaries(tmp_path):
 
 
 def test_dummy_pipeline_smooth_tt_roles(tmp_path):
-    """``detection.smooth_tt_roles.enabled`` (v4.2) with audio boundaries.
+    """``detection.smooth_tt_roles.enabled`` with audio boundaries.
 
     The dummy corpus writes speaker A as a run of "あ", which the backchannel
     word list removes entirely, so every Smooth TT event fails check (a) and is
