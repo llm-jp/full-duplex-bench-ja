@@ -1,8 +1,11 @@
-// Full-Duplex-Bench-JA leaderboard: reads results.json (raw score-offline
-// output) + meta.json, aggregates per model, and renders the tables.
+// Full-Duplex-Bench-JA leaderboard: reads results.json + meta.json, aggregates
+// per model, and renders the tables.
 "use strict";
 
-const TASK_ORDER = ["pause", "smooth_tt"];  // bc は実験的タスクとして掲載しない (2026-09-29)
+const TASK_ORDER = ["pause", "smooth_tt"];   // scored tasks
+// bc (相槌) is not scored: its sample is shown as a definition example only
+const SAMPLE_TASKS = ["pause", "smooth_tt", "bc"];
+const UNSCORED = new Set(["bc"]);
 
 Promise.all([
   fetch("results.json").then((r) => r.json()),
@@ -11,108 +14,123 @@ Promise.all([
   .catch((e) => { document.getElementById("load-err").textContent =
     "結果の読み込みに失敗しました: " + e.message; });
 
-function fmt(v, nd) {
-  return (v === null || v === undefined || Number.isNaN(v))
-    ? "—" : Number(v).toFixed(nd);
+function isNum(v) { return v !== null && v !== undefined && !Number.isNaN(v); }
+function fmt(v, nd) { return isNum(v) ? Number(v).toFixed(nd) : "—"; }
+function pct(v) { return isNum(v) ? (v * 100).toFixed(1) + "%" : "—"; }
+function ci(lo, hi, nd) {
+  return isNum(lo) && isNum(hi) ? `[${fmt(lo, nd)}, ${fmt(hi, nd)}]` : "";
 }
-function pct(v) {
-  return (v === null || v === undefined || Number.isNaN(v))
-    ? "—" : (v * 100).toFixed(1) + "%";
+function pctCi(lo, hi) {
+  return isNum(lo) && isNum(hi)
+    ? `[${(lo * 100).toFixed(1)}, ${(hi * 100).toFixed(1)}]` : "";
 }
 // desired-behavior agreement rate from mean TO and the task's desired TO
 function accOf(row) {
-  if (row.TOR === null || row.TOR === undefined) return null;
+  if (!isNum(row.TOR)) return null;
   return row.desired_TO === 1 ? row.TOR : 1 - row.TOR;
 }
+function accCiOf(row) {
+  const c = row.TOR_ci || [];
+  if (!isNum(c[0]) || !isNum(c[1])) return [null, null];
+  return row.desired_TO === 1 ? [c[0], c[1]] : [1 - c[1], 1 - c[0]];
+}
+const isBaseline = (d) => d === "baseline";
 
 function aggregate(summary) {
   const models = {};
   for (const r of summary) {
     const m = (models[r.model] ||= { name: r.model, domain: r.domain, tasks: {} });
-    m.tasks[r.task] = {
-      tor: r.TOR, acc: accOf(r), dkl: r.event_mean_dkl,
-      score: r.score, n: r.n,
-    };
+    m.tasks[r.task] = { acc: accOf(r), dkl: r.event_mean_dkl };
   }
   for (const m of Object.values(models)) {
-    const ts = Object.values(m.tasks);
+    const ts = TASK_ORDER.map((t) => m.tasks[t] || {});
     m.acc = mean(ts.map((t) => t.acc));
     m.dkl = mean(ts.map((t) => t.dkl));
-    m.score = mean(ts.map((t) => t.score));
   }
   return models;
 }
 function mean(xs) {
-  const v = xs.filter((x) => x !== null && x !== undefined && !Number.isNaN(x));
+  const v = xs.filter(isNum);
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+}
+// systems first (by agreement), trivial baselines last and unranked
+function order(list, key) {
+  const sys = list.filter((x) => !isBaseline(x.domain))
+    .sort((a, b) => (key(b) ?? -Infinity) - (key(a) ?? -Infinity));
+  const base = list.filter((x) => isBaseline(x.domain));
+  return [...sys, ...base];
 }
 
 function render(results, meta) {
   const label = (m) => meta.model_labels[m] || m;
+  const sc = meta.scoring || {};
   document.getElementById("meta").textContent =
-    `データ: ${meta.dataset} ・ 生成日: ${meta.generated}`;
+    `データ: ${meta.dataset} ・ 境界: ${sc.boundaries || "—"} ・ ASR: ${sc.asr || "—"}` +
+    ` ・ VAP: ${sc.vap || "—"} ・ ${sc.ci || ""} ・ 生成日: ${meta.generated}`;
   const repo = document.getElementById("repo");
   repo.href = meta.repo_url; repo.textContent = meta.repo_url.replace(/^https?:\/\//, "");
 
-  const models = aggregate(results.summary || []);
-  // primary ranking key = TOR agreement (higher = better). VAP-distance is experimental
-  // and shown for reference only (2026-10-12).
-  const ranked = Object.values(models)
-    .sort((a, b) => (b.acc ?? -Infinity) - (a.acc ?? -Infinity));
+  const summary = results.summary || [];
+  const models = aggregate(summary);
+  const ranked = order(Object.values(models), (m) => m.acc);
+  const sysOnly = ranked.filter((m) => !isBaseline(m.domain));
 
   // ---- overall ranking ----
-  const best = { acc: Math.max(...ranked.map((m) => m.acc ?? -Infinity)),
-                 dkl: Math.min(...ranked.map((m) => m.dkl ?? Infinity)),
-                 score: Math.max(...ranked.map((m) => m.score ?? -Infinity)) };
+  const best = { acc: Math.max(...sysOnly.map((m) => m.acc ?? -Infinity)),
+                 dkl: Math.min(...sysOnly.map((m) => m.dkl ?? Infinity)) };
   const ov = document.getElementById("overall");
   ov.innerHTML =
     "<thead><tr><th class='rank'>#</th><th class='model'>モデル</th>" +
-    "<th>適合率 ↑</th><th>VAP-distance ↓ <small>(実験的)</small></th>" +
-    "<th>スコア ↑ <small>(実験的)</small></th></tr></thead>";
+    "<th>適合率 ↑</th>" +
+    TASK_ORDER.map((t) => `<th>${shortTask(t)}</th>`).join("") +
+    "<th>VAP-distance ↓ <small>(実験的)</small></th></tr></thead>";
   const tb = document.createElement("tbody");
-  ranked.forEach((m, i) => {
-    tb.appendChild(rowEl([
-      cell(String(i + 1), "rank"),
+  let rank = 0;
+  ranked.forEach((m) => {
+    const base = isBaseline(m.domain);
+    const tr = rowEl([
+      cell(base ? "—" : String(++rank), "rank"),
       modelCell(label(m.name), m.domain, meta, m.name),
-      cell(pct(m.acc), m.acc === best.acc ? "best" : ""),
-      cell(fmt(m.dkl, 3), m.dkl === best.dkl ? "best" : ""),
-      cell(fmt(m.score, 3), m.score === best.score ? "best" : ""),
-    ]));
+      cell(pct(m.acc), !base && m.acc === best.acc ? "best" : ""),
+      ...TASK_ORDER.map((t) => cell(pct((m.tasks[t] || {}).acc))),
+      cell(fmt(m.dkl, 3), !base && m.dkl === best.dkl ? "best" : ""),
+    ]);
+    if (base) tr.className = "baseline";
+    tb.appendChild(tr);
   });
   ov.appendChild(tb);
 
   // ---- per task ----
   const host = document.getElementById("per-task");
   for (const task of TASK_ORDER) {
-    const rows = (results.summary || []).filter((r) => r.task === task);
+    const rows = summary.filter((r) => r.task === task);
     if (!rows.length) continue;
     const h = document.createElement("h3");
-    h.textContent = meta.task_labels[task] || task;
+    h.textContent = `${meta.task_labels[task] || task}(${rows[0].n} 事象)`;
     host.appendChild(h);
-    const wrap = document.createElement("div"); wrap.className = "table-wrap";
-    const t = document.createElement("table");
-    t.innerHTML = "<thead><tr><th class='model'>モデル</th><th>TOR</th>" +
-      "<th>適合率 ↑</th><th>VAP-distance ↓ <small>(実験的)</small></th>" +
-      "<th>スコア ↑ <small>(実験的)</small></th><th>AUC</th><th>n</th></tr></thead>";
-    const body = document.createElement("tbody");
-    const bDkl = Math.min(...rows.map((r) => r.event_mean_dkl ?? Infinity));
-    const bAcc = Math.max(...rows.map((r) => accOf(r) ?? -Infinity));
-    rows.sort((a, b) => (accOf(b) ?? -Infinity) - (accOf(a) ?? -Infinity))
-      .forEach((r) => {
-        body.appendChild(rowEl([
-          modelCell(label(r.model), r.domain, meta, r.model),
-          cell(fmt(r.TOR, 3)),
-          cell(pct(accOf(r)), accOf(r) === bAcc ? "best" : ""),
-          cell(fmt(r.event_mean_dkl, 3), r.event_mean_dkl === bDkl ? "best" : ""),
-          cell(fmt(r.score, 3)),
-          cell(fmt(r.AUC, 3)),
-          cell(String(r.n)),
-        ]));
-      });
-    t.appendChild(body); wrap.appendChild(t); host.appendChild(wrap);
+    host.appendChild(taskTable(rows, meta, label));
+  }
+
+  // ---- smooth_tt restricted to genuine turn transitions ----
+  const tt = (results.turn_transition_only || []).filter((r) => r.task === "smooth_tt");
+  if (tt.length) {
+    const h = document.createElement("h3");
+    h.textContent = `${meta.task_labels.smooth_tt || "smooth_tt"}: 話者交替に限定(${tt[0].n} 事象)`;
+    host.appendChild(h);
+    const p = document.createElement("p");
+    p.className = "hint"; p.textContent = meta.turn_transition_note || "";
+    host.appendChild(p);
+    host.appendChild(taskTable(tt, meta, label));
+  }
+  if (meta.transcript_boundaries_note) {
+    const p = document.createElement("p");
+    p.className = "hint"; p.textContent = "※ " + meta.transcript_boundaries_note;
+    host.appendChild(p);
   }
 
   // ---- audio samples ----
+  const sn = document.getElementById("samples-note");
+  if (sn && meta.samples_note) sn.textContent = "※ " + meta.samples_note;
   renderSamples(meta);
 
   // ---- pending ----
@@ -135,6 +153,49 @@ function render(results, meta) {
   });
 }
 
+function shortTask(t) { return t === "pause" ? "Pause" : t === "smooth_tt" ? "Smooth TT" : t; }
+
+function taskTable(rows, meta, label) {
+  const wrap = document.createElement("div"); wrap.className = "table-wrap";
+  const t = document.createElement("table");
+  t.innerHTML = "<thead><tr><th class='model'>モデル</th><th>TOR [95% 区間]</th>" +
+    "<th>適合率 ↑</th><th>VAP-distance ↓ <small>(実験的) [95% 区間]</small></th>" +
+    "<th>n</th></tr></thead>";
+  const body = document.createElement("tbody");
+  const sys = rows.filter((r) => !isBaseline(r.domain));
+  const bDkl = Math.min(...sys.map((r) => r.event_mean_dkl ?? Infinity));
+  const bAcc = Math.max(...sys.map((r) => accOf(r) ?? -Infinity));
+  order(rows, accOf).forEach((r) => {
+    const base = isBaseline(r.domain);
+    const [alo, ahi] = accCiOf(r);
+    const tc = r.TOR_ci || [], dc = r.dkl_ci || [];
+    const tr = rowEl([
+      modelCell(label(r.model), r.domain, meta, r.model),
+      cellCi(fmt(r.TOR, 3), ci(tc[0], tc[1], 3)),
+      cellCi(pct(accOf(r)), pctCi(alo, ahi), !base && accOf(r) === bAcc ? "best" : ""),
+      cellCi(fmt(r.event_mean_dkl, 3), ci(dc[0], dc[1], 3),
+             !base && r.event_mean_dkl === bDkl ? "best" : ""),
+      cell(String(r.n)),
+    ]);
+    if (base) tr.className = "baseline";
+    body.appendChild(tr);
+  });
+  t.appendChild(body); wrap.appendChild(t);
+  return wrap;
+}
+
+function cellCi(main, sub, cls) {
+  const td = document.createElement("td");
+  if (cls) td.className = cls;
+  td.appendChild(document.createTextNode(main));
+  if (sub) {
+    const s = document.createElement("span");
+    s.className = "ci"; s.textContent = " " + sub;
+    td.appendChild(s);
+  }
+  return td;
+}
+
 // ---- sample-audio waveforms -------------------------------------------
 const CLIP_SEC = 20;           // all sample files share a 0-20 s time axis
 let audioCtx = null;
@@ -149,7 +210,7 @@ function renderSamples(meta) {
     document.getElementById("samples-sec").style.display = "none";
     return;
   }
-  for (const task of TASK_ORDER) {
+  for (const task of SAMPLE_TASKS) {
     const s = samples[task];
     if (!s) continue;
     const h = document.createElement("h3");
@@ -170,7 +231,7 @@ function renderSamples(meta) {
         .sort((a, b) => (a[1].dkl ?? Infinity) - (b[1].dkl ?? Infinity))
         .map(([m, v]) => ({
           key: m, label: (meta.model_labels || {})[m] || m, cls: "model",
-          badge: v,
+          badge: UNSCORED.has(task) ? null : v,
         })),
     ];
     for (const r of rows) box.appendChild(sampleRow(task, r, s));
@@ -385,8 +446,8 @@ function modelCell(name, domain, meta, key) {
     td.appendChild(document.createTextNode(name));
   }
   const b = document.createElement("span");
-  b.className = "dom " + (domain === "in" ? "in" : "out");
-  b.textContent = domain === "in" ? "in-domain" : "out-of-domain";
+  b.className = "dom " + (domain === "in" ? "in" : domain === "baseline" ? "base" : "out");
+  b.textContent = domain === "in" ? "in-domain" : domain === "baseline" ? "自明なベースライン" : "out-of-domain";
   b.title = (meta.domain_note || {})[domain] || "";
   td.appendChild(b);
   if (domain === "in") {

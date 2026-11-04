@@ -10,35 +10,60 @@
 <div id="app">
   <header>
     <h1>Full-Duplex-Bench-JA <span class="sub">Leaderboard</span></h1>
-    <p class="lead">日本語フルデュプレックス音声対話モデルの
-      ターンテイキング能力(ポーズ処理・話者交代)の評価結果。</p>
+    <p class="lead">日本語フルデュプレックス音声対話モデルのターンテイキング能力の評価結果。
+      採点する課題は <b>Pause Handling</b>(話者 A のターン内の間で黙っていられるか)と
+      <b>Smooth Turn-Taking</b>(A のターンの終わりでターンを取れるか)の 2 つ。
+      相槌は事象の定義のみを公開しており、採点の対象外です。</p>
     <p id="meta" class="meta"></p>
   </header>
 
   <section>
     <h2>総合ランキング</h2>
-    <p class="hint">総合 = 各タスクの平均。<b>適合率↑</b>(本家 Full-Duplex-Bench と同じ
-      二値 TOR で、相手の振る舞いに一致した割合)で順位付け。
-      <b>VAP-distance↓</b>(人間の音声活動予測分布との距離)と
-      スコア↑(<code>exp(-&alpha;&middot;D<sub>KL</sub>)</code>)は<b>実験的指標</b>で、
-      人手判断との相関などの検証が済むまで参考値として併記します。</p>
+    <p class="hint">総合 = 2 課題の平均。<b>適合率↑</b>(本家 Full-Duplex-Bench と同じ
+      二値 TOR で、相手(人間 B)の実際の振る舞いに一致した割合)で順位付け。
+      人間側の発話境界は<b>音声の境界</b>(人間側の音声の VAD で付け直したもの)、
+      モデル応答の転写は論文と同じ AsReX(ReazonSpeech-ESPnet + WhisperX)。
+      <b>VAP-distance↓</b>(人間の音声活動予測分布との距離)は<b>実験的指標</b>で、参考値として併記します。
+      自明なベースライン(常時沈黙・常時発話)は比較のための基準で、順位の対象外です。
+      Pause の適合率は「黙るほど高い」定義のため、下の「人の判断との検証」もあわせて見てください。</p>
     <div class="table-wrap"><table id="overall"></table></div>
   </section>
 
   <section>
-    <h2>タスク別</h2>
+    <h2>課題別</h2>
+    <p class="hint">95% 区間は事象の再標本化(2,000 回)。in-domain(LLM-jp-Zoom1 を学習に含む)のモデルは参考値です。</p>
     <div id="per-task"></div>
+  </section>
+
+  <section id="validation-sec">
+    <h2>人の判断との検証(2026-11)</h2>
+    <div class="validation">
+      <p class="hint" style="margin-top:0">クラウドソーシングで 150 人が、同じ事象に対する 2 システムの応答を聞き比べて
+        自然な方を選びました(2 課題 × 150 対 × 1 対 5 票、品質確認を通った 122 人で解析)。</p>
+      <ul>
+        <li>人どうしの一致: 1 票と残りの多数派の一致 <b>0.84</b>、Fleiss κ <b>0.61</b>。</li>
+        <li>実システムどうしの対で、指標が人の多数派と一致した割合:
+          TOR は Smooth TT <b>0.74</b>、Pause <b>0.21</b>(TOR で差がつく対のみ)。
+          VAP-distance(元の定義)は Smooth TT 0.61、Pause 0.50。</li>
+        <li>Pause では人の順位と TOR がほぼ逆になりました。人は間で応答しない商用 3 システムを
+          常時沈黙よりも下に置いています。上の Pause の適合率は、この点を踏まえて解釈してください。</li>
+        <li>提案中の指標<span class="tag">検証中・ツールキット未実装</span>:
+          境界に重みを置いた VAP-distance(Smooth TT で一致 <b>0.81</b>)、
+          間での引き取りと無反応の両方を罰する Pause の指標(一致 <b>0.79</b>、人の順位との順位相関 ρ = +0.75)。</li>
+      </ul>
+    </div>
   </section>
 
   <section id="samples-sec">
     <h2>サンプル音声</h2>
-    <p class="hint">各タスクの例クリップ(20秒)。刺激音声(話者A)に対する
+    <p class="hint">各課題の例クリップ(20秒)。刺激音声(話者A)に対する
       人間Bの実応答(正解)と各モデルの応答の波形。<b>波形クリックで再生/停止</b>。
-      ハイライト帯が評価対象のイベント窓、橙の縦線が人間Bの応答/相槌の開始点。
-      モデル行は VAP-distance(D)昇順。音声は LLM-jp-Zoom1 からの抜粋。
+      ハイライト帯が評価対象の事象の窓、橙の縦線が人間Bの応答/相槌の開始点。
+      音声は LLM-jp-Zoom1 からの抜粋。
       「無出力」バッジは、そのモデルが全区間で音声を返さなかったことを示します
-      (ポーズ処理のように沈黙が正解のタスクでは、正しく黙ったのか何も生成
-      できなかったのかを指標だけでは区別できない点に注意)。</p>
+      (ポーズ処理のように沈黙が正解の課題では、正しく黙ったのか何も生成
+      できなかったのかを指標だけでは区別できない点に注意)。
+      <b>相槌の例は事象の定義を示すためのもので、採点の対象外です</b>(TO / D のバッジは付けていません)。</p>
     <p class="hint"><label class="mix-label"><input type="checkbox" id="mix-toggle" checked>
       刺激音声(話者A)と同時に再生する(左ch=話者A / 右ch=応答。
       オフにすると応答のみ)</label></p>
@@ -46,6 +71,7 @@
       <b>ASR 転写ベース</b>の判定です。転写に乗らない発声や整列誤差は
       拾えないため、まれに波形の見た目と食い違うことがあります。
       VAP-distance (D) は生波形から計算されるため、この影響を受けません。</p>
+    <p class="hint" id="samples-note"></p>
     <div id="samples"></div>
   </section>
 
@@ -60,6 +86,9 @@
       <b>適合率</b> = 相手(人間B)の実際の振る舞いに一致した割合。
       <b>VAP-distance</b>(実験的) = 人間の音声活動予測(VAP)分布とモデル応答の
       分布の距離(D<sub>KL</sub>, 小さいほど人間の応答に近い)。検証中のため参考値。</p>
+    <p>ツールキットの既定(<code>detection.boundaries: transcript</code>)は文字の境界です。
+      この表の値は <code>detection.boundaries: audio</code> と AsReX の転写で採点したもので、
+      ツールキット既定の ASR で一から回すと TOR は一致しません(文字の終端が後ろの無音まで伸びるため)。</p>
     <p>コード: <a id="repo" href="#">llm-jp/full-duplex-bench-ja</a>
       (Apache-2.0)。評価データ(LLM-jp-Zoom1)は APSIPA 公表後に公開予定。</p>
     <p id="load-err" class="err"></p>

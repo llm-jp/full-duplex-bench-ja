@@ -1,21 +1,23 @@
 {
- "generated": "2026-09-28",
- "dataset": "LLM-jp-Zoom1 ケース (各タスク200クリップ / 評価事象 n はタスク別表を参照)",
- "window_source": "イベント注釈 (a_end / gap / a_utt) 由来。2026-08-18 に、公開サンプルへ凍結 VAP を再実行し各モデルの D_KL を再現できることで検証済み(平均絶対差: pause 0.027 / smooth_tt 0.021 / bc 0.009)。サンプルの D_KL は 2026-09-26 に MIT チェックポイントで再計算。",
+ "generated": "2026-11-04",
+ "dataset": "LLM-jp-Zoom1 評価セット(Pause 240 事象 / 200 クリップ、Smooth TT 197 事象 / 196 クリップ)",
  "repo_url": "https://github.com/llm-jp/full-duplex-bench-ja",
  "task_labels": {
-  "pause": "ポーズ処理",
-  "smooth_tt": "話者交代",
-  "bc": "相槌"
+  "pause": "Pause Handling(ポーズ処理)",
+  "smooth_tt": "Smooth Turn-Taking(話者交替)",
+  "bc": "相槌(定義のみ・採点対象外)"
  },
  "model_labels": {
   "jmoshi": "J-Moshi",
   "jmoshi_ext": "J-Moshi-ext",
   "llmjp": "LLM-jp-Moshi-v1",
   "llmjp_moshi_v1": "LLM-jp-Moshi-v1",
-  "gemini": "Gemini-Live",
-  "gpt_realtime": "GPT-Realtime",
-  "grok_voice": "Grok-Voice"
+  "llmjp_live": "LLM-jp-Live",
+  "gemini": "Gemini 3.1 Flash Live",
+  "gpt_realtime": "GPT-Realtime (2025-08-28)",
+  "grok_voice": "Grok Voice 3.0",
+  "baseline_silence": "常時沈黙",
+  "baseline_always_talk": "常時発話"
  },
  "model_urls": {
   "jmoshi": "https://huggingface.co/nu-dialogue/j-moshi",
@@ -27,8 +29,9 @@
   "grok_voice": "https://docs.x.ai/docs/models"
  },
  "domain_note": {
-  "in": "in-domain (LLM-jp-Zoom1で学習: 参考値)",
-  "out": "out-of-domain"
+  "in": "in-domain(LLM-jp-Zoom1 を学習に含む: 参考値)",
+  "out": "out-of-domain",
+  "baseline": "自明なベースライン(順位の対象外)"
  },
  "pending_models": [],
  "samples": {
@@ -82,7 +85,7 @@
     9.4,
     "人間Bの相槌"
    ],
-   "note": "話者Aの長い発話区間(ハイライト帯 = 評価窓)。人間Bは9.4秒(縦線)で相槌「うん」を打ちつつターンは奪わなかった。モデルも相槌に留めターンを奪わない(TO=0)のが望ましい。",
+   "note": "【定義のみ・採点対象外】相槌の事象の例。話者 A の長い発話区間(ハイライト帯)で、人間 B は 9.4 秒(縦線)に相槌「うん」を打ちつつターンは取らなかった。相槌の課題は事象の定義が転写の閾値に依存するため、リーダーボードでは採点していない。",
    "models": {
     "jmoshi_ext": {
      "TO": 0,
@@ -95,10 +98,24 @@
    }
   }
  },
- "samples_note": "試聴用の抜粋は各タスク 1 事象、モデルは LLM-jp-Moshi-v1 と J-Moshi-ext の 2 つに絞っている。D_KL は既定の VAP チェックポイント(maai-kyoto/vap_jp_kyoto, 20 Hz / 2.5 s, MIT)で 2026-09-26 に再計算した値。",
+ "samples_note": "試聴用の抜粋は各課題 1 事象、モデルは LLM-jp-Moshi-v1 と J-Moshi-ext の 2 つ。TO / D のバッジは文字の境界で採点した値(D は maai-kyoto/vap_jp_kyoto で 2026-09-26 に再計算)で、上の表(音声の境界)とは定義が異なる。",
  "vap_checkpoint": {
   "samples": "vap_state_dict_jp_kyoto_20hz_2500msec.pt (maai-kyoto/vap_jp_kyoto, MIT)",
   "leaderboard": "vap_state_dict_jp_kyoto_20hz_2500msec.pt (maai-kyoto/vap_jp_kyoto, MIT; rescored 2026-09-28)"
  },
- "events_note": "公開版の掲載は pause / smooth_tt の 2 タスク。bc(相槌)は転写の閾値に依存する実験的タスクとしてコードにのみ残す（公開コードの検出器で 125 事象、07-08 の 314 とは比較不可）。相槌・割り込みはシステム/ユーザ × 相槌/割り込みの 2×2 で別途測る。"
+ "events_note": "公開版の掲載は pause / smooth_tt の 2 タスク。bc(相槌)は転写の閾値に依存する実験的タスクとしてコードにのみ残す（公開コードの検出器で 125 事象、07-08 の 314 とは比較不可）。相槌・割り込みはシステム/ユーザ × 相槌/割り込みの 2×2 で別途測る。",
+ "scoring": {
+  "boundaries": "音声の境界(人間側 A・B の発話境界を音声の VAD で付け直す。ツールキットでは detection.boundaries: audio、既定は transcript)",
+  "asr": "ReazonSpeech-ESPnet + WhisperX(AsReX。論文と同じ転写)",
+  "vap": "maai-kyoto/vap_jp_kyoto(MIT、20 Hz / 2.5 s、リビジョン fe24ac6)",
+  "ci": "95% 区間 = 事象の再標本化(2,000 回、percentile)",
+  "events": {
+   "pause": 240,
+   "smooth_tt": 197,
+   "smooth_tt_turn_transition_only": 72
+  },
+  "rescored": "2026-11-04"
+ },
+ "transcript_boundaries_note": "文字の境界(ASR の文字の時刻だけで人間側の境界を置く、2026-09-28 版の定義)では、Pause の TOR が商用システムで高めに出ていた(Gemini 3.1 Flash Live 0.300 → 0.175、Grok Voice 3.0 0.313 → 0.133、GPT-Realtime 0.208 → 0.154)。Smooth TT の TOR の差は ±0.05 以内。値は results.json の transcript_boundaries にある。",
+ "turn_transition_note": "Smooth TT を本当の話者交替の 72 事象に限る(A が相槌主体の発話、A の終わりの直前に B が話している、B の応答が相槌の連なり、のいずれかの事象を除く。ツールキットでは detection.smooth_tt_roles、既定は無効)と次のとおり。"
 }

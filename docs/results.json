@@ -4,161 +4,865 @@
    "task": "pause",
    "model": "jmoshi",
    "n": 240,
+   "n_clips": 200,
    "domain": "out",
-   "TOR": 0.3708,
    "desired_TO": 0,
-   "event_mean_dkl": 1.2469,
-   "AUC": 0.6163,
-   "r_pb": 0.1269,
-   "alpha": 1.7528,
-   "score": 0.3542
+   "TOR": 0.3708,
+   "TOR_ci": [
+    0.3125,
+    0.4333
+   ],
+   "event_mean_dkl": 1.3176,
+   "dkl_ci": [
+    1.1482,
+    1.4933
+   ],
+   "lat_median": null
   },
   {
    "task": "pause",
    "model": "jmoshi_ext",
    "n": 240,
+   "n_clips": 200,
    "domain": "out",
-   "TOR": 0.2417,
    "desired_TO": 0,
-   "event_mean_dkl": 1.319,
-   "AUC": 0.7556,
-   "r_pb": 0.4255,
-   "alpha": 1.7528,
-   "score": 0.3664
+   "TOR": 0.2333,
+   "TOR_ci": [
+    0.1832,
+    0.2875
+   ],
+   "event_mean_dkl": 1.4738,
+   "dkl_ci": [
+    1.2729,
+    1.6788
+   ],
+   "lat_median": null
   },
   {
    "task": "pause",
    "model": "llmjp",
    "n": 240,
+   "n_clips": 200,
    "domain": "in",
-   "TOR": 0.4333,
    "desired_TO": 0,
-   "event_mean_dkl": 1.8118,
-   "AUC": 0.6476,
-   "r_pb": 0.2191,
-   "alpha": 1.7528,
-   "score": 0.2618
+   "TOR": 0.425,
+   "TOR_ci": [
+    0.3667,
+    0.4917
+   ],
+   "event_mean_dkl": 1.8704,
+   "dkl_ci": [
+    1.6356,
+    2.1274
+   ],
+   "lat_median": null
   },
   {
    "task": "pause",
-   "model": "gemini",
+   "model": "llmjp_live",
    "n": 240,
-   "domain": "out",
-   "TOR": 0.3,
+   "n_clips": 200,
+   "domain": "in",
    "desired_TO": 0,
-   "event_mean_dkl": 0.9389,
-   "AUC": 0.551,
-   "r_pb": 0.2207,
-   "alpha": 1.7528,
-   "score": 0.5487
+   "TOR": 0.6042,
+   "TOR_ci": [
+    0.5417,
+    0.6667
+   ],
+   "event_mean_dkl": 1.8482,
+   "dkl_ci": [
+    1.6566,
+    2.0459
+   ],
+   "lat_median": null
   },
   {
    "task": "pause",
    "model": "gpt_realtime",
    "n": 240,
+   "n_clips": 200,
    "domain": "out",
-   "TOR": 0.2083,
    "desired_TO": 0,
-   "event_mean_dkl": 1.202,
-   "AUC": 0.7656,
-   "r_pb": 0.551,
-   "alpha": 1.7528,
-   "score": 0.4706
+   "TOR": 0.1542,
+   "TOR_ci": [
+    0.1083,
+    0.2
+   ],
+   "event_mean_dkl": 1.0544,
+   "dkl_ci": [
+    0.8515,
+    1.2933
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "pause",
+   "model": "gemini",
+   "n": 240,
+   "n_clips": 200,
+   "domain": "out",
+   "desired_TO": 0,
+   "TOR": 0.175,
+   "TOR_ci": [
+    0.1292,
+    0.225
+   ],
+   "event_mean_dkl": 0.8229,
+   "dkl_ci": [
+    0.6565,
+    0.9914
+   ],
+   "lat_median": null
   },
   {
    "task": "pause",
    "model": "grok_voice",
    "n": 240,
+   "n_clips": 200,
    "domain": "out",
-   "TOR": 0.3125,
    "desired_TO": 0,
-   "event_mean_dkl": 0.6241,
-   "AUC": 0.4853,
-   "r_pb": 0.0443,
-   "alpha": 1.7528,
-   "score": 0.5989
+   "TOR": 0.1333,
+   "TOR_ci": [
+    0.0917,
+    0.1792
+   ],
+   "event_mean_dkl": 0.5616,
+   "dkl_ci": [
+    0.4555,
+    0.6827
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "pause",
+   "model": "baseline_silence",
+   "n": 240,
+   "n_clips": 200,
+   "domain": "baseline",
+   "desired_TO": 0,
+   "TOR": 0.0,
+   "TOR_ci": [
+    0.0,
+    0.0
+   ],
+   "event_mean_dkl": 0.5417,
+   "dkl_ci": [
+    0.4376,
+    0.6557
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "pause",
+   "model": "baseline_always_talk",
+   "n": 240,
+   "n_clips": 200,
+   "domain": "baseline",
+   "desired_TO": 0,
+   "TOR": 0.9375,
+   "TOR_ci": [
+    0.9042,
+    0.9667
+   ],
+   "event_mean_dkl": 3.1995,
+   "dkl_ci": [
+    3.0267,
+    3.3669
+   ],
+   "lat_median": null
   },
   {
    "task": "smooth_tt",
    "model": "jmoshi",
    "n": 197,
+   "n_clips": 196,
    "domain": "out",
-   "TOR": 0.3909,
    "desired_TO": 1,
-   "event_mean_dkl": 1.608,
-   "AUC": 0.4758,
-   "r_pb": -0.0342,
-   "alpha": 0.4048,
-   "score": 0.5532
+   "TOR": 0.3909,
+   "TOR_ci": [
+    0.3198,
+    0.4619
+   ],
+   "event_mean_dkl": 1.5991,
+   "dkl_ci": [
+    1.482,
+    1.7305
+   ],
+   "lat_median": 0.566
   },
   {
    "task": "smooth_tt",
    "model": "jmoshi_ext",
    "n": 197,
+   "n_clips": 196,
    "domain": "out",
-   "TOR": 0.5482,
    "desired_TO": 1,
-   "event_mean_dkl": 1.791,
-   "AUC": 0.4561,
-   "r_pb": -0.0381,
-   "alpha": 0.4048,
-   "score": 0.5154
+   "TOR": 0.5685,
+   "TOR_ci": [
+    0.4975,
+    0.6396
+   ],
+   "event_mean_dkl": 1.8065,
+   "dkl_ci": [
+    1.6795,
+    1.9445
+   ],
+   "lat_median": 0.6355
   },
   {
    "task": "smooth_tt",
    "model": "llmjp",
    "n": 197,
+   "n_clips": 196,
    "domain": "in",
-   "TOR": 0.5025,
    "desired_TO": 1,
-   "event_mean_dkl": 1.7582,
-   "AUC": 0.5546,
-   "r_pb": 0.0922,
-   "alpha": 0.4048,
-   "score": 0.5228
+   "TOR": 0.5025,
+   "TOR_ci": [
+    0.4365,
+    0.5736
+   ],
+   "event_mean_dkl": 1.7271,
+   "dkl_ci": [
+    1.5869,
+    1.8691
+   ],
+   "lat_median": 0.58
   },
   {
    "task": "smooth_tt",
-   "model": "gemini",
+   "model": "llmjp_live",
    "n": 197,
-   "domain": "out",
-   "TOR": 0.2741,
+   "n_clips": 196,
+   "domain": "in",
    "desired_TO": 1,
-   "event_mean_dkl": 2.0869,
-   "AUC": 0.5408,
-   "r_pb": 0.047,
-   "alpha": 0.4048,
-   "score": 0.4709
+   "TOR": 0.5838,
+   "TOR_ci": [
+    0.5127,
+    0.6548
+   ],
+   "event_mean_dkl": 1.7875,
+   "dkl_ci": [
+    1.6475,
+    1.9378
+   ],
+   "lat_median": 0.078
   },
   {
    "task": "smooth_tt",
    "model": "gpt_realtime",
    "n": 197,
+   "n_clips": 196,
    "domain": "out",
-   "TOR": 0.5685,
    "desired_TO": 1,
-   "event_mean_dkl": 1.9743,
-   "AUC": 0.3291,
-   "r_pb": -0.2715,
-   "alpha": 0.4048,
-   "score": 0.4815
+   "TOR": 0.5685,
+   "TOR_ci": [
+    0.4975,
+    0.6345
+   ],
+   "event_mean_dkl": 1.9472,
+   "dkl_ci": [
+    1.8117,
+    2.082
+   ],
+   "lat_median": 0.892
+  },
+  {
+   "task": "smooth_tt",
+   "model": "gemini",
+   "n": 197,
+   "n_clips": 196,
+   "domain": "out",
+   "desired_TO": 1,
+   "TOR": 0.269,
+   "TOR_ci": [
+    0.2081,
+    0.3299
+   ],
+   "event_mean_dkl": 2.105,
+   "dkl_ci": [
+    1.9483,
+    2.2566
+   ],
+   "lat_median": 1.141
   },
   {
    "task": "smooth_tt",
    "model": "grok_voice",
    "n": 197,
+   "n_clips": 196,
    "domain": "out",
-   "TOR": 0.2335,
    "desired_TO": 1,
-   "event_mean_dkl": 2.1195,
-   "AUC": 0.4299,
-   "r_pb": -0.0912,
-   "alpha": 0.4048,
-   "score": 0.4664
+   "TOR": 0.2792,
+   "TOR_ci": [
+    0.2183,
+    0.3452
+   ],
+   "event_mean_dkl": 2.1467,
+   "dkl_ci": [
+    1.9937,
+    2.3003
+   ],
+   "lat_median": 1.234
+  },
+  {
+   "task": "smooth_tt",
+   "model": "baseline_silence",
+   "n": 197,
+   "n_clips": 196,
+   "domain": "baseline",
+   "desired_TO": 1,
+   "TOR": 0.0,
+   "TOR_ci": [
+    0.0,
+    0.0
+   ],
+   "event_mean_dkl": 2.124,
+   "dkl_ci": [
+    1.9789,
+    2.2784
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "smooth_tt",
+   "model": "baseline_always_talk",
+   "n": 197,
+   "n_clips": 196,
+   "domain": "baseline",
+   "desired_TO": 1,
+   "TOR": 0.0051,
+   "TOR_ci": [
+    0.0,
+    0.0152
+   ],
+   "event_mean_dkl": 1.7733,
+   "dkl_ci": [
+    1.6519,
+    1.9025
+   ],
+   "lat_median": 1.235
   }
  ],
- "vap_checkpoint": "vap_state_dict_jp_kyoto_20hz_2500msec.pt (maai-kyoto/vap_jp_kyoto, MIT; 20 Hz / 2.5 s). Rescored 2026-09-28 with the repository default; VAP-distance columns are comparable with runs that use the same checkpoint.",
- "asr": "reazonspeech_whisperx (ReazonSpeech-ESPnet + WhisperX alignment)",
- "rescored": "2026-09-28",
- "events_note": "pause 240 / smooth_tt 197 events are unchanged from the 2026-07-08 leaderboard (TOR identical); only the VAP-distance columns changed with the checkpoint. The bc (backchannel) task is no longer listed: its event definition depends on transcript-level thresholds and the released detector yields 125 events (was 314), so it is kept in the code as an experimental task only."
+ "turn_transition_only": [
+  {
+   "task": "smooth_tt",
+   "model": "jmoshi",
+   "n": 72,
+   "n_clips": 72,
+   "domain": "out",
+   "desired_TO": 1,
+   "TOR": 0.4028,
+   "TOR_ci": [
+    0.2917,
+    0.5139
+   ],
+   "event_mean_dkl": 1.4826,
+   "dkl_ci": [
+    1.3093,
+    1.6552
+   ],
+   "lat_median": 0.388
+  },
+  {
+   "task": "smooth_tt",
+   "model": "jmoshi_ext",
+   "n": 72,
+   "n_clips": 72,
+   "domain": "out",
+   "desired_TO": 1,
+   "TOR": 0.625,
+   "TOR_ci": [
+    0.5139,
+    0.7361
+   ],
+   "event_mean_dkl": 1.7749,
+   "dkl_ci": [
+    1.5896,
+    1.964
+   ],
+   "lat_median": 0.631
+  },
+  {
+   "task": "smooth_tt",
+   "model": "llmjp",
+   "n": 72,
+   "n_clips": 72,
+   "domain": "in",
+   "desired_TO": 1,
+   "TOR": 0.5,
+   "TOR_ci": [
+    0.3889,
+    0.6111
+   ],
+   "event_mean_dkl": 1.6906,
+   "dkl_ci": [
+    1.5037,
+    1.8825
+   ],
+   "lat_median": 0.5755
+  },
+  {
+   "task": "smooth_tt",
+   "model": "llmjp_live",
+   "n": 72,
+   "n_clips": 72,
+   "domain": "in",
+   "desired_TO": 1,
+   "TOR": 0.6944,
+   "TOR_ci": [
+    0.5833,
+    0.8056
+   ],
+   "event_mean_dkl": 1.6807,
+   "dkl_ci": [
+    1.5032,
+    1.8853
+   ],
+   "lat_median": 0.143
+  },
+  {
+   "task": "smooth_tt",
+   "model": "gpt_realtime",
+   "n": 72,
+   "n_clips": 72,
+   "domain": "out",
+   "desired_TO": 1,
+   "TOR": 0.6389,
+   "TOR_ci": [
+    0.5278,
+    0.75
+   ],
+   "event_mean_dkl": 1.8322,
+   "dkl_ci": [
+    1.6506,
+    2.0265
+   ],
+   "lat_median": 0.9505
+  },
+  {
+   "task": "smooth_tt",
+   "model": "gemini",
+   "n": 72,
+   "n_clips": 72,
+   "domain": "out",
+   "desired_TO": 1,
+   "TOR": 0.3333,
+   "TOR_ci": [
+    0.2222,
+    0.4444
+   ],
+   "event_mean_dkl": 1.8342,
+   "dkl_ci": [
+    1.622,
+    2.0561
+   ],
+   "lat_median": 1.2725
+  },
+  {
+   "task": "smooth_tt",
+   "model": "grok_voice",
+   "n": 72,
+   "n_clips": 72,
+   "domain": "out",
+   "desired_TO": 1,
+   "TOR": 0.3472,
+   "TOR_ci": [
+    0.2361,
+    0.4583
+   ],
+   "event_mean_dkl": 1.8413,
+   "dkl_ci": [
+    1.6369,
+    2.0509
+   ],
+   "lat_median": 1.458
+  },
+  {
+   "task": "smooth_tt",
+   "model": "baseline_silence",
+   "n": 72,
+   "n_clips": 72,
+   "domain": "baseline",
+   "desired_TO": 1,
+   "TOR": 0.0,
+   "TOR_ci": [
+    0.0,
+    0.0
+   ],
+   "event_mean_dkl": 1.753,
+   "dkl_ci": [
+    1.5744,
+    1.9337
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "smooth_tt",
+   "model": "baseline_always_talk",
+   "n": 72,
+   "n_clips": 72,
+   "domain": "baseline",
+   "desired_TO": 1,
+   "TOR": 0.0,
+   "TOR_ci": [
+    0.0,
+    0.0
+   ],
+   "event_mean_dkl": 1.7787,
+   "dkl_ci": [
+    1.6112,
+    1.9448
+   ],
+   "lat_median": null
+  }
+ ],
+ "transcript_boundaries": [
+  {
+   "task": "pause",
+   "model": "jmoshi",
+   "n": 240,
+   "n_clips": 200,
+   "domain": "out",
+   "desired_TO": 0,
+   "TOR": 0.3708,
+   "TOR_ci": [
+    0.3083,
+    0.4333
+   ],
+   "event_mean_dkl": 1.2469,
+   "dkl_ci": [
+    1.0816,
+    1.4298
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "pause",
+   "model": "jmoshi_ext",
+   "n": 240,
+   "n_clips": 200,
+   "domain": "out",
+   "desired_TO": 0,
+   "TOR": 0.2417,
+   "TOR_ci": [
+    0.1917,
+    0.2958
+   ],
+   "event_mean_dkl": 1.319,
+   "dkl_ci": [
+    1.1389,
+    1.5038
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "pause",
+   "model": "llmjp",
+   "n": 240,
+   "n_clips": 200,
+   "domain": "in",
+   "desired_TO": 0,
+   "TOR": 0.4333,
+   "TOR_ci": [
+    0.3708,
+    0.4958
+   ],
+   "event_mean_dkl": 1.8118,
+   "dkl_ci": [
+    1.5842,
+    2.0466
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "pause",
+   "model": "llmjp_live",
+   "n": 240,
+   "n_clips": 200,
+   "domain": "in",
+   "desired_TO": 0,
+   "TOR": 0.6542,
+   "TOR_ci": [
+    0.5875,
+    0.7126
+   ],
+   "event_mean_dkl": 1.507,
+   "dkl_ci": [
+    1.3396,
+    1.6725
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "pause",
+   "model": "gpt_realtime",
+   "n": 240,
+   "n_clips": 200,
+   "domain": "out",
+   "desired_TO": 0,
+   "TOR": 0.2083,
+   "TOR_ci": [
+    0.1582,
+    0.2625
+   ],
+   "event_mean_dkl": 1.202,
+   "dkl_ci": [
+    0.9786,
+    1.4263
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "pause",
+   "model": "gemini",
+   "n": 240,
+   "n_clips": 200,
+   "domain": "out",
+   "desired_TO": 0,
+   "TOR": 0.3,
+   "TOR_ci": [
+    0.2458,
+    0.3583
+   ],
+   "event_mean_dkl": 0.9389,
+   "dkl_ci": [
+    0.7572,
+    1.1373
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "pause",
+   "model": "grok_voice",
+   "n": 240,
+   "n_clips": 200,
+   "domain": "out",
+   "desired_TO": 0,
+   "TOR": 0.3125,
+   "TOR_ci": [
+    0.2542,
+    0.375
+   ],
+   "event_mean_dkl": 0.6241,
+   "dkl_ci": [
+    0.5013,
+    0.7555
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "pause",
+   "model": "baseline_silence",
+   "n": 240,
+   "n_clips": 200,
+   "domain": "baseline",
+   "desired_TO": 0,
+   "TOR": 0.0,
+   "TOR_ci": [
+    0.0,
+    0.0
+   ],
+   "event_mean_dkl": 0.5606,
+   "dkl_ci": [
+    0.4517,
+    0.6841
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "pause",
+   "model": "baseline_always_talk",
+   "n": 240,
+   "n_clips": 200,
+   "domain": "baseline",
+   "desired_TO": 0,
+   "TOR": 0.9917,
+   "TOR_ci": [
+    0.9792,
+    1.0
+   ],
+   "event_mean_dkl": 2.6389,
+   "dkl_ci": [
+    2.5147,
+    2.7655
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "smooth_tt",
+   "model": "jmoshi",
+   "n": 197,
+   "n_clips": 196,
+   "domain": "out",
+   "desired_TO": 1,
+   "TOR": 0.3909,
+   "TOR_ci": [
+    0.3249,
+    0.4569
+   ],
+   "event_mean_dkl": 1.608,
+   "dkl_ci": [
+    1.4793,
+    1.7357
+   ],
+   "lat_median": 0.566
+  },
+  {
+   "task": "smooth_tt",
+   "model": "jmoshi_ext",
+   "n": 197,
+   "n_clips": 196,
+   "domain": "out",
+   "desired_TO": 1,
+   "TOR": 0.5482,
+   "TOR_ci": [
+    0.4772,
+    0.6193
+   ],
+   "event_mean_dkl": 1.791,
+   "dkl_ci": [
+    1.6693,
+    1.9269
+   ],
+   "lat_median": 0.6745
+  },
+  {
+   "task": "smooth_tt",
+   "model": "llmjp",
+   "n": 197,
+   "n_clips": 196,
+   "domain": "in",
+   "desired_TO": 1,
+   "TOR": 0.5025,
+   "TOR_ci": [
+    0.4313,
+    0.5736
+   ],
+   "event_mean_dkl": 1.7582,
+   "dkl_ci": [
+    1.6329,
+    1.886
+   ],
+   "lat_median": 0.482
+  },
+  {
+   "task": "smooth_tt",
+   "model": "llmjp_live",
+   "n": 197,
+   "n_clips": 196,
+   "domain": "in",
+   "desired_TO": 1,
+   "TOR": 0.5736,
+   "TOR_ci": [
+    0.4975,
+    0.6447
+   ],
+   "event_mean_dkl": 1.8157,
+   "dkl_ci": [
+    1.6897,
+    1.956
+   ],
+   "lat_median": 0.2
+  },
+  {
+   "task": "smooth_tt",
+   "model": "gpt_realtime",
+   "n": 197,
+   "n_clips": 196,
+   "domain": "out",
+   "desired_TO": 1,
+   "TOR": 0.5685,
+   "TOR_ci": [
+    0.5024,
+    0.6396
+   ],
+   "event_mean_dkl": 1.9743,
+   "dkl_ci": [
+    1.8486,
+    2.1111
+   ],
+   "lat_median": 1.0385
+  },
+  {
+   "task": "smooth_tt",
+   "model": "gemini",
+   "n": 197,
+   "n_clips": 196,
+   "domain": "out",
+   "desired_TO": 1,
+   "TOR": 0.2741,
+   "TOR_ci": [
+    0.2132,
+    0.3401
+   ],
+   "event_mean_dkl": 2.0869,
+   "dkl_ci": [
+    1.937,
+    2.2419
+   ],
+   "lat_median": 1.098
+  },
+  {
+   "task": "smooth_tt",
+   "model": "grok_voice",
+   "n": 197,
+   "n_clips": 196,
+   "domain": "out",
+   "desired_TO": 1,
+   "TOR": 0.2335,
+   "TOR_ci": [
+    0.1777,
+    0.2944
+   ],
+   "event_mean_dkl": 2.1195,
+   "dkl_ci": [
+    1.9664,
+    2.2726
+   ],
+   "lat_median": 1.0785
+  },
+  {
+   "task": "smooth_tt",
+   "model": "baseline_silence",
+   "n": 197,
+   "n_clips": 196,
+   "domain": "baseline",
+   "desired_TO": 1,
+   "TOR": 0.0,
+   "TOR_ci": [
+    0.0,
+    0.0
+   ],
+   "event_mean_dkl": 2.0797,
+   "dkl_ci": [
+    1.9293,
+    2.2258
+   ],
+   "lat_median": null
+  },
+  {
+   "task": "smooth_tt",
+   "model": "baseline_always_talk",
+   "n": 197,
+   "n_clips": 196,
+   "domain": "baseline",
+   "desired_TO": 1,
+   "TOR": 0.0051,
+   "TOR_ci": [
+    0.0,
+    0.0152
+   ],
+   "event_mean_dkl": 1.7815,
+   "dkl_ci": [
+    1.6635,
+    1.9092
+   ],
+   "lat_median": 1.567
+  }
+ ],
+ "boundaries": "audio (human-side VAD; detection.boundaries: audio). Same events as the transcript-boundary release; only the human A/B boundaries are re-placed from the audio. Model speech times come from the ASR transcript.",
+ "asr": "AsReX (ReazonSpeech-ESPnet + WhisperX alignment), the transcripts used in the paper. Running the toolkit's default ASR end-to-end does not reproduce these TOR values exactly (it extends the last character into the following silence).",
+ "vap_checkpoint": "vap_state_dict_jp_kyoto_20hz_2500msec.pt (maai-kyoto/vap_jp_kyoto rev fe24ac6, MIT; 20 Hz / 2.5 s)",
+ "ci": "95% bootstrap intervals over events",
+ "rescored": "2026-11-04"
 }
