@@ -1,6 +1,6 @@
 [project]
 name = "fdbja"
-version = "0.0.1"
+version = "0.1.0"
 description = "Full-Duplex-Bench-JA: evaluation toolkit for Japanese full-duplex spoken dialogue models (turn-taking)"
 readme = "README.md"
 requires-python = ">=3.10"
