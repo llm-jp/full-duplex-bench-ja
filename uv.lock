@@ -1663,6 +1663,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+always-talk = [
+    { name = "pyopenjtalk", marker = "python_full_version < '3.14' or (extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-nemo') or (extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-reazon-whisperx') or (extra == 'extra-5-fdbja-asr-nemo' and extra == 'extra-5-fdbja-asr-reazon-whisperx')" },
+]
 analysis = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-nemo') or (extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-reazon-whisperx') or (extra == 'extra-5-fdbja-asr-nemo' and extra == 'extra-5-fdbja-asr-reazon-whisperx')" },
     { name = "matplotlib", version = "3.11.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.11' and python_full_version < '3.14') or (python_full_version < '3.11' and extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-nemo') or (python_full_version < '3.11' and extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-reazon-whisperx') or (python_full_version < '3.11' and extra == 'extra-5-fdbja-asr-nemo' and extra == 'extra-5-fdbja-asr-reazon-whisperx') or (python_full_version >= '3.14' and extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-nemo') or (python_full_version >= '3.14' and extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-reazon-whisperx') or (python_full_version >= '3.14' and extra == 'extra-5-fdbja-asr-nemo' and extra == 'extra-5-fdbja-asr-reazon-whisperx')" },
@@ -1721,6 +1724,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "opuslib", marker = "extra == 'infer'" },
     { name = "pandas", marker = "extra == 'analysis'" },
+    { name = "pyopenjtalk", marker = "extra == 'always-talk'" },
     { name = "pyyaml" },
     { name = "reazonspeech-espnet-asr", marker = "extra == 'asr-reazon-whisperx'", git = "https://github.com/reazon-research/ReazonSpeech?subdirectory=pkg%2Fespnet-asr&rev=v2.1.0" },
     { name = "reazonspeech-k2-asr", marker = "extra == 'asr-k2'", git = "https://github.com/reazon-research/ReazonSpeech?subdirectory=pkg%2Fk2-asr&rev=v3.0.0" },
@@ -1740,7 +1744,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'realtime'" },
     { name = "whisperx", marker = "extra == 'asr-reazon-whisperx'", specifier = ">=3.3" },
 ]
-provides-extras = ["vap", "infer", "gemini", "realtime", "analysis", "asr-nemo", "asr-k2", "asr-reazon-whisperx"]
+provides-extras = ["vap", "infer", "gemini", "realtime", "always-talk", "analysis", "asr-nemo", "asr-k2", "asr-reazon-whisperx"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -5549,6 +5553,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pyopenjtalk"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-nemo') or (extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-reazon-whisperx') or (extra == 'extra-5-fdbja-asr-nemo' and extra == 'extra-5-fdbja-asr-reazon-whisperx')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*' or (extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-nemo') or (extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-reazon-whisperx') or (extra == 'extra-5-fdbja-asr-nemo' and extra == 'extra-5-fdbja-asr-reazon-whisperx')" },
+    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and python_full_version < '3.14') or (python_full_version < '3.12' and extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-nemo') or (python_full_version < '3.12' and extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-reazon-whisperx') or (python_full_version < '3.12' and extra == 'extra-5-fdbja-asr-nemo' and extra == 'extra-5-fdbja-asr-reazon-whisperx') or (python_full_version >= '3.14' and extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-nemo') or (python_full_version >= '3.14' and extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-reazon-whisperx') or (python_full_version >= '3.14' and extra == 'extra-5-fdbja-asr-nemo' and extra == 'extra-5-fdbja-asr-reazon-whisperx')" },
+    { name = "tqdm", marker = "python_full_version < '3.14' or (extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-nemo') or (extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-reazon-whisperx') or (extra == 'extra-5-fdbja-asr-nemo' and extra == 'extra-5-fdbja-asr-reazon-whisperx')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/58/74/ccd31c696f047ba381f9b11a504bf1199756c3f30f3de64e3eeb83e10b4a/pyopenjtalk-0.4.1.tar.gz", hash = "sha256:d5ada46f7fc2b52c1c79c273eb9668ff6ad7ab276a8db9d8be119ef93440f0dc", size = 1397999, upload-time = "2025-04-08T06:27:46.528Z" }
+
+[[package]]
 name = "pyparsing"
 version = "3.3.2"
 source = { registry = "https://pypi.org/simple" }
@@ -7485,7 +7501,7 @@ name = "tqdm"
 version = "4.70.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
+    { name = "colorama", marker = "(python_full_version < '3.14' and sys_platform == 'win32') or (python_full_version >= '3.14' and extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-nemo') or (python_full_version >= '3.14' and extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-reazon-whisperx') or (python_full_version >= '3.14' and extra == 'extra-5-fdbja-asr-nemo' and extra == 'extra-5-fdbja-asr-reazon-whisperx') or (sys_platform != 'win32' and extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-nemo') or (sys_platform != 'win32' and extra == 'extra-5-fdbja-asr-k2' and extra == 'extra-5-fdbja-asr-reazon-whisperx') or (sys_platform != 'win32' and extra == 'extra-5-fdbja-asr-nemo' and extra == 'extra-5-fdbja-asr-reazon-whisperx')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0d/ea/b2a5bd54b28a324dae8211928b2d730b6547500342c7e6c6dea08bd0a485/tqdm-4.70.1.tar.gz", hash = "sha256:cefd0eca11b2a37a3aee776544d4f4ae913f02688135b5556b8788dfa474afc4", size = 171846, upload-time = "2026-09-11T07:25:16.601Z" }
 wheels = [

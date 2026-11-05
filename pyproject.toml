@@ -20,7 +20,9 @@ infer = ["opuslib", "websockets", "torch", "torchaudio"]
 gemini = ["google-genai", "librosa", "soundfile"]
 # `infer` with OpenAI-Realtime-protocol APIs (GPT-Realtime, Grok-Voice)
 realtime = ["websockets", "librosa"]
-# analysis / figures
+# the always_talk baseline's default speech loop (source: auto), synthesised with Open JTalk on first use
+always-talk = ["pyopenjtalk"]
+# analysis / figures (also `analyze-profile`)
 analysis = ["matplotlib", "pandas"]
 # `transcribe` backends (mutually exclusive: pick one per environment)
 asr-nemo = [
