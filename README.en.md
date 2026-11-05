@@ -37,7 +37,29 @@ restricted to genuine turn transitions, 197 → 72 events) and `detection.system
   `.[asr-k2]` (ReazonSpeech k2 v2 via sherpa-onnx, CPU-friendly). The extras are mutually
   exclusive; weights are fetched from the Hugging Face Hub on first use. The aligner-free backends
   segment utterances differently, so their TOR is not directly comparable with the leaderboard.
-- LLM-jp-Zoom1 to build the evaluation clips (see [DATASET.md](DATASET.md)).
+- LLM-jp-Zoom1 to build the evaluation clips (see [DATASET.md](DATASET.md)), or your own two-channel
+  dialogue recordings (see "Evaluation set from your own two-channel dialogues" below).
+- `.[always-talk]` (pyopenjtalk) for the `always_talk` baseline's default speech loop (`source: auto`),
+  or set `source_wav` to a speech file instead.
+- GPU: the locked torch is the PyPI Linux build for CUDA 13.0 and needs NVIDIA driver 580 or newer.
+  See "Older GPU drivers" below.
+
+### Older GPU drivers (replacing torch, `--no-sync`)
+
+If `nvidia-smi` reports `CUDA Version` 12.x (e.g. a 550-series driver = CUDA 12.4), the locked torch cannot
+use the GPU (it falls back to CPU or fails with `CUDA driver version is insufficient`). Install the extras,
+then replace torch with a build for your driver:
+
+```bash
+uv sync --extra asr-reazon-whisperx
+uv pip install --reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu126   # CUDA 12.x drivers
+uv run --no-sync python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+uv run --no-sync fdbja transcribe --config configs/default.yaml
+```
+
+**Afterwards run everything with `uv run --no-sync` (or set `UV_NO_SYNC=1`).** `uv run` and `uv sync` re-sync
+the environment to the lockfile by default and would put the CUDA 13.0 torch back. Pick the index suffix
+(`cu126`, ...) that your driver supports from the [PyTorch install page](https://pytorch.org/get-started/locally/).
 
 ## Quick start
 
@@ -69,9 +91,78 @@ uv run fdbja score-offline --config configs/default.yaml
 
 Pipeline: `reconstruct` (corpus -> events -> 20 s clips) -> `infer` (stream speaker A to a model
 adapter, record the response) -> `transcribe` (ASR of the response channel -> jchat) ->
-`score-offline` (binary TOR, plus VAP-distance when enabled -> `results.json`). TOR depends on the ASR backend;
-report the backend name with your numbers and use the same one when comparing runs.
+`score-offline` (binary TOR, plus VAP-distance when enabled -> `results.json`, `summary.json`, `summary.csv`).
+TOR depends on the ASR backend; report the backend name with your numbers and use the same one when comparing runs.
 Run `uv run fdbja <command> --help` for arguments.
+
+### Evaluation set from your own two-channel dialogues
+
+The LLM-jp-Zoom1 evaluation data is not public yet (see [DATASET.md](DATASET.md)). Until then, or to evaluate
+on another domain, build an evaluation set from your own recordings of two-person dialogues. You need:
+
+- **Stereo audio** (wav / flac, any sample rate): ch0 = speaker A (played to the model), ch1 = speaker B (the
+  human whose behaviour is the reference). Record the speakers separately and put them on two channels; a
+  mixed mono recording does not work.
+- **Character-level transcripts (jchat)**: one JSON per recording, a list with one item per character:
+  `{"speaker": "A", "word": "こ", "start": 0.52, "end": 0.61}`. `speaker` is `A` (ch0) or `B` (ch1) and
+  **both must occur** (the event detectors look at the sequence of A and B utterances); `word` is one
+  character; `start` / `end` are seconds from the start of the recording.
+
+`transcribe --wav` writes such transcripts. Give one `--speaker` per `--channel` to transcribe both channels
+into one file (without `--speaker` every character is labelled `B`, the default for model responses):
+
+```bash
+uv run fdbja transcribe --wav my_dialogues/audio/*.wav --channel 0 1 --speaker A B --out my_dialogues/text
+```
+
+Then set `corpus.layout: generic`: every `*.json` under `text_dir` is one recording, paired with the audio file
+of the same stem anywhere under `audio_dir` (`reconstruct --layout generic` does the same):
+
+```yaml
+corpus:
+  layout: generic              # zoom1 (default): <text_dir>/<session>/<key>.json + <audio_dir>/<session>/<key>.wav
+  text_dir: ./my_dialogues/text
+  audio_dir: ./my_dialogues/audio
+  eval_dir: ./data/my_eval
+```
+
+`infer` -> `transcribe` -> `score-offline` are unchanged. On synthetic recordings (meaningless numbers):
+
+```bash
+uv run python examples/dummy/make_dummy_corpus.py --out data/my_dialogues --layout generic --audio-only
+uv run python examples/dummy/energy_asr.py --backend energy --wav data/my_dialogues/audio/*.wav \
+    --channel 0 1 --speaker A B --out data/my_dialogues/text
+uv run fdbja reconstruct --config examples/dummy/config_own_dialogues.yaml
+uv run fdbja infer --config examples/dummy/config_own_dialogues.yaml
+uv run python examples/dummy/energy_asr.py --config examples/dummy/config_own_dialogues.yaml
+uv run fdbja score-offline --config examples/dummy/config_own_dialogues.yaml
+```
+
+Events are detected from the character timestamps only, so consider `detection.boundaries: audio` to re-place
+the human boundaries on the audio. Clips are 20 s long; shorter recordings are not used. Numbers on your own set
+are not comparable with the leaderboard; report the data source, event counts and settings.
+
+### Outputs (`score-offline`, `analyze-profile`)
+
+`score-offline` writes `results.json` (summary, scoring conditions and per-event decisions, including the event
+times `t_start` / `t_end` and the system utterances near the judgement window, `sys_segments`), `summary.json`
+(the same without the events; the shape of `docs/results.json`) and `summary.csv` (one row per task x system,
+intervals split into `*_low` / `*_high`). The summary uses the keys of `docs/results.json`: `n` (events),
+`n_clips`, `TOR`, `TOR_ci` (95% percentile bootstrap over events, 10000 replicates; `output.bootstrap: {n, seed}`),
+`lat_median` / `lat_q1` / `lat_q3` (Smooth TT response latency of the taken turns, negative values clipped to 0
+as on the leaderboard), `onset_median` / `onset_q1` / `onset_q3` (the same latency without clipping, -0.5 to
++2.0 s) and `overlap_rate` (share of taken turns that started before A finished), `event_mean_dkl` / `dkl_ci`
+(VAP-distance, when enabled). The scoring conditions are recorded at the top level: `boundaries`,
+`system_activity`, `smooth_tt_roles`, `asr` (the backend `transcribe` recorded per model), `vap_checkpoint`
+(file name and the first 12 hex digits of its SHA-256) and `ci`.
+
+`uv run fdbja analyze-profile --results results/results.json --out results/profile` summarises each system on
+one table (`profile.md` / `profile.csv`): on Pause, the share of pauses it talked through (= TOR), filled with
+backchannel-sized speech only, or left silent; on Smooth TT, the share of turn ends it took (= TOR), of which it
+started before A finished, and left unanswered, with the quartiles of the signed onset; and a rough tendency
+(talks over / stays silent / slow; thresholds are arguments). It also plots Pause talked-through share against
+Smooth TT no-response share (`profile.png` / `profile.svg`, needs matplotlib from `.[analysis]`) and writes
+`events.csv`: per event, its time, the judgement window, the system's utterances, the outcome and the reason.
 
 ## What is evaluated
 
@@ -102,8 +193,29 @@ used for the paper; report `audio` as a separate condition. VAP-distance is unaf
 ## Model adapters
 
 `moshi_ws` (Moshi-family WebSocket servers), `gemini_live` (Gemini Live API), `openai_realtime`
-(OpenAI Realtime protocol: GPT-Realtime, Grok Voice). Commercial-API adapters were verified against
-the protocols and model names available **as of 2026-08**; we do not guarantee to track API changes.
+(OpenAI Realtime protocol: GPT-Realtime, Grok Voice), `silence` / `always_talk` (trivial baselines).
+Commercial-API adapters were verified against the protocols and model names available **as of 2026-08**;
+we do not guarantee to track API changes.
+
+Your own model: implement `ModelAdapter.infer(input_audio, sample_rate) -> DialogueResponse`
+(`src/fdbja/adapters/base.py`; `input_audio` is speaker A, mono 16 kHz; `infer` writes the returned
+`response_audio` into `combined.wav`) and either
+
+- name it in the config as `adapter: "package.module:ClassName"` (other keys except `name` / `domain` are
+  constructor arguments; the module must be importable), or
+- register it with `fdbja.adapters.register_adapter("name", ClassName)` before calling `fdbja.cli.main`.
+
+`adapter: offline` runs nothing: put each clip's `combined.wav` (ch0 = speaker A, ch1 = your system) in place
+yourself. An entry whose adapter cannot be built is skipped by `infer` with the reason (exit code 1) while the
+other systems run; `score-offline` builds no adapters and scores every system whose outputs are present, so one
+config serves both. `--model` restricts `infer`, `transcribe` and `score-offline`. Minimal example
+(replies once the partner has been silent for 0.6 s):
+
+```bash
+PYTHONPATH=examples/adapters uv run fdbja infer --config examples/adapters/config.yaml
+uv run python examples/dummy/energy_asr.py --config examples/adapters/config.yaml
+uv run fdbja score-offline --config examples/adapters/config.yaml
+```
 
 ## License
 

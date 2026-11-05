@@ -20,7 +20,14 @@
 
 ## 触ってよいもの・注意するもの
 
-- `docs/results.json` はリーダーボードの元データ。`score-offline` の出力で丸ごと差し替える(手で編集しない)。
+- `docs/results.json` はリーダーボードの元データ。`score-offline` が書く `summary.json` から作り、手で数値を編集しない。
+  `summary.json` のキー(`summary` の各行の `n` / `n_clips` / `TOR` / `TOR_ci` / `event_mean_dkl` / `dkl_ci` / `lat_median`、
+  トップレベルの `boundaries` / `asr` / `vap_checkpoint` / `ci`)は `docs/results.json` と同じ。
+  - `summary` と採点条件: 掲載の設定(`detection.boundaries: audio`)で全モデルを 1 回の `score-offline` で採点した `summary.json` をそのまま使う。
+  - `turn_transition_only`: 同じ設定に `detection.smooth_tt_roles.enabled: true` を足した実行の `summary` の Smooth TT の行。
+  - `transcript_boundaries`: `detection.boundaries: transcript` の実行の `summary`。
+  - `rescored`(採点日)と、`boundaries` / `asr` の説明文を書き換えるかは更新する人が決める(`asr` は `transcribe` が記録したバックエンド名になる)。
   α はモデル集合に依存するので、モデル追加時は全モデルを 1 回の実行で採点し直す。
+  95% 区間は事象の bootstrap(10000 回、百分位)で、乱数列が違うと端点が小数第 3 位で揺れることがある。
 - `docs/samples/` の音声は LLM-jp-Zoom1 からの抜粋。追加・差し替えはコーパスの条件を確認してから。
 - 音声・チェックポイント・評価ディレクトリはコミットしない(`.gitignore` 参照)。

@@ -25,8 +25,27 @@
 | 採点(二値 TOR) | Python 3.10 以上、[uv](https://docs.astral.sh/uv/) |
 | 採点(VAP-distance) | 上に加えて `.[vap]`(torch)、[VAP-Realtime](https://github.com/inokoj/VAP-Realtime) のローカル clone(CPC エンコーダ同梱)、日本語 VAP チェックポイント [`maai-kyoto/vap_jp_kyoto`](https://huggingface.co/maai-kyoto/vap_jp_kyoto) の `vap_state_dict_jp_kyoto_20hz_2500msec.pt`(MIT。リビジョン固定で取得)を `<VAP_REALTIME_ROOT>/asset/vap/` に置く。手順は下の「VAP-distance の準備」 |
 | モデル出力の ASR 転写(`transcribe`) | いずれか 1 つの extra: `.[asr-reazon-whisperx]`(既定。ReazonSpeech-ESPnet + WhisperX。論文の数値を出した経路)/ `.[asr-nemo]`(ReazonSpeech NeMo v2、整列器なしで高速)/ `.[asr-k2]`(ReazonSpeech k2 v2、CPU 可)。モデルの重みは初回実行時に Hugging Face Hub から取得 |
-| 評価クリップの生成 | LLM-jp-Zoom1 のローカルコピー([DATASET.md](DATASET.md)) |
-| モデル推論(`infer`) | 評価対象に応じて Moshi 系 WebSocket サーバ、`GOOGLE_API_KEY`、`OPENAI_API_KEY`、`XAI_API_KEY` |
+| 評価クリップの生成 | LLM-jp-Zoom1 のローカルコピー([DATASET.md](DATASET.md))、または自前の 2 チャネル対話の録音(下の「3. 自前の 2 チャネル対話から評価セットを作る」) |
+| モデル推論(`infer`) | 評価対象に応じて Moshi 系 WebSocket サーバ、`GOOGLE_API_KEY`、`OPENAI_API_KEY`、`XAI_API_KEY`。自作モデルは `ModelAdapter` を実装する(「モデルアダプタ」) |
+| 常時発話のベースライン(`always_talk`、既定の `source: auto`) | `.[always-talk]`(pyopenjtalk。初回に Open JTalk で 60 秒の音声ループを合成)。入れない場合は `source_wav` に音声ファイルを指定 |
+| GPU | ロックファイルの torch は PyPI の Linux 版(CUDA 13.0 ビルド)で、NVIDIA ドライバ 580 以上が必要。古いドライバでは下の「GPU ドライバが古い場合」の手順で入れ替える |
+
+### GPU ドライバが古い場合(torch の入れ替えと `--no-sync`)
+
+`nvidia-smi` の右上の `CUDA Version` が 12.x(例: ドライバ 550 系 = CUDA 12.4)の環境では、ロックされた torch は GPU を使えません
+(CPU に落ちる、または `CUDA driver version is insufficient` などのエラー)。extra を入れたあと、ドライバに合う CUDA の版の torch に入れ替えます。
+
+```bash
+nvidia-smi | head -4                                        # 右上の CUDA Version を確認
+uv sync --extra asr-reazon-whisperx                         # まず通常どおり入れる
+uv pip install --reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu126   # CUDA 12.x のドライバ向け
+uv run --no-sync python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+uv run --no-sync fdbja transcribe --config configs/default.yaml
+```
+
+**入れ替えたあとは `uv run --no-sync`(または環境変数 `UV_NO_SYNC=1`)で実行してください。**
+`uv run` と `uv sync` は既定で環境をロックファイルに合わせ直すため、`--no-sync` を付けないと torch が CUDA 13.0 版に戻ります。
+index の URL の末尾(`cu126` など)は、[PyTorch の配布一覧](https://pytorch.org/get-started/locally/)でドライバが対応するものを選んでください。
 
 ## クイックスタート
 
@@ -77,9 +96,67 @@ data/eval/
 ```
 
 自分のモデルを採点する最短経路は、(1) `reconstruct` で評価クリップを作る、
-(2) 各クリップの `combined.wav` を上の場所に置く(または `ModelAdapter` を実装して `infer` で生成する)、
+(2) 各クリップの `combined.wav` を上の場所に置く(config では `adapter: offline`)か、`ModelAdapter` を実装して `infer` で生成する(下の「モデルアダプタ」)、
 (3) `transcribe` で応答側チャンネル(ch1)を jchat に転写する、(4) `score-offline` を走らせる、の 4 段です。
 config の `models` に `name` と `domain: in|out` を追加してください。
+
+### 3. 自前の 2 チャネル対話から評価セットを作る
+
+LLM-jp-Zoom1 の評価データは公開準備中です([DATASET.md](DATASET.md))。それまでの間、または別の領域で評価したい場合は、
+手元の 2 人対話の録音から同じ手順で評価セットを作れます。必要なのは次の 2 つです。
+
+- **ステレオの音声**(wav / flac、サンプリング周波数は任意): ch0 = 話者 A(モデルに聞かせる側)、ch1 = 話者 B(正解の振る舞いをする人間)。
+  話者ごとに別に録ったもの(オンライン会議の話者別録音など)を 2 チャネルにまとめてください。1 チャネルの混合音声は使えません。
+- **文字単位の時刻付き転写(jchat)**: 録音ごとに 1 つの JSON。1 文字 1 要素の配列で、各要素は次の 4 つのキーを持ちます。
+
+```json
+[
+  {"speaker": "A", "word": "こ", "start": 0.52, "end": 0.61},
+  {"speaker": "A", "word": "ん", "start": 0.61, "end": 0.70},
+  {"speaker": "B", "word": "は", "start": 3.10, "end": 3.18}
+]
+```
+
+`speaker` は `A`(ch0)か `B`(ch1)のどちらかで、**両方が必要**です(事象の検出は A と B の発話の並びを見ます)。
+`word` は 1 文字、`start` / `end` は録音の先頭からの秒です。手元に転写が無ければ `transcribe` の `--wav` で作れます。
+`--channel` と `--speaker` を並べると、2 つのチャンネルを別々に書き起こして 1 つの jchat にまとめます
+(`--speaker` を省くと全文字が `B` になります。モデル応答を書き起こすための既定です)。
+
+```bash
+# my_dialogues/audio/<録音名>.wav(ステレオ、ch0 = A、ch1 = B)から my_dialogues/text/<録音名>.json を作る
+uv run fdbja transcribe --wav my_dialogues/audio/*.wav --channel 0 1 --speaker A B --out my_dialogues/text
+```
+
+次に、config の `corpus` を `layout: generic` にして `reconstruct` を走らせます。`generic` では `text_dir` 配下の
+すべての `*.json` を 1 録音とみなし、`audio_dir` 配下で**ファイル名(拡張子を除く)が同じ**音声と組にします(サブディレクトリは自由)。
+
+```yaml
+corpus:
+  layout: generic              # zoom1(既定。<text_dir>/<セッション>/<録音>.json と <audio_dir>/<セッション>/<録音>.wav)| generic
+  text_dir: ./my_dialogues/text
+  audio_dir: ./my_dialogues/audio
+  eval_dir: ./data/my_eval
+```
+
+`reconstruct --layout generic` でも指定できます。以降の `infer` → `transcribe` → `score-offline` は実データの場合と同じです。
+合成データで一通り試すには次のとおりです(数値に意味はありません)。
+
+```bash
+uv run python examples/dummy/make_dummy_corpus.py --out data/my_dialogues --layout generic --audio-only   # ステレオ音声だけを作る
+uv run python examples/dummy/energy_asr.py --backend energy --wav data/my_dialogues/audio/*.wav \
+    --channel 0 1 --speaker A B --out data/my_dialogues/text                                     # 音量ベースの代用品で jchat を作る
+uv run fdbja reconstruct --config examples/dummy/config_own_dialogues.yaml
+uv run fdbja infer --config examples/dummy/config_own_dialogues.yaml
+uv run python examples/dummy/energy_asr.py --config examples/dummy/config_own_dialogues.yaml
+uv run fdbja score-offline --config examples/dummy/config_own_dialogues.yaml
+```
+
+注意点:
+
+- 事象の検出は文字の時刻だけで行います(Pause = A のターン内の 0.4〜1.0 秒の間で B が黙っている、Smooth TT = A が 4 秒以上話し、0.4 秒未満の間をおいて B が 4 秒以上話す)。
+  文字の時刻の精度がそのまま事象の境界の精度になるので、`detection.boundaries: audio`(下の節)で人間側の境界を音声に付け直すことを勧めます。
+- クリップは 20 秒で、20 秒より短い録音からは作れません。
+- 自前の評価セットの数値は LLM-jp-Zoom1 の評価セット(リーダーボード)とは比較できません。データの出典・事象数・設定を添えて報告してください。
 
 ### VAP-distance の準備(実験的指標を使う場合のみ)
 
@@ -103,7 +180,8 @@ export VAP_REALTIME_ROOT=$(cd ../VAP-Realtime && pwd)
 uv run fdbja reconstruct --config configs/default.yaml           # LLM-jp-Zoom1 → 事象検出 → 20 秒クリップ + manifest
 uv run fdbja infer --config configs/default.yaml [--limit N]     # 話者 A の音声をモデルに流し応答を録る
 uv run fdbja transcribe --config configs/default.yaml [--model NAME] [--task T] [--backend B]   # 応答を ASR して jchat を書く
-uv run fdbja score-offline --config configs/default.yaml [--limit N]   # TOR + VAP-distance を採点し results.json を出力
+uv run fdbja score-offline --config configs/default.yaml [--limit N] [--model NAME]   # TOR + VAP-distance を採点し results.json / summary.json / summary.csv を出力
+uv run fdbja analyze-profile --results results/results.json --out results/profile   # システムごとの傾向(黙る / 被せる / 遅い)と事象単位のレポート
 uv run fdbja analyze-pause --eval-dir data/eval --out results/pause_gap   # Pause をギャップ長別に再集計(bootstrap CI 付き)
 uv run fdbja sample-human-eval --config configs/default.yaml --out ./human_eval   # 人手評価バンドル(Web UI 込み)
 uv run fdbja analyze-human-eval --responses <dir> --bundle ./human_eval --out <dir>   # 回収した回答の集計と自動指標との照合
@@ -112,6 +190,43 @@ uv run fdbja analyze-human-eval --responses <dir> --bundle ./human_eval --out <d
 各コマンドの引数は `uv run fdbja <command> --help` を参照。人手評価の設計と手順は
 [docs/human_eval.md](docs/human_eval.md)、Pause の層別分析は
 [docs/pause_gap_analysis.md](docs/pause_gap_analysis.md) にあります。
+
+### 採点結果の出力(`score-offline` / `analyze-profile`)
+
+`score-offline` は `output.dir` に 3 つのファイルを書きます。
+
+| ファイル | 中身 |
+|---------|------|
+| `results.json` | `summary`(タスク × システム)、採点条件、`events`(事象 × システムの判定。事象の時刻 `t_start` / `t_end`、判定窓の近くのシステムの発話 `sys_segments` = `[開始, 終了, 文字数]` を含む) |
+| `summary.json` | `results.json` から `events` を除いたもの。`docs/results.json` と同じ形 |
+| `summary.csv` | `summary` を 1 行 1 システム × タスクに展開したもの(区間は `*_low` / `*_high`、採点条件を各行に付記) |
+
+`summary` の主な列(キー名は `docs/results.json` と同じ):
+
+| キー | 内容 |
+|-----|------|
+| `n` / `n_clips` | 採点した事象の数 / クリップの数 |
+| `TOR` / `TOR_ci` | 二値 TOR と 95% 区間(事象を単位とする bootstrap、10000 回、百分位。`output.bootstrap: {n, seed}` で変更可) |
+| `lat_median` / `lat_q1` / `lat_q3` / `lat_n` | Smooth TT でターンを取った事象の応答の遅れ(A の発話終了から応答の開始まで、秒)。リーダーボードと同じく負の値は 0 に丸めたもの |
+| `onset_median` / `onset_q1` / `onset_q3` / `overlap_rate` | 同じ遅れを丸めずに保持したもの(-0.5〜+2.0 秒)と、そのうち A が話し終える前に話し始めた(被せた)割合 |
+| `event_mean_dkl` / `dkl_ci` | VAP-distance(有効にした場合のみ)とその 95% 区間 |
+
+採点条件はトップレベルの `boundaries`(`detection.boundaries`)、`system_activity`、`smooth_tt_roles`、`asr`
+(`transcribe` がモデルごとに記録したバックエンド名。転写を手で置いた場合は不明と書く)、`vap_checkpoint`(ファイル名と SHA-256 の先頭 12 桁)、`ci` に入ります。
+`events` の各行には丸めない遅れ `onset` も入ります。
+
+`analyze-profile` は `results.json` から、システムごとの傾向を 1 枚の表(`profile.md` / `profile.csv`)と散布図(`profile.png` / `profile.svg`。`.[analysis]` の matplotlib が必要)に、
+事象ごとの判定とその理由を `events.csv` にまとめます。
+
+| 列 | 内容 |
+|----|------|
+| Pause: 話し続けた / 相槌だけ / 黙った | ポーズに 0.1 秒以上重なる発話が相槌の範囲(6 文字以下かつ 1.5 秒以下)を超えた(= TOR)/ 相槌の範囲に収まった / 重なる発話が無い |
+| Smooth TT: ターンを取った / うち被せた / 無反応 | A の発話終了の -0.5〜+2.0 秒に 3 文字以上の発話を始めた(= TOR)/ そのうち A の終了より前に始めた / どちらも無い |
+| 遅れの四分位 | 丸めない応答の遅れ(秒) |
+| 傾向(目安) | 被せる型 = Pause で話し続けた割合が 0.5 以上、黙る型 = Smooth TT の無反応が 0.5 以上、遅い型 = 遅れの中央値が 1.0 秒以上(閾値は引数で変更可) |
+
+散布図は横軸が Pause で話し続けた割合、縦軸が Smooth TT で無反応だった割合で、左下が望ましい振る舞い、左上が黙る型、右下が被せる型です。
+`events.csv` には事象の時刻、判定窓、システムの発話区間、判定(`takeover` / `short` / `silent` / `taken` / `overlap` / `no_response`)とその理由が並びます。
 
 ### ASR バックエンド
 
@@ -193,6 +308,31 @@ detection:
 | `openai_realtime` | OpenAI Realtime プロトコル(GPT-Realtime、Grok Voice) | `.[realtime]` |
 | `silence` / `always_talk` | 自明なベースライン(常時沈黙 / 常時発話)。常時発話は初回に Open JTalk(声質 Mei、CC BY 3.0、帰属表示は [src/fdbja/assets/README.md](src/fdbja/assets/README.md))で 60 秒の音声ループを生成してキャッシュ | 常時発話のみ `pyopenjtalk`(無い場合は `source_wav` を指定) |
 
+#### 自作モデルをつなぐ
+
+config の `adapter` には、上の名前のほかに次の 2 つを書けます。
+
+| 書き方 | 動作 |
+|-------|------|
+| `adapter: "パッケージ.モジュール:クラス名"` | 自作の `ModelAdapter`(`adapters/base.py`)を import して使う。`name` / `domain` 以外のキーはコンストラクタの引数になる。モジュールは import できる場所に置く(インストールするか `PYTHONPATH` を通す) |
+| `adapter: offline` | 何も実行しない。各クリップの `combined.wav`(ch0 = 話者 A、ch1 = システム)を自分で置く。`infer` は置かれている数を表示するだけ |
+
+`ModelAdapter` は `infer(input_audio, sample_rate) -> DialogueResponse` を 1 つ実装します。
+`input_audio` は話者 A のモノラル音声(16 kHz)、返り値の `response_audio` はシステムの応答音声で、`infer` が `combined.wav` に書きます。
+コードから登録する場合は `fdbja.adapters.register_adapter("名前", クラス)` の後に `fdbja.cli.main([...])` を呼びます。
+`examples/adapters/reply_after_silence.py` は「相手が 0.6 秒黙ったら固定の音声を返す」最小の例です。
+
+```bash
+# 合成データのクイックスタート(上の 1.)の後で
+PYTHONPATH=examples/adapters uv run fdbja infer --config examples/adapters/config.yaml   # adapter: "reply_after_silence:ReplyAfterSilence"
+uv run python examples/dummy/energy_asr.py --config examples/adapters/config.yaml
+uv run fdbja score-offline --config examples/adapters/config.yaml
+```
+
+アダプタを作れない項目(未知の名前、依存が入っていない、引数が違う)は、`infer` がその項目だけを飛ばして理由を表示し、残りのシステムは続けます(終了コードは 1)。
+`score-offline` はアダプタを作らずファイルだけを読むので、推論用と採点用で config を分ける必要はありません。出力がそろっているシステムだけを採点し、
+`--model` で対象を絞れます(`infer` / `transcribe` も同じ)。
+
 商用 API のアダプタは **2026-08 時点**のプロトコルとモデル名
 (`gemini-live-2.5-flash-preview`、`gpt-realtime`、`grok-voice-latest`)で動作確認しています。
 API 側の変更への追随は保証しません。動かなくなった場合は Issue で報告してください。
@@ -248,8 +388,11 @@ VAP-distance は生波形から計算するため 1・3 の影響を受けませ
 ```
 src/fdbja/
   cli.py                    # fdbja コマンド(reconstruct | infer | transcribe | score-offline
-                            #              | analyze-pause | sample-human-eval | analyze-human-eval)
+                            #              | analyze-pause | analyze-profile | sample-human-eval
+                            #              | analyze-human-eval)
   config.py  runner.py  report.py  io_audio.py
+  summary.py                # 95% 区間・応答の遅れ・採点条件(summary.json / summary.csv)
+  turn_profile.py           # analyze-profile(システムの傾向と事象単位のレポート)
   data/event_detection.py   # pause / smooth_tt / bc 検出器(jchat 入力)
   data/reconstruct.py       # コーパス → 評価クリップ + manifest
   metrics/tor.py            # 二値 Takeover Rate
@@ -262,7 +405,8 @@ src/fdbja/
   asr/                      # ASR バックエンド(reazonspeech_nemo / reazonspeech_k2 / reazonspeech_whisperx)
   human_eval.py  analyze_human_eval.py  pause_analysis.py
 configs/default.yaml        # 評価設定(検出閾値・モデル一覧・レイアウト)
-examples/dummy/             # 合成コーパスの生成・音量ベースの代用 ASR・動作確認用 config
+examples/dummy/             # 合成コーパスの生成・音量ベースの代用 ASR・動作確認用 config(自前の対話の手順の config も)
+examples/adapters/          # 自作の ModelAdapter の最小例と config
 webui/                      # 人手評価用の静的 Web UI(依存ライブラリなし)
 docs/                       # リーダーボード(GitHub Pages)と設計メモ
 tests/                      # pytest(コアのみ、外部依存なし。合成コーパスでの通し試験を含む)
@@ -321,6 +465,15 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 
 ## バージョン / 変更履歴
 
+- **0.2.0(未リリース)** — 外部の利用者が自前のデータ・モデルで評価するための整備。採点の定義と既定値は変えていない(既存の数値は同じ手順で再現する)。
+  - 自前の 2 チャネル対話から評価セットを作る経路: `transcribe --wav` に `--channel 0 1 --speaker A B`(2 チャンネルを話者ラベル付きで 1 つの jchat に)、
+    `reconstruct` に任意のディレクトリ構成を読む `corpus.layout: generic`(`--layout generic`)、話者ラベルが A / B でない転写の警告。合成データの `--layout generic --audio-only`。
+  - 自作モデルをつなぐ口: `fdbja.adapters.register_adapter`、config の `adapter: "モジュール:クラス"` と `adapter: offline`、例 `examples/adapters/`。
+    アダプタを作れない項目は `infer` が飛ばして続ける。`infer` / `score-offline` に `--model`。
+  - `score-offline` の要約に `n_clips`、`TOR_ci` / `dkl_ci`(事象の bootstrap)、応答の遅れの分位点と丸めない遅れ(`onset_*`、被せの割合 `overlap_rate`)、
+    採点条件(`boundaries` / `system_activity` / `asr` / `vap_checkpoint` / `ci`)を追加し、`summary.json` / `summary.csv` も出力。キー名は `docs/results.json` に合わせた。
+  - `analyze-profile`: システムごとの傾向(黙る型 / 被せる型 / 遅い型)の表と散布図、事象単位の判定と理由の CSV。
+  - extra `always-talk`(pyopenjtalk)を追加。古い GPU ドライバでの torch の入れ替えと `uv run --no-sync` の手順を追記。
 - **0.1.0(公開初版、2026-11-05)**
   - 事象の境界を人間側の音声で付け直す設定(`detection.boundaries: audio`)、Smooth TT を話者交替の事象に限る設定
     (`detection.smooth_tt_roles`)、TOR の発話区間をモデル応答の音声から取る設定(`detection.system_activity: audio`)、
@@ -353,6 +506,11 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 | VAP チェックポイントを替えたら D_KL の値が変わった | 仕様どおりです。VAP は凍結した計測器で、チェックポイントが違えば値は比較できません。比較する全モデルを同じチェックポイントで採点し直し、`results.json` の `vap_checkpoint` を確認してください |
 | torch が Blackwell GPU(sm_120)で動かない | `uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128` で cu128 以上を入れる |
 | α(`exp(-α·D_KL)` のスケール)がモデル追加のたびに変わる | α はモデル集合から自動較正されます。モデルを追加したら全モデルを 1 回の `score-offline` で採点し直してください |
+| GPU があるのに torch が CPU で動く / `CUDA driver version is insufficient` | ロックされた torch は CUDA 13.0 版でドライバ 580 以上が必要。「GPU ドライバが古い場合」の手順で入れ替え、`uv run --no-sync` で実行する |
+| 入れ替えた torch が元に戻る | `uv run` / `uv sync` はロックファイルに合わせて環境を同期し直す。`uv run --no-sync` か `UV_NO_SYNC=1` |
+| `always_talk` が pyopenjtalk を求めて止まる | `uv sync --extra always-talk`、または config で `source_wav` に音声ファイルを指定 |
+| `reconstruct` が `unusable speaker labels` と警告する | 転写の `speaker` が `A` / `B` の両方を含んでいない。`transcribe --wav ... --channel 0 1 --speaker A B` で作り直す |
+| `infer` が `[<model>] skipped: unknown adapter` と言う | `adapter` の名前を確認。自作のアダプタは `"モジュール:クラス"`、出力を自分で置くなら `offline` |
 | `sample-human-eval` が `webui/ not found` と言う | Web UI はリポジトリ直下の `webui/` を参照します。`git clone` した作業ツリーから(`uv sync` の editable install で)実行してください |
 | 商用 API アダプタが接続できない | モデル名・プロトコルは 2026-08 時点のもの。各 API のドキュメントで現行のモデル名を確認し、config の `model` を差し替えてください |
 
