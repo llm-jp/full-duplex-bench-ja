@@ -18,7 +18,7 @@
   "rank": {
     "pause": {
       "human_label": "人の評価(Bradley–Terry)",
-      "metric_label": "TOR の適合率(1 − TOR)",
+      "metric_label": "望ましい振る舞いの割合(1 − TOR)",
       "rho9": -0.18,
       "human": [
         { "model": "llmjp_live", "v": 1.915, "lo": 1.339, "hi": 2.788 },
@@ -45,7 +45,7 @@
     },
     "smooth_tt": {
       "human_label": "人の評価(Bradley–Terry)",
-      "metric_label": "TOR の適合率(= TOR)",
+      "metric_label": "望ましい振る舞いの割合(= TOR)",
       "rho9": 0.81,
       "human": [
         { "model": "jmoshi_ext", "v": 1.312, "lo": 0.743, "hi": 2.014 },
@@ -78,8 +78,8 @@
       { "task": "pause", "label": "TOR(同点 = 0.5)", "v": 0.369, "n": 42 },
       { "task": "pause", "label": "VAP-distance(元の定義)", "v": 0.5, "ci": [0.36, 0.66], "n": 42 },
       { "task": "pause", "label": "境界重み付き VAP-distance", "v": 0.548, "ci": [0.39, 0.71], "n": 42, "proposed": true },
-      { "task": "pause", "label": "両側の Pause 指標(差がつく対のみ)", "v": 0.789, "ci": [0.60, 0.94], "n": 19, "proposed": true },
-      { "task": "pause", "label": "両側の Pause 指標(同点 = 0.5)", "v": 0.631, "n": 42, "proposed": true },
+      { "task": "pause", "label": "割り込みと無反応を罰する Pause 指標(差がつく対のみ)", "v": 0.789, "ci": [0.60, 0.94], "n": 19, "proposed": true },
+      { "task": "pause", "label": "割り込みと無反応を罰する Pause 指標(同点 = 0.5)", "v": 0.631, "n": 42, "proposed": true },
       { "task": "smooth_tt", "label": "TOR(差がつく対のみ)", "v": 0.737, "ci": [0.55, 0.91], "n": 19 },
       { "task": "smooth_tt", "label": "TOR(同点 = 0.5)", "v": 0.607, "n": 42 },
       { "task": "smooth_tt", "label": "VAP-distance(元の定義)", "v": 0.69, "ci": [0.53, 0.84], "n": 42 },
@@ -92,10 +92,10 @@
       { "label": "TOR", "v": -0.75 },
       { "label": "VAP-distance(元の定義)", "v": -0.64 },
       { "label": "境界重み付き VAP-distance", "v": 0.36, "proposed": true },
-      { "label": "両側の Pause 指標", "v": 0.75, "proposed": true }
+      { "label": "割り込みと無反応を罰する Pause 指標", "v": 0.75, "proposed": true }
     ]
   },
-  "proposed_note": "検証中・ツールキット未実装。境界重み付き VAP-distance = 相手の発話の境界付近に重みを置いた VAP-distance。両側の Pause 指標 = 間での引き取り(相手に被せる・間の後も話し続ける)と、間で何も反応しないことの両方を罰する。",
+  "proposed_note": "検証中・ツールキット未実装。境界重み付き VAP-distance = 相手の発話の境界付近に重みを置いた VAP-distance。割り込みと無反応を罰する Pause 指標 = システムの割り込み(相手に被せる・間の後も話し続ける)と、間で何も反応しないことの両方を罰する。",
   "caveats": [
     "VAP-distance の一致率と順位相関は論文で使った VAP の重みで計算しており、上のリーダーボードの VAP-distance(maai-kyoto/vap_jp_kyoto)とは重みが異なる。",
     "提案の 2 指標は、同じ聴取データの前半(選択用の対)で形を決め、後半(検定用の対)で一致率を測った。システム単位の順位相関は全対の人の評価から計算しており、独立な検証ではない。",

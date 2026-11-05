@@ -221,7 +221,7 @@ function render(results, meta, human) {
   bindSeg("ov-metric", "ov", () => {
     const acc = state.ov === "acc";
     document.getElementById("ov-hint").textContent = acc
-      ? "2 課題(Pause・Smooth TT)の適合率の平均。長いほど良い。"
+      ? "2 課題(Pause・Smooth TT)の望ましい振る舞いの割合の平均。長いほど良い。"
       : "2 課題の VAP-distance の平均(実験的指標、参考値)。短いほど人間の応答に近い。";
     const list = order(Object.values(models), (m) => acc ? m.acc : m.dkl, !acc);
     const items = []; let rank = 0, sepDone = false;
@@ -276,7 +276,7 @@ function render(results, meta, human) {
         kind: base ? "base" : "sys", v, lo, hi,
         valText: acc ? pct(v) : fmt(v, 3),
         tip: `<b>${label(r.model)}</b><br>` + (acc
-          ? `適合率 ${pct(v)} ${pctCi(lo, hi)}<br>TOR ${fmt(r.TOR, 3)}`
+          ? `望ましい振る舞い ${pct(v)} ${pctCi(lo, hi)}<br>TOR ${fmt(r.TOR, 3)}`
           : `VAP-distance ${fmt(v, 3)} ${ci(lo, hi, 3)}`) + `<br>n = ${r.n}`,
       });
     }
@@ -387,7 +387,7 @@ function renderHuman(h, label, shortL) {
 function drawSlope(h, label, shortL) {
   const d = h.rank[state.rank];
   setText("rank-hint", state.rank === "pause"
-    ? `左が人の評価の順位、右が TOR の適合率の順位。線が交差するほど食い違う。Pause では、間で短く反応したモデルを人は上に、黙り続けた商用 API を常時沈黙より下に置き、TOR はほぼ逆順になった(9 システムの順位相関 ρ = ${d.rho9.toFixed(2)})。`
+    ? `左が人の評価の順位、右が TOR(望ましい振る舞いの割合)の順位。線が交差するほど食い違う。Pause では、間で短く反応したモデルを人は上に、黙り続けた商用 API を常時沈黙より下に置き、TOR はほぼ逆順になった(9 システムの順位相関 ρ = ${d.rho9.toFixed(2)})。`
     : `Smooth TT では人の順位と TOR がおおむね揃う(9 システムの順位相関 ρ = +${d.rho9.toFixed(2)})。`);
   const host = document.getElementById("rank-chart"); host.innerHTML = "";
   const W = Math.max(280, innerW(host) || 600);
@@ -399,7 +399,7 @@ function drawSlope(h, label, shortL) {
   svgText(svg, x1 - 10, 15, "人の順位", { class: "col-h", "text-anchor": "end" });
   svgText(svg, x1 - 10, 30, d.human_label.replace(/^人の評価/, ""), { class: "col-s", "text-anchor": "end" });
   svgText(svg, x2 + 10, 15, "TOR の順位", { class: "col-h" });
-  svgText(svg, x2 + 10, 30, d.metric_label.replace(/^TOR の適合率/, ""), { class: "col-s" });
+  svgText(svg, x2 + 10, 30, d.metric_label.replace(/^望ましい振る舞いの割合/, ""), { class: "col-s" });
   const yOf = (i) => head + i * rowH + rowH / 2;
   const posR = Object.fromEntries(d.metric.map((r, i) => [r.model, i]));
   const valR = Object.fromEntries(d.metric.map((r) => [r.model, r.v]));
@@ -419,7 +419,7 @@ function drawSlope(h, label, shortL) {
     const hit = svgEl("rect", { x: 0, y: yOf(i) - rowH / 2, width: x1 + 6, height: rowH, class: "hit" }, g);
     const hit2 = svgEl("rect", { x: x2 - 6, y: yOf(j) - rowH / 2, width: W - x2 + 6, height: rowH, class: "hit" }, g);
     const html = `<b>${label(r.model)}</b><br>人の評価 ${i + 1} 位(${r.v.toFixed(2)} [${r.lo.toFixed(2)}, ${r.hi.toFixed(2)}])` +
-      `<br>TOR の適合率 ${j + 1} 位(${valR[r.model].toFixed(3)})`;
+      `<br>TOR の順位 ${j + 1} 位(${valR[r.model].toFixed(3)})`;
     for (const t of [hit, hit2]) {
       hoverable(t, html);
       t.addEventListener("pointerenter", () => { svg.classList.add("focus"); g.classList.add("hl"); });
@@ -437,7 +437,7 @@ function overallTable(models, meta, label) {
   const ov = document.getElementById("overall");
   ov.innerHTML =
     "<thead><tr><th class='model'>モデル</th>" +
-    "<th>適合率 ↑</th>" +
+    "<th>望ましい振る舞い ↑</th>" +
     TASK_ORDER.map((t) => `<th>${shortTask(t)}</th>`).join("") +
     "<th>VAP-d ↓</th></tr></thead>";
   const tb = document.createElement("tbody");
@@ -461,7 +461,7 @@ function taskTable(rows, meta, label) {
   const wrap = document.createElement("div"); wrap.className = "table-wrap";
   const t = document.createElement("table");
   t.innerHTML = "<thead><tr><th class='model'>モデル</th><th>TOR</th>" +
-    "<th>適合率 ↑</th><th>VAP-d ↓</th></tr></thead>";
+    "<th>望ましい振る舞い ↑</th><th>VAP-d ↓</th></tr></thead>";
   const body = document.createElement("tbody");
   const sys = rows.filter((r) => !isBaseline(r.domain));
   const bDkl = Math.min(...sys.map((r) => r.event_mean_dkl ?? Infinity));

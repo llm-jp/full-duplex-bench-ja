@@ -8,7 +8,7 @@
 
 - リーダーボード: <https://llm-jp.github.io/full-duplex-bench-ja/>
   (`docs/` を GitHub Pages で配信。結果は `docs/results.json`、サンプル音声は `docs/samples/`)。
-  順位は **TOR の適合率**(本家 Full-Duplex-Bench と同じ二値指標)で付けています。
+  順位は **TOR で望ましい振る舞いをした割合**(本家 Full-Duplex-Bench と同じ二値指標)で付けています。
   **VAP-distance は実験的指標**です。人手判断との相関や既存指標との比較による検証が済んでいないため参考値として併記し、
   既定の config では無効にしています(`metrics.vap_distance.enabled: true` で有効化)。
   掲載中の値(2026-11-04、9 システム)は、人間側の発話境界を音声で付け直す設定(`detection.boundaries: audio`)、
@@ -211,7 +211,7 @@ API 側の変更への追随は保証しません。動かなくなった場合�
 主指標は 1 つ、実験的指標が 1 つです。
 
 - **TOR**(二値 Takeover Rate、主指標)— Full-Duplex-Bench と同じ定義。モデルがターンを取ったか否か。
-  モデル応答の ASR 転写から判定します。リーダーボードの順位はこの指標の適合率で付けます。
+  モデル応答の ASR 転写から判定します。リーダーボードの順位はこの指標で望ましい振る舞いをした割合で付けます。
 - **VAP-distance**(連続、**実験的**)— 同じ話者 A の音声に対し、**人間**の応答と**モデル**の応答をそれぞれ凍結
   [VAP](https://github.com/inokoj/VAP-Realtime) に通し、次話者予測分布間の KL 距離を測ります。
   二値が捨てる「タイミングの良し悪し」を連続値で捉える狙いですが、人手判断との相関・既存の自動指標との比較・
@@ -328,7 +328,7 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
   - 常時発話のベースラインを Open JTalk の音声ループに、無音チャンネルで ASR を飛ばす(幽霊転写の防止)、TurnNat のビット順の修正。
   - リーダーボードを音声の境界・9 システム(LLM-jp-Live と自明なベースライン 2 本を追加、ベースラインは順位の対象外)で
     採点し直し、95% 区間と「人の判断との検証(2026-11)」を掲載(2026-11-04)。
-  - VAP-distance を実験的指標に位置づけ直し、既定で無効に。リーダーボードの順位を TOR の適合率に変更(2026-10-12)。
+  - VAP-distance を実験的指標に位置づけ直し、既定で無効に。リーダーボードの順位を TOR(望ましい振る舞いの割合)に変更(2026-10-12)。
 - **0.0.1(2026-09、非公開版)** — `reconstruct` → `infer` → `transcribe` → `score-offline` の評価パイプライン、
   ASR バックエンド 3 種(ReazonSpeech NeMo / k2 / ESPnet+WhisperX)、
   TOR と VAP-distance、TurnNat 系スコア、自明なベースライン、Pause のギャップ長別分析、

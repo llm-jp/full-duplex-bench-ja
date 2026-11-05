@@ -12,8 +12,8 @@
     <h1>Full-Duplex-Bench-JA <span class="sub">Leaderboard</span></h1>
     <p class="lead">日本語のフルデュプレックス音声対話モデルが、相手の話の<b>間で黙っていられるか</b>(Pause Handling)と、
       相手の<b>ターンの終わりで話し始められるか</b>(Smooth Turn-Taking)を、実際の人間どうしの対話(LLM-jp-Zoom1)で採点しました。
-      順位は<b>適合率</b>(モデルの振る舞いが実際の聞き手と一致した割合)です。
-      ただし Pause の適合率は「黙るほど高い」定義で、<a href="#validation-sec">人の判断とは逆を向く</a>ことが分かっています。</p>
+      順位は<b>望ましい振る舞いの割合</b>(Pause は間でターンを取らなかった割合 = 1 − TOR、Smooth TT は話し終わりでターンを取った割合 = TOR)です。
+      ただし Pause のこの値は「黙るほど高い」定義で、<a href="#validation-sec">人の判断とは逆を向く</a>ことが分かっています。</p>
     <p id="meta" class="meta"></p>
   </header>
 
@@ -22,7 +22,7 @@
     <div class="controls" role="group" aria-label="総合の指標">
       <span class="ctl-label">指標</span>
       <div class="seg" id="ov-metric">
-        <button data-v="acc">適合率 ↑</button>
+        <button data-v="acc">望ましい振る舞い ↑</button>
         <button data-v="dkl">VAP-distance ↓<small>(実験的)</small></button>
       </div>
     </div>
@@ -46,14 +46,14 @@
     <div class="controls" role="group" aria-label="課題別の指標">
       <span class="ctl-label">指標</span>
       <div class="seg" id="task-metric">
-        <button data-v="acc">適合率 ↑</button>
+        <button data-v="acc">望ましい振る舞い ↑</button>
         <button data-v="dkl">VAP-distance ↓<small>(実験的)</small></button>
       </div>
     </div>
     <p class="hint" id="task-hint"></p>
     <div class="chart" id="task-chart"></div>
     <p class="hint">ひげ = 95% 区間(事象の再標本化 2,000 回)。</p>
-    <details class="tbl"><summary>表で見る(TOR・適合率・VAP-distance・95% 区間)</summary><div id="task-table"></div></details>
+    <details class="tbl"><summary>表で見る(TOR・望ましい振る舞いの割合・VAP-distance・95% 区間)</summary><div id="task-table"></div></details>
   </section>
 
   <section id="validation-sec">
@@ -116,7 +116,7 @@
   <section id="notes-sec">
     <h2>注記</h2>
     <details class="tbl"><summary>指標の定義</summary>
-      <p><b>TOR</b> = モデルがターンを取った割合。<b>適合率</b> = 相手(人間 B)の実際の振る舞いに一致した割合
+      <p><b>TOR</b> = モデルがターンを取った割合。<b>望ましい振る舞いの割合</b> = 課題で望ましいとされる側(Pause はターンを取らない、Smooth TT は取る)に一致した割合
         (Pause は 1 − TOR、Smooth TT は TOR。本家 Full-Duplex-Bench と同じ二値の判定)。総合 = 2 課題の平均。
         <b>VAP-distance</b>(実験的)= 人間の音声活動予測(VAP)分布とモデル応答の分布の距離(D<sub>KL</sub>、小さいほど人間の応答に近い)。
         相槌は事象の定義のみを公開しており、採点の対象外です。</p>
