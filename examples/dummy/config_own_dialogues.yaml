@@ -1,0 +1,56 @@
+# Building an evaluation set from your own two-channel dialogues, on synthetic
+# recordings (README: 「自前の 2 チャネル対話から評価セットを作る」). Numbers are meaningless.
+# Run from the repository root:
+#   uv run python examples/dummy/make_dummy_corpus.py --out data/my_dialogues --layout generic --audio-only
+#   uv run python examples/dummy/energy_asr.py --backend energy --wav data/my_dialogues/audio/*.wav \
+#       --channel 0 1 --speaker A B --out data/my_dialogues/text
+#   uv run fdbja reconstruct --config examples/dummy/config_own_dialogues.yaml
+#   uv run fdbja infer --config examples/dummy/config_own_dialogues.yaml
+#   uv run python examples/dummy/energy_asr.py --config examples/dummy/config_own_dialogues.yaml
+#   uv run fdbja score-offline --config examples/dummy/config_own_dialogues.yaml
+
+corpus:
+  layout: generic                       # <text_dir>/**/<stem>.json + <audio_dir>/**/<stem>.wav
+  text_dir: ./data/my_dialogues/text    # jchat per recording (speaker A = ch0, B = ch1)
+  audio_dir: ./data/my_dialogues/audio  # stereo wav, ch0 = speaker A, ch1 = speaker B
+  eval_dir: ./data/my_eval
+
+tasks: [pause, smooth_tt]
+
+detection:
+  pause:     { min_gap: 0.4, max_gap: 1.0, min_a_turn_duration: 5.0 }
+  smooth_tt: { min_a_duration: 4.0, max_gap: 0.4, min_b_duration: 4.0 }
+  bc:        { min_a_duration: 3.0, bc_max_chars: 6, bc_max_duration: 1.5 }
+  clips_per_task: 8
+  clip_seconds: 20
+
+# The two trivial baselines need no model server or API key.
+models:
+  - name: silence_baseline
+    adapter: silence
+    domain: out
+  - name: always_talk_baseline
+    adapter: always_talk
+    source: input_loop   # no Open JTalk needed; fine with the energy stand-in ASR (not for real numbers)
+    domain: out
+
+asr:
+  backend: energy      # registered by examples/dummy/energy_asr.py (not a speech recogniser)
+  options: {}
+
+metrics:
+  tor:
+    enabled: true
+  vap_distance:
+    # Set to true (and set $VAP_REALTIME_ROOT; see README) to also exercise VAP-distance.
+    enabled: false
+    vap_model: vap_state_dict_jp_kyoto_20hz_2500msec.pt
+    cpc_model: 60k_epoch4-d0f474de.pt
+    frame_rate: 20
+    context_len_sec: 2.5
+    use_gpu: false
+    alpha: null
+
+output:
+  dir: ./results/my_eval
+  exporters: [json]

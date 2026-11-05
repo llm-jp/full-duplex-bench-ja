@@ -71,12 +71,14 @@ def _detect_events(task, gt_jchat, gt_wav=None, boundaries="transcript",
 
 
 def _tor_events(task, gt_jchat, model_asr_jchat, events=None,
-                system_activity="transcript", model_wav=None, sys_cfg=None):
+                system_activity="transcript", model_wav=None, sys_cfg=None,
+                out_utts=None):
     """Events and their TO results. ``system_activity="audio"`` takes the
     model's speech intervals from the output wav (``data/system_activity.py``)
     and uses the ASR only for the characters; ``"transcript"`` takes both from
     the ASR character timestamps (the published definition). The third value
-    is ``None`` or the per-clip statistics of the audio path."""
+    is ``None`` or the per-clip statistics of the audio path. ``out_utts``
+    (a list) receives the model utterances the decisions were made on."""
     if events is None:
         events = ed.DETECTORS[task](gt_jchat)
     stats = None
@@ -92,15 +94,34 @@ def _tor_events(task, gt_jchat, model_asr_jchat, events=None,
     else:
         raise ValueError("detection.system_activity must be transcript|audio, "
                          f"got {system_activity!r}")
+    if out_utts is not None:
+        out_utts.extend(model_b)
     return events, tor_metric.EVALUATORS[task](events, model_b), stats
 
 
+#: the window each task judges the model in (clip seconds), as in metrics/tor.py
+JUDGE_WINDOW = {
+    "pause": lambda ev: (ev["start"], ev["end"]),
+    "smooth_tt": lambda ev: (ev["a_end"] - 0.5, ev["a_end"] + 2.0),
+}
+
+
 def score_offline(config: Config, limit: int = 0,
-                  log=print) -> Dict[str, Any]:
+                  log=print, models=None) -> Dict[str, Any]:
+    """Score every model entry whose outputs are in place (any adapter,
+    including ``offline`` and adapters this installation cannot build:
+    scoring reads only files). ``models`` restricts it to these names."""
+    from fdbja.summary import read_asr_meta
+
     eval_dir = config.eval_dir
     layout = config.layout()
     tasks = config.tasks
-    models = config.models
+    wanted = set(models) if models else None
+    models = [m for m in config.models if wanted is None or m["name"] in wanted]
+    if wanted is not None and len(models) < len(wanted):
+        known = {m["name"] for m in config.models}
+        log(f"[fdbja] not in the config: {', '.join(sorted(wanted - known))}")
+    asr_backends: Dict[str, Any] = {}
 
     vap_cfg = config.get("metrics", "vap_distance", default={}) or {}
     use_vap = vap_cfg.get("enabled", False)
@@ -133,13 +154,20 @@ def score_offline(config: Config, limit: int = 0,
                 str(vap_cfg.get("vap_model", "vap"))))[0]
             cache_dir = os.path.join(eval_dir, "vap_cache", ckpt_stem)
             n_done = 0
+            n_wav_only = 0
             for clip in clip_ids:
                 gt_json = os.path.join(eval_dir, layout["gt_json"].format(
                     task=task, clip=clip, model=mname))
                 asr_json = os.path.join(eval_dir, layout["model_asr"].format(
                     task=task, clip=clip, model=mname))
                 if not (os.path.exists(gt_json) and os.path.exists(asr_json)):
+                    if os.path.exists(os.path.join(eval_dir, layout["model_wav"].format(
+                            task=task, clip=clip, model=mname))):
+                        n_wav_only += 1
                     continue
+                if n_done == 0:
+                    meta = read_asr_meta(os.path.dirname(asr_json))
+                    asr_backends[f"{task}/{mname}"] = meta and meta.get("backend")
                 gt_jchat = _load_jchat(gt_json)
                 key = (task, clip)
                 if key not in event_cache:
@@ -150,10 +178,11 @@ def score_offline(config: Config, limit: int = 0,
                         boundaries, roles)
                 model_wav = os.path.join(eval_dir, layout["model_wav"].format(
                     task=task, clip=clip, model=mname))
+                model_utts: list = []
                 events, tor_results, sys_stats = _tor_events(
                     task, gt_jchat, _load_jchat(asr_json), events=event_cache[key],
                     system_activity=system_activity, model_wav=model_wav,
-                    sys_cfg=sys_cfg)
+                    sys_cfg=sys_cfg, out_utts=model_utts)
 
                 dkl_per_event = [None] * len(events)
                 if vap_backend is not None:
@@ -172,6 +201,7 @@ def score_offline(config: Config, limit: int = 0,
                         "event_index": ev.get("source_index", i),
                         "TO": tr["TO"],
                         "latency": tr.get("latency"),
+                        "onset": tr.get("onset"),
                         "freq": tr.get("freq"),
                         "mean_dkl": None if dstat is None else dstat["mean_dkl"],
                     }
@@ -184,8 +214,18 @@ def score_offline(config: Config, limit: int = 0,
                         row["boundary_flags"] = "|".join(ev["boundary"]["flags"])
                     if task == "pause":
                         row["gap_duration"] = ev["duration"]
+                        row["t_start"], row["t_end"] = ev["start"], ev["end"]
                     elif task == "smooth_tt":
                         row["gap_duration"] = ev["gap"]
+                        row["t_start"], row["t_end"] = ev["a_end"], ev["b_start"]
+                    if task in JUDGE_WINDOW:
+                        # model utterances near the judgement window, for
+                        # event-level reports (analyze-profile)
+                        w0, w1 = JUDGE_WINDOW[task](ev)
+                        row["sys_segments"] = [
+                            [round(u["start"], 3), round(u["end"], 3), int(u["num_chars"])]
+                            for u in model_utts
+                            if u["end"] > w0 - 1.0 and u["start"] < w1 + 1.0]
                     elif task == "bc":
                         row["a_duration"] = ev["a_duration"]
                         row["human_bc_count"] = ev["human_bc_count"]
@@ -194,25 +234,66 @@ def score_offline(config: Config, limit: int = 0,
                         row["jsd"] = tr.get("jsd")
                     rows.append(row)
                 n_done += 1
-            log(f"[{task}/{mname}] scored {n_done} clips")
+            msg = f"[{task}/{mname}] scored {n_done} clips"
+            if n_wav_only:
+                msg += (f" ({n_wav_only} with combined.wav but no transcript: "
+                        "run fdbja transcribe)")
+            elif n_done == 0:
+                msg += " (no outputs: run infer + transcribe, or place combined.wav)"
+            log(msg)
 
-    return _aggregate(rows, config)
+    vap_path = None
+    if use_vap:
+        root = (vap_cfg.get("vap_realtime_root")
+                or os.environ.get("VAP_REALTIME_ROOT") or "")
+        vap_path = os.path.join(root, "asset", "vap", str(vap_cfg.get("vap_model", "")))
+    return _aggregate(rows, config, models=models, asr_backends=asr_backends,
+                      vap_path=vap_path)
 
 
-def run_infer(config: Config, limit: int = 0, log=print) -> None:
+def run_infer(config: Config, limit: int = 0, log=print, models=None) -> int:
     """Stream each eval clip's speaker-A audio to each model adapter and write
     ``input.wav`` / ``output.wav`` / ``combined.wav`` per clip, matching the
-    layout that ``score-offline`` reads (``layout['model_wav']``)."""
+    layout that ``score-offline`` reads (``layout['model_wav']``).
+
+    ``models`` restricts the run to these model names. Entries with
+    ``adapter: offline`` (or no adapter) are not run: their ``combined.wav``
+    files are expected to be placed by hand, and the number still missing is
+    reported. An entry whose adapter cannot be built is reported and skipped,
+    so the other models still run. Returns the number of skipped entries
+    (0 = every requested adapter ran).
+    """
     import soundfile as sf
 
-    from fdbja.adapters import build_adapter
+    from fdbja.adapters import build_adapter, is_offline
     from fdbja.io_audio import load_stereo_16k
 
     eval_dir = config.eval_dir
     layout = config.layout()
+    wanted = set(models) if models else None
+    failed = 0
     for model in config.models:
         mname = model["name"]
-        adapter = build_adapter(model)
+        if wanted is not None and mname not in wanted:
+            continue
+        if is_offline(model):
+            for task in config.tasks:
+                clip_ids = _clip_ids(eval_dir, task, layout)
+                if limit:
+                    clip_ids = clip_ids[:limit]
+                missing = sum(
+                    1 for clip in clip_ids
+                    if not os.path.exists(os.path.join(eval_dir, layout["model_wav"].format(
+                        task=task, clip=clip, model=mname))))
+                log(f"[{task}/{mname}] offline: nothing to run, "
+                    f"{len(clip_ids) - missing}/{len(clip_ids)} combined.wav in place")
+            continue
+        try:
+            adapter = build_adapter(model)
+        except (ValueError, ImportError, TypeError) as e:
+            log(f"[{mname}] skipped: {e}")
+            failed += 1
+            continue
         try:
             for task in config.tasks:
                 clip_ids = _clip_ids(eval_dir, task, layout)
@@ -233,6 +314,7 @@ def run_infer(config: Config, limit: int = 0, log=print) -> None:
                 log(f"[{task}/{mname}] generated {done} clips")
         finally:
             adapter.close()
+    return failed
 
 
 def run_transcribe(config: Config, limit: int = 0, models=None, tasks=None,
@@ -246,6 +328,7 @@ def run_transcribe(config: Config, limit: int = 0, models=None, tasks=None,
     kept unless ``overwrite``. Returns the number of clips transcribed.
     """
     from fdbja.asr import DEFAULT_BACKEND, load_asr
+    from fdbja.summary import write_asr_meta
 
     asr_cfg = config.get("asr", default={}) or {}
     name = backend or asr_cfg.get("backend") or DEFAULT_BACKEND
@@ -280,6 +363,8 @@ def run_transcribe(config: Config, limit: int = 0, models=None, tasks=None,
                     skipped += 1
                     continue
                 transcribe_file(asr, model_wav, asr_json, gate=gate)
+                if done == 0:
+                    write_asr_meta(os.path.dirname(asr_json), name, options, gate)
                 done += 1
             log(f"[{task}/{mname}] transcribed {done} clips"
                 + (f" (kept {skipped} existing)" if skipped else ""))
@@ -309,6 +394,35 @@ def transcribe_file(asr, wav_path: str, out_json: str, channel: int = 1,
     opts = {**DEFAULT_GATE, **(gate or {})}
     items = validate_jchat(silence_gate(
         data, sr, lambda: asr.transcribe(data, sr, speaker=speaker), **opts))
+    os.makedirs(os.path.dirname(out_json) or ".", exist_ok=True)
+    with open(out_json, "w", encoding="utf-8") as f:
+        json.dump(items, f, ensure_ascii=False, indent=2)
+    return items
+
+
+def transcribe_channels(asr, wav_path: str, out_json: str, channels, speakers,
+                        gate: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    """Transcribe several channels of ``wav_path`` into one jchat file.
+
+    ``speakers[i]`` labels the characters of ``channels[i]``. With
+    ``channels=[0, 1]`` and ``speakers=["A", "B"]`` this turns a two-channel
+    dialogue recording into the transcript ``reconstruct`` reads (speaker
+    labels ``A`` / ``B`` are required by the event detectors). One channel
+    gives the same file as :func:`transcribe_file`.
+    """
+    import tempfile
+
+    if len(channels) != len(speakers):
+        raise ValueError("one speaker label per channel")
+    if len(channels) == 1:
+        return transcribe_file(asr, wav_path, out_json, channel=channels[0],
+                               speaker=speakers[0], gate=gate)
+    items: List[Dict[str, Any]] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for ch, spk in zip(channels, speakers):
+            items += transcribe_file(asr, wav_path, os.path.join(tmp, f"{ch}.json"),
+                                     channel=ch, speaker=spk, gate=gate)
+    items.sort(key=lambda c: (c["start"], c["speaker"]))
     os.makedirs(os.path.dirname(out_json) or ".", exist_ok=True)
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(items, f, ensure_ascii=False, indent=2)
@@ -373,9 +487,15 @@ def _build_vap_backend(config: Config):
         context_len_sec=vap_cfg.get("context_len_sec", 2.5))
 
 
-def _aggregate(rows, config: Config) -> Dict[str, Any]:
+def _aggregate(rows, config: Config, models=None, asr_backends=None,
+               vap_path=None) -> Dict[str, Any]:
+    from fdbja import summary as sm
+
     vap_cfg = config.get("metrics", "vap_distance", default={}) or {}
     alpha_cfg = vap_cfg.get("alpha")
+    boot = {**sm.DEFAULT_BOOTSTRAP,
+            **(config.get("output", "bootstrap", default={}) or {})}
+    models = config.models if models is None else models
     summary = []
     for task in config.tasks:
         desired = ed.DESIRED_TO[task]
@@ -386,16 +506,20 @@ def _aggregate(rows, config: Config) -> Dict[str, Any]:
         alpha = alpha_cfg
         if alpha is None and task_dkls_ok:
             alpha = vd.calibrate_alpha(np.array(task_dkls_ok))
-        for model in config.models:
+        for model in models:
             mname = model["name"]
             sub = [r for r in rows if r["task"] == task and r["model"] == mname]
             if not sub:
                 continue
             to = np.array([r["TO"] for r in sub])
             tor = float(to.mean())
+            seed = sm.stream_seed(boot["seed"], task, mname)
+            # keys and order follow docs/results.json; n = events
             rec = {"task": task, "model": mname, "n": len(sub),
-                   "domain": model.get("domain"), "TOR": round(tor, 4),
-                   "desired_TO": desired}
+                   "n_clips": len({r["clip"] for r in sub}),
+                   "domain": model.get("domain"), "desired_TO": desired,
+                   "TOR": round(tor, 4),
+                   "TOR_ci": sm.bootstrap_ci(to, boot["n"], seed)}
             if task == "bc":
                 # backchannel frequency (per second of A) and timing JSD,
                 # as in the original Full-Duplex-Bench Backchannel task
@@ -420,6 +544,7 @@ def _aggregate(rows, config: Config) -> Dict[str, Any]:
                               for r in sub if r["mean_dkl"] is not None])
             if len(dks):
                 rec["event_mean_dkl"] = round(float(dks.mean()), 4)
+                rec["dkl_ci"] = sm.bootstrap_ci(dks, boot["n"], seed + 1)
                 a = auc(wrong, dks)
                 rec["AUC"] = None if a is None else round(a, 4)
                 r_pb = point_biserial(wrong, dks)
@@ -427,5 +552,10 @@ def _aggregate(rows, config: Config) -> Dict[str, Any]:
                 if alpha:
                     rec["alpha"] = round(float(alpha), 4)
                     rec["score"] = round(float(np.exp(-alpha * dks).mean()), 4)
+            if task == "smooth_tt":
+                rec.update(sm.timing_stats(sub))
+            else:
+                rec["lat_median"] = None
             summary.append(rec)
-    return {"summary": summary, "events": rows}
+    conditions = sm.scoring_conditions(config, asr_backends or {}, vap_path)
+    return {"summary": summary, **conditions, "events": rows}

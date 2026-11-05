@@ -12,6 +12,15 @@ Layout written under ``--out`` (the same as ``corpus.zoom1_root``)::
     text/<session>/<session>.json          # jchat: [{"speaker", "word", "start", "end"}, ...]
     audio_merged/<session>/<session>.wav   # stereo 16 kHz, ch0 = speaker A, ch1 = speaker B
 
+With ``--layout generic`` (``corpus.layout: generic``; the shape of your own
+recordings)::
+
+    text/<session>.json
+    audio/<session>.wav
+
+``--audio-only`` leaves out ``text/`` so that the transcripts can be made with
+``transcribe --channel 0 1 --speaker A B`` as for real recordings.
+
 Each session repeats one pattern: A speaks, pauses briefly (a Pause Handling
 event: B stays silent), speaks again, and B takes the turn after a short gap
 (a Smooth Turn-Taking event).
@@ -89,18 +98,26 @@ def make_session(rng: np.random.Generator, duration: float = 60.0):
 
 
 def make_dummy_corpus(out: str, n_sessions: int = 10, seed: int = 0,
-                      duration: float = 60.0) -> list:
+                      duration: float = 60.0, layout: str = "zoom1",
+                      audio_only: bool = False) -> list:
+    if layout not in ("zoom1", "generic"):
+        raise ValueError(f"layout must be zoom1 or generic: {layout!r}")
     rng = np.random.default_rng(seed)
     ids = []
     for i in range(n_sessions):
         sid = f"dummy_s{i + 1:02d}"
         jchat, audio = make_session(rng, duration)
-        tdir = os.path.join(out, "text", sid)
-        adir = os.path.join(out, "audio_merged", sid)
-        os.makedirs(tdir, exist_ok=True)
+        if layout == "zoom1":
+            tdir = os.path.join(out, "text", sid)
+            adir = os.path.join(out, "audio_merged", sid)
+        else:
+            tdir = os.path.join(out, "text")
+            adir = os.path.join(out, "audio")
         os.makedirs(adir, exist_ok=True)
-        with open(os.path.join(tdir, f"{sid}.json"), "w", encoding="utf-8") as f:
-            json.dump(jchat, f, ensure_ascii=False)
+        if not audio_only:
+            os.makedirs(tdir, exist_ok=True)
+            with open(os.path.join(tdir, f"{sid}.json"), "w", encoding="utf-8") as f:
+                json.dump(jchat, f, ensure_ascii=False)
         sf.write(os.path.join(adir, f"{sid}.wav"), audio, SR)
         ids.append(sid)
     return ids
@@ -111,8 +128,13 @@ def main(argv=None) -> int:
     p.add_argument("--out", default="data/dummy_zoom1")
     p.add_argument("--sessions", type=int, default=10)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--layout", choices=["zoom1", "generic"], default="zoom1")
+    p.add_argument("--audio-only", action="store_true",
+                   help="write only the stereo audio (make the transcripts with "
+                        "transcribe --channel 0 1 --speaker A B)")
     args = p.parse_args(argv)
-    ids = make_dummy_corpus(args.out, args.sessions, args.seed)
+    ids = make_dummy_corpus(args.out, args.sessions, args.seed,
+                            layout=args.layout, audio_only=args.audio_only)
     print(f"wrote {len(ids)} synthetic sessions to {args.out}")
     return 0
 

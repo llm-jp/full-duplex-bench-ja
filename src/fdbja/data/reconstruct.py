@@ -1,12 +1,25 @@
-"""Build evaluation clips from a dialogue corpus (LLM-jp-Zoom1).
+"""Build evaluation clips from a dialogue corpus (LLM-jp-Zoom1 or your own).
 
 Detects pause / smooth_tt / bc events across every session, samples a target
 number per task, and extracts a 20 s stereo clip centered on each event with a
 time-rebased jchat transcript. Output matches the layout ``score-offline``
 reads: ``{eval_dir}/{task}/{stem}.wav`` + ``.json`` and a ``manifest.jsonl``.
 
-Ported from the research script ``sample_events_v4.py``. Audio/corpus are
-obtained separately (see DATASET.md); nothing here is bundled.
+Corpus layouts (``corpus.layout``):
+
+* ``zoom1`` (default): ``<text_dir>/<session>/<key>.json`` and
+  ``<audio_dir>/<session>/<key>.wav`` (LLM-jp-Zoom1; ``text_dir`` /
+  ``audio_dir`` default to ``<zoom1_root>/text`` and ``/audio_merged``).
+* ``generic``: any directory tree. Every ``*.json`` under ``text_dir`` is a
+  recording, paired with the audio file of the same stem anywhere under
+  ``audio_dir`` (``.wav`` / ``.flac``). Use this for your own two-channel
+  dialogues.
+
+In both layouts the audio is stereo with ch0 = speaker A and ch1 = speaker B,
+and the transcript is jchat (one character per item, speaker ``A`` / ``B``).
+
+Audio/corpus are obtained separately (see DATASET.md); nothing here is
+bundled.
 """
 
 from __future__ import annotations
@@ -20,6 +33,8 @@ from fdbja.data.event_detection import DETECTORS, SmoothTTRoles, detect, smooth_
 
 CLIP_DURATION = 20.0
 _TOL = 0.05
+LAYOUTS = ("zoom1", "generic")
+AUDIO_EXTS = (".wav", ".flac")
 
 
 def _event_time(task: str, ev: dict) -> float:
@@ -77,9 +92,66 @@ def load_session_list(path: str) -> set:
     return ids
 
 
+def corpus_dirs(config, layout: str | None = None):
+    """(layout, text_dir, audio_dir) from ``corpus`` in the config."""
+    layout = layout or config.get("corpus", "layout", default="zoom1")
+    if layout not in LAYOUTS:
+        raise ValueError(f"corpus.layout must be one of {LAYOUTS}, got {layout!r}")
+    root = config.get("corpus", "zoom1_root") or config.get("corpus", "root")
+    text_dir = config.get("corpus", "text_dir")
+    audio_dir = config.get("corpus", "audio_dir")
+    if root:
+        text_dir = text_dir or os.path.join(root, "text")
+        audio_dir = audio_dir or os.path.join(
+            root, "audio_merged" if layout == "zoom1" else "audio")
+    if not text_dir or not audio_dir:
+        raise ValueError("set corpus.text_dir and corpus.audio_dir "
+                         "(or corpus.zoom1_root / corpus.root)")
+    return layout, text_dir, audio_dir
+
+
+def index_audio(audio_dir: str) -> Dict[str, str]:
+    """File stem -> audio path for every ``.wav`` / ``.flac`` under ``audio_dir``."""
+    index: Dict[str, str] = {}
+    dup = []
+    for root, _dirs, fs in os.walk(audio_dir):
+        for f in sorted(fs):
+            stem, ext = os.path.splitext(f)
+            if ext.lower() in AUDIO_EXTS:
+                if stem in index:
+                    dup.append(stem)
+                    continue
+                index[stem] = os.path.join(root, f)
+    if dup:
+        raise ValueError(f"audio file stems must be unique under {audio_dir}: "
+                         f"{sorted(set(dup))[:5]}")
+    return index
+
+
+def audio_path_for(finfo: dict, audio_dir: str) -> str:
+    if finfo.get("audio_path"):
+        return finfo["audio_path"]
+    return os.path.join(audio_dir, finfo["session_id"], f"{finfo['key']}.wav")
+
+
+def check_speakers(jchat: List[dict]) -> List[str]:
+    """Problems with the speaker labels of a corpus transcript."""
+    spk = {c.get("speaker") for c in jchat}
+    issues = []
+    if not {"A", "B"} <= spk:
+        issues.append(f"speakers {sorted(map(str, spk))} (needs both 'A' and 'B')")
+    if spk - {"A", "B"}:
+        issues.append(f"unknown labels {sorted(map(str, spk - {'A', 'B'}))}")
+    return issues
+
+
 def collect_events(text_dir: str, tasks: List[str], limit_sessions: int = 0,
                    log=print, sessions: set | None = None,
-                   roles: SmoothTTRoles | None = None) -> Dict[str, list]:
+                   roles: SmoothTTRoles | None = None,
+                   audio_index: Dict[str, str] | None = None) -> Dict[str, list]:
+    """Detect events in every transcript under ``text_dir``. With
+    ``audio_index`` (``corpus.layout: generic``) each transcript is paired
+    with the audio of the same stem; transcripts without audio are skipped."""
     files = []
     for root, _dirs, fs in os.walk(text_dir):
         for f in sorted(fs):
@@ -88,6 +160,15 @@ def collect_events(text_dir: str, tasks: List[str], limit_sessions: int = 0,
                               "key": f[:-5],
                               "json_path": os.path.join(root, f)})
     files.sort(key=lambda x: x["key"])
+    if audio_index is not None:
+        before = len(files)
+        # one recording per file: the stem is the session (the clip sampler
+        # spreads clips over sessions)
+        files = [{**x, "session_id": x["key"], "audio_path": audio_index[x["key"]]}
+                 for x in files if x["key"] in audio_index]
+        if len(files) < before:
+            log(f"no audio with the same stem for {before - len(files)} of "
+                f"{before} transcripts (skipped)")
     if sessions is not None:
         before = len(files)
         files = [x for x in files
@@ -99,11 +180,15 @@ def collect_events(text_dir: str, tasks: List[str], limit_sessions: int = 0,
     log(f"scanning {len(files)} sessions for events...")
 
     events = {t: [] for t in tasks}
+    bad = []
     for i, finfo in enumerate(files):
         with open(finfo["json_path"], encoding="utf-8") as f:
             data = json.load(f)
         if not data:
             continue
+        issues = check_speakers(data)
+        if issues:
+            bad.append((finfo["key"], issues))
         for task in tasks:
             for ev in detect(task, data, roles):
                 events[task].append({**finfo, "event": ev,
@@ -111,6 +196,10 @@ def collect_events(text_dir: str, tasks: List[str], limit_sessions: int = 0,
         if (i + 1) % 200 == 0:
             log(f"  {i + 1}/{len(files)}  " +
                 " ".join(f"{t}:{len(events[t])}" for t in tasks))
+    if bad:
+        log(f"WARNING: {len(bad)} transcripts have unusable speaker labels, e.g. "
+            f"{bad[0][0]}: {'; '.join(bad[0][1])}. Label ch0 as A and ch1 as B "
+            "(fdbja transcribe --wav ... --channel 0 1 --speaker A B)")
     return events
 
 
@@ -167,7 +256,7 @@ def _sample_extract(events, task, n_samples, audio_dir, out_dir, seed, log,
         sid, key = cand["session_id"], cand["key"]
         if sid in used_sessions and success < n_samples * 0.8:
             continue
-        audio_path = os.path.join(audio_dir, sid, f"{key}.wav")
+        audio_path = audio_path_for(cand, audio_dir)
         if not os.path.exists(audio_path):
             continue
         with open(cand["json_path"], encoding="utf-8") as f:
@@ -198,14 +287,13 @@ def _sample_extract(events, task, n_samples, audio_dir, out_dir, seed, log,
 
 
 def reconstruct(config, limit_sessions: int = 0, log=print,
-                sessions_file: str | None = None) -> None:
+                sessions_file: str | None = None, layout: str | None = None) -> None:
     """Build eval clips. ``sessions_file`` restricts the scan to the listed
     recordings (e.g. a model's held-out split) so that a ``domain: out``
-    evaluation set can be built from the same corpus."""
-    zoom1 = config.get("corpus", "zoom1_root")
-    text_dir = config.get("corpus", "text_dir", default=os.path.join(zoom1, "text"))
-    audio_dir = config.get("corpus", "audio_dir",
-                           default=os.path.join(zoom1, "audio_merged"))
+    evaluation set can be built from the same corpus. ``layout`` overrides
+    ``corpus.layout`` (``zoom1`` | ``generic``)."""
+    layout, text_dir, audio_dir = corpus_dirs(config, layout)
+    audio_index = index_audio(audio_dir) if layout == "generic" else None
     eval_dir = config.eval_dir
     tasks = config.tasks
     n = config.get("detection", "clips_per_task", default=200)
@@ -216,7 +304,7 @@ def reconstruct(config, limit_sessions: int = 0, log=print,
 
     sessions = load_session_list(sessions_file) if sessions_file else None
     events = collect_events(text_dir, tasks, limit_sessions, log,
-                            sessions=sessions, roles=roles)
+                            sessions=sessions, roles=roles, audio_index=audio_index)
     log("totals: " + ", ".join(f"{t}={len(events[t])}" for t in tasks))
     for task in tasks:
         _sample_extract(events, task, n, audio_dir,
@@ -244,7 +332,8 @@ def _clip_start_for(task: str, jchat: List[dict], duration: float,
     return best, n
 
 
-def reconstruct_from_list(config, clips_csv: str, log=print) -> Dict[str, int]:
+def reconstruct_from_list(config, clips_csv: str, log=print,
+                          layout: str | None = None) -> Dict[str, int]:
     """Rebuild a published evaluation set from its clip list.
 
     ``clips_csv`` needs the columns ``task``, ``clip_id``, ``recording_key``
@@ -257,10 +346,8 @@ def reconstruct_from_list(config, clips_csv: str, log=print) -> Dict[str, int]:
     import csv
 
     import soundfile as sf
-    zoom1 = config.get("corpus", "zoom1_root")
-    text_dir = config.get("corpus", "text_dir", default=os.path.join(zoom1, "text"))
-    audio_dir = config.get("corpus", "audio_dir",
-                           default=os.path.join(zoom1, "audio_merged"))
+    layout, text_dir, audio_dir = corpus_dirs(config, layout)
+    audio_index = index_audio(audio_dir) if layout == "generic" else None
     eval_dir = config.eval_dir
     index = {}
     for root, _dirs, fs in os.walk(text_dir):
@@ -282,7 +369,10 @@ def reconstruct_from_list(config, clips_csv: str, log=print) -> Dict[str, int]:
             missing.append(r["clip_id"])
             continue
         sid, jpath = index[key]
-        audio_path = os.path.join(audio_dir, sid, f"{key}.wav")
+        if audio_index is not None:
+            audio_path = audio_index.get(key, "")
+        else:
+            audio_path = os.path.join(audio_dir, sid, f"{key}.wav")
         if not os.path.exists(audio_path):
             missing.append(r["clip_id"])
             continue

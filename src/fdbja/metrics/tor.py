@@ -84,11 +84,15 @@ def eval_smooth_tt(events, model_b_utts: List[Utterance],
         for b in model_b_utts:
             if a_end - 0.5 <= b["start"] <= a_end + 2.0:
                 if b["num_chars"] >= min_response_chars:
-                    results.append({"TO": 1, "latency": max(0.0, b["start"] - a_end)})
+                    # ``latency`` is clipped at 0 (the published column); ``onset``
+                    # keeps the sign, so a response that starts before A has
+                    # finished (overlap, down to -0.5 s) stays visible
+                    results.append({"TO": 1, "latency": max(0.0, b["start"] - a_end),
+                                    "onset": b["start"] - a_end})
                     found = True
                     break
         if not found:
-            results.append({"TO": 0, "latency": None})
+            results.append({"TO": 0, "latency": None, "onset": None})
     return results
 
 

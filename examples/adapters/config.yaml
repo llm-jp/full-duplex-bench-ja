@@ -1,0 +1,44 @@
+# Custom adapters on the synthetic corpus (examples/dummy/). Numbers are meaningless.
+# Run from the repository root, after the dummy quick start has built data/dummy_eval:
+#   PYTHONPATH=examples/adapters uv run fdbja infer --config examples/adapters/config.yaml
+#   uv run python examples/dummy/energy_asr.py --config examples/adapters/config.yaml
+#   uv run fdbja score-offline --config examples/adapters/config.yaml
+
+corpus:
+  eval_dir: ./data/dummy_eval
+
+tasks: [pause, smooth_tt]
+
+detection:
+  pause:     { min_gap: 0.4, max_gap: 1.0, min_a_turn_duration: 5.0 }
+  smooth_tt: { min_a_duration: 4.0, max_gap: 0.4, min_b_duration: 4.0 }
+  bc:        { min_a_duration: 3.0, bc_max_chars: 6, bc_max_duration: 1.5 }
+
+models:
+  # your own ModelAdapter, by import path ("module:Class"); other keys are constructor arguments
+  - name: reply_after_silence
+    adapter: "reply_after_silence:ReplyAfterSilence"
+    wait_s: 0.6
+    domain: out
+  # outputs recorded elsewhere: put <task>_my_system_output/<clip>/combined.wav in eval_dir
+  # (ch0 = speaker A, ch1 = your system). infer skips it; score-offline scores what is there.
+  - name: my_system
+    adapter: offline
+    domain: out
+  - name: silence_baseline
+    adapter: silence
+    domain: out
+
+asr:
+  backend: energy      # registered by examples/dummy/energy_asr.py (not a speech recogniser)
+  options: {}
+
+metrics:
+  tor:
+    enabled: true
+  vap_distance:
+    enabled: false
+
+output:
+  dir: ./results/adapters
+  exporters: [json]
