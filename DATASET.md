@@ -17,10 +17,9 @@ transcripts). It is **not redistributed here**.
   and manifests under `corpus.eval_dir` (git-ignored).
 
 ### Release gating
-LLM-jp-Zoom1 becomes **publicly available for commercial use after the corpus
-paper is published at APSIPA** (by a team member). Public release of
-Full-Duplex-Bench-JA **data** is therefore gated on that publication; cite the
-APSIPA dataset paper once available. Until then this repository
+LLM-jp-Zoom1 will be **released for commercial use soon** (by a team member).
+Public release of Full-Duplex-Bench-JA **data** is gated on that release; cite the
+LLM-jp-Zoom1 dataset paper once available. Until then this repository
 ships **code only** (the toolkit can be open-sourced independently of the data).
 
 ### Provenance instead of a held-out split
