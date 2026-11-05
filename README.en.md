@@ -11,7 +11,7 @@ experimental metric**: its validation against human judgements is still in progr
 for reference only and is disabled in the default config (`metrics.vap_distance.enabled: true` to
 opt in). The current table (2026-11-04, nine systems) was scored with human-side boundaries
 re-placed on the audio (`detection.boundaries: audio`; the default stays `transcript`), the paper's
-transcripts (AsReX: ReazonSpeech-ESPnet + WhisperX) and the MIT default checkpoint below,
+transcripts (ReazonSpeech-ESPnet + WhisperX) and the MIT default checkpoint below,
 `maai-kyoto/vap_jp_kyoto`; values from different boundaries, transcripts or checkpoints are not
 comparable — see `boundaries`, `asr` and `vap_checkpoint` in `docs/results.json`. The leaderboard lists
 Pause Handling and Smooth Turn-Taking; the backchannel (bc) task stays in the code as an experimental
