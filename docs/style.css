@@ -188,3 +188,4 @@ details.tbl th, details.tbl td { padding:6px 8px; }
 }
 .legend-line .li { white-space:nowrap; display:inline-flex; align-items:center; gap:10px; }
 .legend-line .li .sw { margin-right:-4px; }
+.legend-line .li:has(.dom) { white-space:normal; display:inline; }
