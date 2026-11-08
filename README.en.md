@@ -232,7 +232,7 @@ uv run fdbja score-offline --config examples/adapters/config.yaml
 
 ## Roadmap
 
-1. **0.2.0** — implement the two metrics validated against human judgements (boundary-weighted
+1. **Next release (0.2.0)** — implement the two metrics validated against human judgements (boundary-weighted
    VAP-distance; a Pause metric that penalises both interrupting and not reacting).
 2. Release of the evaluation data (tied to the public release of LLM-jp-Zoom1).
 3. Score the system backchannel task (after confirming it with a listening test).
