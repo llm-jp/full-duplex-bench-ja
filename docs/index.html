@@ -14,6 +14,8 @@
       相手の<b>ターンの終わりで話し始められるか</b>(Smooth Turn-Taking)を、実際の人間どうしの対話(LLM-jp-Zoom1)で採点しました。
       順位は<b>望ましい振る舞いの割合</b>(Pause は間でターンを取らなかった割合 = 1 − TOR、Smooth TT は話し終わりでターンを取った割合 = TOR)です。
       ただし Pause のこの値は「黙るほど高い」定義で、<a href="#validation-sec">人の判断とは逆を向く</a>ことが分かっています。</p>
+    <p class="hint">範囲: Full-Duplex-Bench v1 の 4 課題のうち、相手(話者 A)の音声を固定して測れる 2 課題(Pause Handling、Smooth Turn-Taking)を日本語の実対話で実装しています。
+      システムが先に話している場面(ユーザの相槌、ユーザの割り込み)と、第三者・背景の発話には未対応です。</p>
     <p id="meta" class="meta"></p>
   </header>
 
@@ -88,6 +90,9 @@
     <p class="hint" id="rho-scope"></p>
     <div class="chart" id="rho-chart"></div>
     <p class="hint" id="proposed-note"></p>
+    <p class="hint">指標の位置づけ: ターンテイキングの指標は「人が自然と感じる範囲(帯)の外に出ているか」を測るもので、帯の中の個性(相槌の多寡、間の長短)は採点しません。
+      Smooth TT では「録音の人間 B に近い」が帯の中心として成り立ちましたが、Pause では成り立たず、検証中の Pause 指標は「間で短く反応したか(相槌の有無)と、相手に被せて続けなかったか」を測ります。
+      相手の発話中の相槌(Backchanneling)は別の課題として定義のみ公開しています(未採点)。</p>
     <details class="tbl"><summary>注意</summary><ul id="caveats"></ul></details>
   </section>
 

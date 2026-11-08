@@ -5,6 +5,11 @@ It brings the evaluation design of [Full-Duplex-Bench](https://github.com/Daniel
 (Lin et al., 2025) to Japanese and **needs no manual annotation**: the behaviour of the human
 interlocutor (speaker B) in a real dialogue corpus (LLM-jp-Zoom1) is used as the reference.
 
+**Scope**: of the four Full-Duplex-Bench v1 tasks, the two that can be measured with the partner's
+(speaker A's) audio held fixed — Pause Handling and Smooth Turn-Taking — are implemented on real Japanese
+dialogues. Scenes where the system is already speaking (user backchannels, user interruptions) and
+third-party / background speech are not covered yet (see Roadmap).
+
 The full README is in Japanese: [README.md](README.md). Leaderboard: <https://llm-jp.github.io/full-duplex-bench-ja/>
 (ranked by TOR agreement, the binary metric of the original Full-Duplex-Bench. **VAP-distance is an
 experimental metric**: its validation against human judgements is still in progress, so it is shown
@@ -179,6 +184,14 @@ validation against human judgements and existing metrics is still in progress, s
 experimental when reporting. Trivial baselines (`silence`, `always_talk`) are reported on every
 task. A TurnNat-style likelihood score is included for comparison. The `always_talk` speech loop is synthesised on first use with Open JTalk (voice "Mei", CC BY 3.0; attribution in [src/fdbja/assets/README.md](src/fdbja/assets/README.md)) and needs `pyopenjtalk`, or pass `source_wav`.
 
+**What the metrics are for**: the turn-taking metrics measure whether a system falls outside the range
+(band) that people perceive as natural; individual style inside the band (how often it backchannels,
+how long its pauses are) is not scored. For Smooth TT, "close to the recorded human B" held as the
+centre of the band; for Pause it did not (in the human-judgement study, systems that produced a short
+vocalisation in the pause were preferred), so the Pause metric under validation measures whether the
+system reacted briefly in the pause (a backchannel or not) and did not keep talking over the partner.
+Backchannelling during the partner's speech is a separate task whose definition is published but not scored.
+
 ### Speech intervals for the binary TOR (`detection.system_activity`)
 
 `transcript` (default) takes the model's speech intervals from the character timestamps of the ASR, so the TOR
@@ -216,6 +229,14 @@ PYTHONPATH=examples/adapters uv run fdbja infer --config examples/adapters/confi
 uv run python examples/dummy/energy_asr.py --config examples/adapters/config.yaml
 uv run fdbja score-offline --config examples/adapters/config.yaml
 ```
+
+## Roadmap
+
+1. **0.2.0** — implement the two metrics validated against human judgements (boundary-weighted
+   VAP-distance; a Pause metric that penalises both interrupting and not reacting).
+2. Release of the evaluation data (tied to the public release of LLM-jp-Zoom1).
+3. Score the system backchannel task (after confirming it with a listening test).
+4. The two tasks where the system is already speaking (user backchannels, user interruptions).
 
 ## License
 
