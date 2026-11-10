@@ -353,12 +353,12 @@ function renderHuman(h, label, shortL) {
       items.push({ sep: task === "pause" ? "Pause" : "Smooth TT" });
       for (const r of h.agreement.rows.filter((r) => r.task === task)) {
         const c = r.ci || [];
-        items.push({ label: r.label, tag: r.proposed ? "検証中" : "", tagCls: "prop",
+        items.push({ label: r.label, tag: r.proposed ? "提案" : "", tagCls: "prop",
           kind: r.proposed ? "prop" : "sys", v: r.v, lo: c[0], hi: c[1],
           valText: r.v.toFixed(2),
           tip: `<b>${r.label}</b><br>一致率 ${r.v.toFixed(3)}` +
             (c.length ? ` [${c[0].toFixed(2)}–${c[1].toFixed(2)}]` : "") + `<br>${r.n} 対` +
-            (r.proposed ? "<br>検証中・ツールキット未実装" : "") });
+            (r.proposed ? "<br>提案指標(実装済み、既定では無効)" : "") });
       }
     }
     hbar(document.getElementById("agree-chart"), items,
@@ -370,7 +370,7 @@ function renderHuman(h, label, shortL) {
   setText("rho-scope", h.rho.scope + "。+1 に近いほど人と同じ順に並べる。");
   const drawRho = () => {
     hbar(document.getElementById("rho-chart"), h.rho.rows.map((r) => ({
-      label: r.label, tag: r.proposed ? "検証中" : "", tagCls: "prop",
+      label: r.label, tag: r.proposed ? "提案" : "", tagCls: "prop",
       kind: r.proposed ? "prop" : "sys", v: r.v,
       valText: (r.v > 0 ? "+" : r.v < 0 ? "−" : "") + Math.abs(r.v).toFixed(2),
       tip: `<b>${r.label}</b><br>ρ = ${r.v.toFixed(2)}` })),
