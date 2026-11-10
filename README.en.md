@@ -192,6 +192,34 @@ vocalisation in the pause were preferred), so the Pause metric under validation 
 system reacted briefly in the pause (a backchannel or not) and did not keep talking over the partner.
 Backchannelling during the partner's speech is a separate task whose definition is published but not scored.
 
+### Proposed metrics (off by default)
+
+Two metrics that agreed better with listeners than TOR and the original VAP-distance in the human-judgement
+study ([leaderboard, "human-judgement validation"](https://llm-jp.github.io/full-duplex-bench-ja/#validation-sec),
+listening test, 2026-11) are implemented. Neither changes the default scoring (TOR, original VAP-distance); when
+switched on they add columns to the `score-offline` summary (`summary.json` / `summary.csv`) and to the per-event
+results. They are off by default because the validation covers one corpus (LLM-jp-Zoom1), nine systems and a
+single listening test, and has not been repeated on other data.
+
+- **Boundary-weighted VAP-distance** (Smooth TT; `metrics.vap_distance.weighting: boundary`, needs
+  `vap_distance.enabled: true`). Instead of the equal-weight mean of D_KL(P_t‖Q_t) over the judgement window, d_t is
+  averaged with weights w_t = exp(−|t − t0| / τ) around the boundary t0 (end of A's utterance; `tau_seconds`,
+  default 2.0 s), from 5 s before to 1.5 s after the judgement window (the stretch the listeners heard;
+  `boundary_pre_seconds` / `boundary_post_seconds`). Summary columns: `vapd_boundary` (event mean, lower = closer to
+  the human B) and `vapd_boundary_ci_*`. `boundary_tasks: [pause, smooth_tt]` also applies it to Pause (t0 = start
+  of the gap), but only Smooth TT was selected in the study. The study used the VAP-Realtime checkpoint; values with
+  the default MIT checkpoint have not been validated.
+- **Pause response** (Pause; `metrics.pause_response.enabled: true`). For each gap [g_s, g_e]: no response = 1 when
+  no voiced run has at least 0.2 s inside the gap; interrupt = 1 when a voiced run starts inside the gap and lasts at
+  least 0.5 s after A resumes, or when the system overlaps A for more than 0.5 s in the 2 s before the gap; the metric
+  is no response + interrupt (0-2, lower is better), averaged over events. Voice activity comes from the response
+  audio (ch1 of `combined.wav`) and A (ch0 of the GT clip) with an energy detector (50 ms frames, 5 % of each
+  channel's 99.5th-percentile energy); neither ASR nor VAP is used. Summary columns: `pause_response`
+  (`pause_response_ci_*`), `pause_no_response_rate`, `pause_interrupt_rate`; the four thresholds are configurable.
+  The recorded human B rarely speaks in these gaps (12 of 100 events) while listeners preferred systems that reacted
+  briefly, so the metric counts the reaction and the talking-over directly instead of the distance to the human B.
+  Backchannels, breaths and noise are not told apart.
+
 ### Speech intervals for the binary TOR (`detection.system_activity`)
 
 `transcript` (default) takes the model's speech intervals from the character timestamps of the ASR, so the TOR

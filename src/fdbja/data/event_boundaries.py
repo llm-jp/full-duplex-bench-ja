@@ -5,7 +5,7 @@ transcript, so their boundaries are character timestamps of the forced
 alignment. On LLM-jp-Zoom1 those timestamps run early against the audio: the
 speaker-A silence of a pause actually starts about 0.3 s after the last
 character's ``end`` and A's voice comes back about 0.15 s after the next
-character's ``start`` (measured 2026-10-22 on the v4_eval clips). A window
+character's ``start`` (measured 2026-10-22 on the reference evaluation clips). A window
 taken from the transcript therefore still contains the end of A's speech.
 
 This module keeps the *events* that the transcript detects (which events exist

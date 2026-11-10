@@ -153,7 +153,7 @@ def build_study_a(config: Config, n_per_task: int, seed: int,
         for clip in _clip_ids(eval_dir, task, layout):
             gt = _load(os.path.join(eval_dir, layout["gt_json"].format(
                 task=task, clip=clip)))
-            for i, ev in enumerate(ed.DETECTORS[task](gt)):
+            for i, ev in enumerate(ed.DETECTORS[task](gt, **config.detector_params(task))):
                 pool.append((clip, i, ev))
         rng = random.Random(seed)
         rng.shuffle(pool)
@@ -217,7 +217,7 @@ def build_study_b(config: Config, n_events_per_task: int, seed: int,
         for clip in clips:
             gt = _load(os.path.join(eval_dir, layout["gt_json"].format(
                 task=task, clip=clip)))
-            events = ed.DETECTORS[task](gt)
+            events = ed.DETECTORS[task](gt, **config.detector_params(task))
             to_by_model = {}
             for m in models:
                 asr_p = os.path.join(eval_dir, layout["model_asr"].format(

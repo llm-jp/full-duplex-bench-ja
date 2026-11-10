@@ -148,7 +148,8 @@ def check_speakers(jchat: List[dict]) -> List[str]:
 def collect_events(text_dir: str, tasks: List[str], limit_sessions: int = 0,
                    log=print, sessions: set | None = None,
                    roles: SmoothTTRoles | None = None,
-                   audio_index: Dict[str, str] | None = None) -> Dict[str, list]:
+                   audio_index: Dict[str, str] | None = None,
+                   det_params: Dict[str, dict] | None = None) -> Dict[str, list]:
     """Detect events in every transcript under ``text_dir``. With
     ``audio_index`` (``corpus.layout: generic``) each transcript is paired
     with the audio of the same stem; transcripts without audio are skipped."""
@@ -190,7 +191,7 @@ def collect_events(text_dir: str, tasks: List[str], limit_sessions: int = 0,
         if issues:
             bad.append((finfo["key"], issues))
         for task in tasks:
-            for ev in detect(task, data, roles):
+            for ev in detect(task, data, roles, (det_params or {}).get(task)):
                 events[task].append({**finfo, "event": ev,
                                      "event_time": _event_time(task, ev)})
         if (i + 1) % 200 == 0:
@@ -208,7 +209,8 @@ _BOUNDARY_KEYS = {"pause": ("start", "end"), "smooth_tt": ("a_end", "b_start"),
 
 
 def clip_event_boundaries(task: str, sliced: List[dict], audio, sr: int,
-                          roles: SmoothTTRoles | None = None) -> List[dict]:
+                          roles: SmoothTTRoles | None = None,
+                          params: dict | None = None) -> List[dict]:
     """Events of one extracted clip with transcript and audio boundaries.
 
     Written to the manifest so that a distributed evaluation set records which
@@ -220,7 +222,7 @@ def clip_event_boundaries(task: str, sliced: List[dict], audio, sr: int,
     """
     from fdbja.data.event_boundaries import DEFAULT_VAD, refine_events, voice_activity
     use_roles = task == "smooth_tt" and roles is not None and roles.enabled
-    events = DETECTORS[task](sliced)
+    events = DETECTORS[task](sliced, **(params or {}))
     if use_roles:
         events = [{**ev, "role_flags": smooth_tt_role_flags(ev, sliced, roles)}
                   for ev in events]
@@ -241,7 +243,9 @@ def clip_event_boundaries(task: str, sliced: List[dict], audio, sr: int,
 
 def _sample_extract(events, task, n_samples, audio_dir, out_dir, seed, log,
                     boundaries: str = "transcript",
-                    roles: SmoothTTRoles | None = None):
+                    roles: SmoothTTRoles | None = None,
+                    params: dict | None = None,
+                    clip_duration: float = CLIP_DURATION):
     import soundfile as sf
     cand_pool = events[task]
     rng = random.Random(seed)
@@ -261,7 +265,7 @@ def _sample_extract(events, task, n_samples, audio_dir, out_dir, seed, log,
             continue
         with open(cand["json_path"], encoding="utf-8") as f:
             jchat = json.load(f)
-        res = _extract_clip(audio_path, jchat, cand["event_time"])
+        res = _extract_clip(audio_path, jchat, cand["event_time"], clip_duration)
         if res is None:
             continue
         audio, sr, sliced, cs, ce = res
@@ -274,7 +278,7 @@ def _sample_extract(events, task, n_samples, audio_dir, out_dir, seed, log,
                  "event_time": round(cand["event_time"], 3),
                  "clip_start": round(cs, 3), "clip_end": round(ce, 3)}
         if boundaries == "audio" and getattr(audio, "ndim", 1) == 2:
-            entry["events"] = clip_event_boundaries(task, sliced, audio, sr, roles)
+            entry["events"] = clip_event_boundaries(task, sliced, audio, sr, roles, params)
         manifest.append(entry)
         used_sessions.add(sid)
         success += 1
@@ -301,20 +305,24 @@ def reconstruct(config, limit_sessions: int = 0, log=print,
     boundaries = config.get("detection", "boundaries", default="transcript")
     roles = SmoothTTRoles.from_config(
         config.get("detection", "smooth_tt_roles", default=None))
+    det_params = {t: config.detector_params(t) for t in tasks}
 
     sessions = load_session_list(sessions_file) if sessions_file else None
     events = collect_events(text_dir, tasks, limit_sessions, log,
-                            sessions=sessions, roles=roles, audio_index=audio_index)
+                            sessions=sessions, roles=roles, audio_index=audio_index,
+                            det_params=det_params)
     log("totals: " + ", ".join(f"{t}={len(events[t])}" for t in tasks))
     for task in tasks:
         _sample_extract(events, task, n, audio_dir,
                         os.path.join(eval_dir, task), seed, log,
-                        boundaries=boundaries, roles=roles)
+                        boundaries=boundaries, roles=roles,
+                        params=det_params[task], clip_duration=config.clip_seconds)
 
 
 def _clip_start_for(task: str, jchat: List[dict], duration: float,
                     approx_start: float, tol: float = 0.051,
-                    clip_duration: float = CLIP_DURATION):
+                    clip_duration: float = CLIP_DURATION,
+                    params: dict | None = None):
     """Exact start of a published clip. Clip names carry the start rounded to
     0.1 s; the exact value is ``event_time - clip_duration / 2`` (clamped to
     the recording) of the event the clip was sampled for, so the event of
@@ -322,7 +330,7 @@ def _clip_start_for(task: str, jchat: List[dict], duration: float,
     searched in the full recording. Returns (start, n_matches); ``None`` when
     no event matches."""
     best, n = None, 0
-    for ev in DETECTORS[task](jchat):
+    for ev in DETECTORS[task](jchat, **(params or {})):
         cs = _event_time(task, ev) - clip_duration / 2
         cs = max(0.0, min(cs, duration - clip_duration))
         if abs(cs - approx_start) <= tol:
@@ -357,6 +365,8 @@ def reconstruct_from_list(config, clips_csv: str, log=print,
     with open(clips_csv, encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     tasks = set(config.tasks)
+    clip_duration = config.clip_seconds
+    det_params = {t: config.detector_params(t) for t in tasks}
     done = {t: 0 for t in tasks}
     missing, approx = [], []
     manifests: Dict[str, list] = {t: [] for t in tasks}
@@ -379,11 +389,12 @@ def reconstruct_from_list(config, clips_csv: str, log=print,
         with open(jpath, encoding="utf-8") as f:
             jchat = json.load(f)
         info = sf.info(audio_path)
-        cs, n = _clip_start_for(task, jchat, info.duration, float(r["clip_start_s"]))
+        cs, n = _clip_start_for(task, jchat, info.duration, float(r["clip_start_s"]),
+                                clip_duration=clip_duration, params=det_params[task])
         if cs is None:
             cs = float(r["clip_start_s"])
             approx.append(r["clip_id"])
-        ce = cs + CLIP_DURATION
+        ce = cs + clip_duration
         s0, s1 = int(cs * info.samplerate), int(ce * info.samplerate)
         audio, sr = sf.read(audio_path, start=s0, stop=s1)
         out_dir = os.path.join(eval_dir, task)

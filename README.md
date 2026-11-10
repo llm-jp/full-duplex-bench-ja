@@ -378,6 +378,28 @@ Pause では成り立たず(人の判断との検証で、間に短く声を出�
 「間で短く反応したか(相槌の有無)と、相手に被せて続けなかったか」を測ります。
 相手の発話中の相槌(Backchanneling)は別の課題として定義のみ公開しています(未採点)。
 
+### 提案指標(既定では無効)
+
+人の判断との検証([リーダーボードの「人の判断との検証」](https://llm-jp.github.io/full-duplex-bench-ja/#validation-sec)、聴取実験 2026-11)で、
+TOR・元の VAP-distance より人の選好と合った 2 つの指標を実装しています。どちらも既定の採点(TOR、元の VAP-distance)は変えず、
+有効にしたときだけ `score-offline` の要約(`summary.json` / `summary.csv`)と事象単位の結果に列が加わります。
+既定で無効にしているのは、検証が 1 コーパス(LLM-jp-Zoom1)・9 システムの聴取実験 1 回だけで、別のデータでの確認が済んでいないためです。
+
+- **境界重み付き VAP-distance**(Smooth TT 用、`metrics.vap_distance.weighting: boundary`、`vap_distance.enabled: true` が前提)—
+  元の VAP-distance が判定窓の D_KL(P_t‖Q_t) を等重みで平均するのに対し、境界 t0(A の話し終わり)からの重み
+  w_t = exp(−|t − t0| / τ)(`tau_seconds`、既定 2.0 秒)で加重平均します。平均する範囲は判定窓の前 5 秒・後 1.5 秒まで
+  (聴取者が聞いた範囲。`boundary_pre_seconds` / `boundary_post_seconds`)。要約の列は `vapd_boundary`(事象平均、小さいほど人間 B に近い)と
+  `vapd_boundary_ci_*`。Pause にも `boundary_tasks: [pause, smooth_tt]` で適用できます(t0 = 間の始まり)が、検証で選ばれたのは Smooth TT だけです。
+  検証時のチェックポイントは VAP-Realtime 配布版で、既定の MIT 版での値は検証していません。
+- **割り込みと無反応を罰する Pause 指標**(Pause 用、`metrics.pause_response.enabled: true`)— 間 [g_s, g_e] ごとに、
+  無反応 = 間の中の部分が 0.2 秒以上の有声区間が無ければ 1、割り込み = 間の中で始まり A の再開後 0.5 秒以上続く有声区間がある、
+  または間の前 2 秒で A と 0.5 秒を超えて重なっていれば 1 とし、指標 = 無反応 + 割り込み(0〜2、小さいほど良い)。
+  システムの値は事象平均です。有声区間は応答音声(`combined.wav` の ch1)と A(GT の ch0)のエネルギー VAD
+  (50 ms 枠、各チャネルの 99.5 パーセンタイルの 5 %)から取り、ASR も VAP も使いません。要約の列は `pause_response`
+  (`pause_response_ci_*`)、`pause_no_response_rate`、`pause_interrupt_rate`。閾値 4 つは config で変えられます。
+  録音の人間 B はこの評価セットの間でほとんど声を出していない(100 事象中 12)一方、聴取者は間で短く反応したシステムを選んだため、
+  人間 B との距離ではなく「反応したか」と「被せて続けなかったか」を直接数えます。相槌・息・雑音は区別しません。
+
 ### 既知の限界
 
 二値 TOR は ASR 転写ベースの判定のため、ASR パイプラインの誤りを継承します。実データで確認した 3 パターン:
@@ -489,6 +511,9 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
   - `score-offline` の要約に `n_clips`、`TOR_ci` / `dkl_ci`(事象の bootstrap)、応答の遅れの分位点と丸めない遅れ(`onset_*`、被せの割合 `overlap_rate`)、
     採点条件(`boundaries` / `system_activity` / `asr` / `vap_checkpoint` / `ci`)を追加し、`summary.json` / `summary.csv` も出力。キー名は `docs/results.json` に合わせた。
   - `analyze-profile`: システムごとの傾向(黙る型 / 被せる型 / 遅い型)の表と散布図、事象単位の判定と理由の CSV。
+  - 人の判断で検証した 2 指標を追加(既定では無効、README「提案指標」): 境界重み付き VAP-distance
+    (`metrics.vap_distance.weighting: boundary`、`tau_seconds`、要約の `vapd_boundary`)と、割り込みと無反応を罰する Pause 指標
+    (`metrics.pause_response`、要約の `pause_response` / `pause_no_response_rate` / `pause_interrupt_rate`)。既定の採点は変わらない。
   - extra `always-talk`(pyopenjtalk)を追加。古い GPU ドライバでの torch の入れ替えと `uv run --no-sync` の手順を追記。
 - **0.1.0(公開初版、2026-11-05)**
   - 事象の境界を人間側の音声で付け直す設定(`detection.boundaries: audio`)、Smooth TT を話者交替の事象に限る設定

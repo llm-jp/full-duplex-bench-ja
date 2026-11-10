@@ -76,6 +76,22 @@ def timing_stats(rows: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def pause_response_stats(rows: Iterable[Dict[str, Any]], n_boot: int = 10000,
+                         seed: int = 0) -> Dict[str, Any]:
+    """System value of ``metrics.pause_response``: the event mean of
+    no response + interrupt (0-2) and the two rates."""
+    rows = [r for r in rows if r.get("pause_response") is not None]
+    if not rows:
+        return {}
+    pr = np.array([r["pause_response"] for r in rows], dtype=np.float64)
+    return {
+        "pause_response": round(float(pr.mean()), 4),
+        "pause_response_ci": bootstrap_ci(pr, n_boot, seed),
+        "pause_no_response_rate": round(float(np.mean([r["no_response"] for r in rows])), 4),
+        "pause_interrupt_rate": round(float(np.mean([r["interrupt"] for r in rows])), 4),
+    }
+
+
 def file_sha256(path: str) -> Optional[str]:
     if not path or not os.path.exists(path):
         return None
@@ -140,15 +156,38 @@ def scoring_conditions(config, asr_backends: Dict[str, Any],
         "asr": asr,
         "asr_by_model": {k: v for k, v in sorted(asr_backends.items())},
         "vap_checkpoint": vap,
+        **_proposed_conditions(config),
         "ci": CI_NOTE,
         "toolkit_version": __version__,
     }
 
 
+def _proposed_conditions(config) -> Dict[str, Any]:
+    """Settings of the proposed metrics, only when they are switched on (so
+    the default output keeps the keys of ``docs/results.json``)."""
+    out: Dict[str, Any] = {}
+    vap_cfg = config.get("metrics", "vap_distance", default={}) or {}
+    if vap_cfg.get("enabled") and (vap_cfg.get("weighting") or "uniform") == "boundary":
+        out["vapd_boundary_settings"] = {
+            "tau_seconds": float(vap_cfg.get("tau_seconds", 2.0)),
+            "tasks": list(vap_cfg.get("boundary_tasks", ["smooth_tt"]) or [])}
+    pr = config.get("metrics", "pause_response", default={}) or {}
+    if pr.get("enabled"):
+        from fdbja.metrics.pause_response import PauseResponseConfig
+        c = PauseResponseConfig.from_config(pr)
+        out["pause_response_settings"] = {k: getattr(c, k) for k in (
+            "min_response_seconds", "persist_after_resume_seconds",
+            "pre_window_seconds", "pre_overlap_max_seconds")}
+    return out
+
+
 _CSV_FIRST = ["task", "model", "domain", "n", "n_clips", "desired_TO", "TOR",
               "TOR_ci_low", "TOR_ci_high", "lat_n", "lat_median", "lat_q1", "lat_q3",
               "onset_median", "onset_q1", "onset_q3", "overlap_rate",
-              "event_mean_dkl", "dkl_ci_low", "dkl_ci_high"]
+              "event_mean_dkl", "dkl_ci_low", "dkl_ci_high",
+              "vapd_boundary", "vapd_boundary_ci_low", "vapd_boundary_ci_high",
+              "pause_response", "pause_response_ci_low", "pause_response_ci_high",
+              "pause_no_response_rate", "pause_interrupt_rate"]
 
 
 def write_summary(results: Dict[str, Any], out_dir: str) -> List[str]:

@@ -122,6 +122,23 @@ metrics:
     use_gpu: true        # falls back to CPU when CUDA is unavailable
     # exp(-alpha * D_KL); set null to auto-calibrate (median desired -> 0.5)
     alpha: null
+    # 境界重み付き VAP-distance(提案指標、既定では使わない)。boundary にすると、従来の等重み平均
+    # (event_mean_dkl)はそのままに、境界 t0(Smooth TT = A の話し終わり、Pause = 間の始まり)からの
+    # 重み exp(-|t - t0| / tau) で d_t を平均した vapd_boundary を併記する。範囲は判定窓の前 5 s・後 1.5 s まで
+    # (人の判断との検証で聴取者が聞いた範囲)。検証は 1 コーパス・9 システムのみ(README「指標」)。
+    weighting: uniform        # uniform | boundary
+    tau_seconds: 2.0
+    boundary_tasks: [smooth_tt]   # pause も指定可(検証で選ばれたのは Smooth TT のみ)
+    boundary_pre_seconds: 5.0
+    boundary_post_seconds: 1.5
+  pause_response:
+    # 割り込みと無反応を罰する Pause 指標(提案指標、既定では無効)。間ごとに 無反応(0/1)+ 割り込み(0/1)、
+    # システムの値は事象平均(0〜2、小さいほど良い)。VAP も ASR も使わない(応答音声のエネルギー VAD)。
+    enabled: false
+    min_response_seconds: 0.2          # 無反応: 間の中の部分がこの長さ以上の有声区間が無い
+    persist_after_resume_seconds: 0.5  # 割り込み: 間の中で始まり A の再開後この長さ以上続く
+    pre_window_seconds: 2.0            # 割り込み: 間の前のこの窓で
+    pre_overlap_max_seconds: 0.5       #           A との重なりがこの長さを超える
 
 output:
   dir: ./results

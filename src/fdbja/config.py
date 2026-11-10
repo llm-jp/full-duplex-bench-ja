@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
@@ -37,6 +38,25 @@ class Config:
     @property
     def models(self) -> List[Dict[str, Any]]:
         return self.get("models", default=[])
+
+    @property
+    def clip_seconds(self) -> float:
+        return float(self.get("detection", "clip_seconds", default=20.0))
+
+    def detector_params(self, task: str) -> Dict[str, Any]:
+        """Keyword arguments for the ``task`` detector from ``detection.<task>``.
+
+        Unknown keys raise instead of being ignored, so a typo in the config
+        cannot silently fall back to the default thresholds."""
+        from fdbja.data.event_detection import DETECTORS
+
+        params = dict(self.get("detection", task, default={}) or {})
+        allowed = set(inspect.signature(DETECTORS[task]).parameters) - {"jchat", "roles"}
+        unknown = set(params) - allowed
+        if unknown:
+            raise ValueError(f"unknown detection.{task} keys: {sorted(unknown)} "
+                             f"(allowed: {sorted(allowed)})")
+        return params
 
     @property
     def output_dir(self) -> str:

@@ -1,7 +1,9 @@
 # Datasets
 
-Following the llm-jp-eval convention, **this repository contains code only.**
-No audio or corpus data is bundled. Evaluation clips are reconstructed locally
+Following the llm-jp-eval convention, **this repository contains code only**,
+with one exception: the short listening excerpts in `docs/samples/` (three events:
+stimulus, human B and two model outputs) used by the leaderboard page. They are
+cut from LLM-jp-Zoom1 and follow its terms; no other audio or corpus data is bundled. Evaluation clips are reconstructed locally
 from a corpus you obtain separately, and the toolkit's license (Apache-2.0)
 applies to the code, **not** to any data.
 
@@ -9,7 +11,7 @@ applies to the code, **not** to any data.
 
 The reference evaluation set is built from **LLM-jp-Zoom1** (~934 h of
 Zoom-recorded casual Japanese dialogue, character-level time-aligned
-transcripts). It is **not redistributed here**.
+transcripts). Apart from the excerpts above, it is **not redistributed here**.
 
 - Obtain LLM-jp-Zoom1 under its own license/terms from the corpus owners.
 - Point `corpus.zoom1_root` in your config at the local copy.

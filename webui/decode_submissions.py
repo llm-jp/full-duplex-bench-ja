@@ -5,10 +5,11 @@ Usage:
     python webui/decode_submissions.py <pasted.txt> <out_dir>
 
 <pasted.txt> is any text file containing one or more ``FDBJA1.<b64>.<code>``
-tokens (e.g. concatenated CrowdWorks answer fields).  Each token's completion
+tokens (e.g. answer fields exported from a crowdsourcing platform).  Each token's completion
 code is recomputed from the payload (FNV-1a over the base64 string, matching
 webui/app.js); tokens whose code does not match are reported as TAMPERED and
-skipped.  Valid payloads are written to ``<out_dir>/responses_<worker>.json``
+skipped. The code is an unkeyed checksum: it catches accidental edits and
+copy errors, not deliberate forgery (the algorithm is public).  Valid payloads are written to ``<out_dir>/responses_<worker>.json``
 ready for ``fdbja analyze-human-eval``.
 """
 import base64

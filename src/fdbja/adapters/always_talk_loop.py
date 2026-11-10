@@ -9,8 +9,8 @@ Why speech and why a fixed loop: binary TOR reads an ASR transcript, so noise
 is not transcribed, and a loop cut from the input clip makes the ASR split it
 at the seams (smooth_tt TOR 0.20-0.40 instead of ~0). With this loop the
 held-out check (20 pause / 10 smooth_tt clips, reazonspeech_whisperx) gave
-Pause TOR 1.000 / Smooth TT TOR 0.000, the level of the published v4_eval
-baseline (0.992 / 0.005).
+Pause TOR 1.000 / Smooth TT TOR 0.000, the level of the always-talk baseline
+on the leaderboard (0.992 / 0.005).
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import os
 import numpy as np
 
 SAMPLE_RATE = 16000
-LEVEL = 0.035          # RMS, = the v4_eval loop (0.0345)
+LEVEL = 0.035          # RMS, = the loop behind the leaderboard baseline (0.0345)
 GAP_S = 0.08           # silence between sentences
 FILE_NAME = "always_talk_loop_ja.flac"
 INSTALL_HINT = ("pip install pyopenjtalk  (or uv pip install pyopenjtalk; it downloads the "

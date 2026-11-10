@@ -133,6 +133,9 @@ def main(argv=None) -> int:
     p.add_argument("--bootstrap", type=int, default=10000,
                    help="clip-level bootstrap replicates")
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--vap-checkpoint", default=None,
+                   help="VAP checkpoint file name whose score-offline cache "
+                        "(vap_cache/<stem>/) to read (default: the only one present)")
 
     p = sub.add_parser(
         "analyze-profile",
@@ -206,7 +209,8 @@ def main(argv=None) -> int:
     if args.command == "analyze-pause":
         from fdbja.pause_analysis import run
         run(args.eval_dir, args.out, models=args.models,
-            n_boot=args.bootstrap, seed=args.seed)
+            n_boot=args.bootstrap, seed=args.seed,
+            vap_checkpoint=args.vap_checkpoint)
         return 0
     return 1
 

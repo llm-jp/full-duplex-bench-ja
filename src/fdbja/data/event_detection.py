@@ -14,7 +14,7 @@ requires that A is actually the speaker who hands the turn over. Without it,
 ``group_chars_to_utterances`` joins a run of backchannels ("うんうんうん。")
 into one >=4 s "utterance" of A, and B's ongoing turn (shorter pieces of it
 are not checked for overlap) is mistaken for a hand-over (about 3 in 10 of the
-v4_eval Smooth TT events, measured 2026-10-22).
+Smooth TT events of the reference evaluation set, measured 2026-10-22).
 
 Ground truth follows the human interlocutor's behavior: the model is expected
 to stay silent during Pause/BC (desired TO=0) and to take the turn at Smooth
@@ -331,11 +331,17 @@ def detect_backchannels(jchat: JChat, min_a_duration: float = 3.0,
 DESIRED_TO = {"pause": 0, "smooth_tt": 1, "bc": 0}
 
 def detect(task: str, jchat: JChat,
-           roles: Optional[SmoothTTRoles] = None) -> List[Dict[str, Any]]:
-    """``DETECTORS[task]`` with the Smooth TT turn-transition checks when enabled."""
+           roles: Optional[SmoothTTRoles] = None,
+           params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """``DETECTORS[task]`` with the Smooth TT turn-transition checks when enabled.
+
+    ``params`` are keyword arguments of the detector (``detection.<task>`` in
+    the config, see ``Config.detector_params``); ``None`` keeps the defaults,
+    which are the published definition."""
+    params = dict(params or {})
     if task == "smooth_tt" and roles is not None and roles.enabled:
-        return detect_smooth_tt(jchat, roles=roles)
-    return DETECTORS[task](jchat)
+        return detect_smooth_tt(jchat, roles=roles, **params)
+    return DETECTORS[task](jchat, **params)
 
 
 DETECTORS = {

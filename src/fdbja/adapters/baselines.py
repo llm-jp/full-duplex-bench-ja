@@ -43,7 +43,7 @@ class AlwaysTalkAdapter(ModelAdapter):
     has to be something a speech recogniser transcribes. Band-limited noise
     (the previous implementation) is not: reazonspeech_whisperx returns almost
     nothing for it, and the baseline then scored Pause TOR 0.025 instead of
-    ~1.0 on the held-out set (found 2026-10-18). The published v4_eval numbers
+    ~1.0 on the held-out set (found 2026-10-18). The leaderboard baseline
     used a looped speech recording, which ``source_wav`` reproduces.
 
     ``source`` selects the signal:
@@ -67,7 +67,7 @@ class AlwaysTalkAdapter(ModelAdapter):
     vs 0.00 for a fixed speech loop; 2026-10-19).
 
     Only voiced frames are looped, so the response has no pauses; it is then
-    RMS-normalised to ``level`` (0.035 ~ the v4_eval loop, 0.0345).
+    RMS-normalised to ``level`` (0.035 ~ the leaderboard loop, 0.0345).
     """
 
     name = "always_talk"

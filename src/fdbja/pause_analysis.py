@@ -46,10 +46,30 @@ def _discover_models(eval_dir: Path) -> list[str]:
     )
 
 
-def _cached_dkl(eval_dir: Path, model: str, clip: str,
+def vap_cache_root(eval_dir: Path, checkpoint: str | None = None) -> Path:
+    """Directory of the VAP probability cache that ``score-offline`` wrote.
+
+    ``score-offline`` keys the cache by checkpoint file stem
+    (``<eval_dir>/vap_cache/<stem>/gt/<task>/`` and ``.../<stem>/<model>/``).
+    ``checkpoint`` (file name or stem) selects one; without it the single
+    checkpoint present is used, and the pre-0.1 layout without the stem level
+    is accepted as a fallback."""
+    base = eval_dir / "vap_cache"
+    if checkpoint:
+        return base / Path(checkpoint).stem
+    stems = sorted(p.name for p in base.glob("*") if (p / "gt" / "pause").is_dir())
+    if len(stems) == 1:
+        return base / stems[0]
+    if len(stems) > 1:
+        raise ValueError(f"several VAP caches under {base}: {stems}; "
+                         "pass --vap-checkpoint")
+    return base   # legacy layout (or no cache: D_KL stays empty)
+
+
+def _cached_dkl(cache_root: Path, model: str, clip: str,
                 events: list[dict]) -> list[float | None]:
-    gt_path = eval_dir / "vap_cache" / "gt" / "pause" / f"{clip}.npz"
-    model_path = eval_dir / "vap_cache" / model / f"{clip}.npz"
+    gt_path = cache_root / "gt" / "pause" / f"{clip}.npz"
+    model_path = cache_root / model / f"{clip}.npz"
     if not gt_path.exists() or not model_path.exists():
         return [None] * len(events)
     with np.load(gt_path) as gt, np.load(model_path) as pred:
@@ -60,8 +80,10 @@ def _cached_dkl(eval_dir: Path, model: str, clip: str,
 
 
 def collect_rows(eval_dir: str | Path,
-                 models: Iterable[str] | None = None) -> list[dict]:
+                 models: Iterable[str] | None = None,
+                 vap_checkpoint: str | None = None) -> list[dict]:
     root = Path(eval_dir)
+    cache_root = vap_cache_root(root, vap_checkpoint)
     selected = list(models) if models else _discover_models(root)
     rows = []
     for gt_path in sorted((root / "pause").glob("*.json")):
@@ -73,7 +95,7 @@ def collect_rows(eval_dir: str | Path,
                 continue
             model_b = ed.group_chars_to_utterances(_load_json(asr_path), "B")
             tor = tor_metric.eval_pause(events, model_b)
-            dkls = _cached_dkl(root, model, clip, events)
+            dkls = _cached_dkl(cache_root, model, clip, events)
             for index, (event, to_result, mean_dkl) in enumerate(
                     zip(events, tor, dkls)):
                 duration = float(event["duration"])
@@ -262,10 +284,11 @@ def _plot(path: Path, summary: list[dict]) -> None:
 
 
 def run(eval_dir: str, out_dir: str, models: Iterable[str] | None = None,
-        n_boot: int = 10000, seed: int = 42) -> dict:
+        n_boot: int = 10000, seed: int = 42,
+        vap_checkpoint: str | None = None) -> dict:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    rows = collect_rows(eval_dir, models)
+    rows = collect_rows(eval_dir, models, vap_checkpoint)
     if not rows:
         raise RuntimeError("No Pause events joined with model ASR outputs")
     summary = aggregate(rows, n_boot=n_boot, seed=seed)

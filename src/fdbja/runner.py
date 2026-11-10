@@ -48,7 +48,7 @@ def _load_jchat(path: str):
 
 
 def _detect_events(task, gt_jchat, gt_wav=None, boundaries="transcript",
-                   roles=None):
+                   roles=None, params=None):
     """Events of a GT clip. ``boundaries="audio"`` keeps the
     events found in the transcript but moves their boundaries onto the human
     speech of the GT wav (``data/event_boundaries.py``); ``"transcript"`` is
@@ -56,7 +56,7 @@ def _detect_events(task, gt_jchat, gt_wav=None, boundaries="transcript",
     (``ed.SmoothTTRoles``) drops Smooth TT events that are not a
     hand-over from A to B (text checks; with audio boundaries also B's voice
     activity before ``a_end``)."""
-    events = ed.detect(task, gt_jchat, roles)
+    events = ed.detect(task, gt_jchat, roles, params)
     if boundaries == "audio":
         if gt_wav is None or not os.path.exists(gt_wav):
             raise FileNotFoundError(
@@ -126,6 +126,12 @@ def score_offline(config: Config, limit: int = 0,
     vap_cfg = config.get("metrics", "vap_distance", default={}) or {}
     use_vap = vap_cfg.get("enabled", False)
     vap_backend = _build_vap_backend(config) if use_vap else None
+    boundary = _boundary_settings(vap_cfg) if use_vap else None
+    pr_raw = config.get("metrics", "pause_response", default={}) or {}
+    pr_cfg = None
+    if pr_raw.get("enabled", False):
+        from fdbja.metrics.pause_response import PauseResponseConfig
+        pr_cfg = PauseResponseConfig.from_config(pr_raw)
     boundaries = config.get("detection", "boundaries", default="transcript")
     roles = ed.SmoothTTRoles.from_config(
         config.get("detection", "smooth_tt_roles", default=None))
@@ -139,6 +145,7 @@ def score_offline(config: Config, limit: int = 0,
         raise ValueError("detection.system_activity must be transcript|audio, "
                          f"got {system_activity!r}")
     event_cache: Dict[Any, list] = {}
+    det_params = {t: config.detector_params(t) for t in tasks}
 
     rows: List[Dict[str, Any]] = []   # per-event joined records
     for task in tasks:
@@ -175,7 +182,7 @@ def score_offline(config: Config, limit: int = 0,
                         task, gt_jchat,
                         os.path.join(eval_dir, layout["gt_wav"].format(
                             task=task, clip=clip, model=mname)),
-                        boundaries, roles)
+                        boundaries, roles, det_params[task])
                 model_wav = os.path.join(eval_dir, layout["model_wav"].format(
                     task=task, clip=clip, model=mname))
                 model_utts: list = []
@@ -185,16 +192,24 @@ def score_offline(config: Config, limit: int = 0,
                     sys_cfg=sys_cfg, out_utts=model_utts)
 
                 dkl_per_event = [None] * len(events)
-                if vap_backend is not None:
-                    gt_wav = os.path.join(eval_dir, layout["gt_wav"].format(
-                        task=task, clip=clip, model=mname))
-                    if os.path.exists(gt_wav) and os.path.exists(model_wav):
-                        dkl_per_event = _vap_distance_events(
-                            vap_backend, gt_wav, model_wav, task, events,
-                            cache_dir, mname, clip)
+                bdkl_per_event = [None] * len(events)
+                gt_wav = os.path.join(eval_dir, layout["gt_wav"].format(
+                    task=task, clip=clip, model=mname))
+                have_wavs = os.path.exists(gt_wav) and os.path.exists(model_wav)
+                if vap_backend is not None and have_wavs:
+                    task_boundary = (boundary if boundary is not None
+                                     and task in boundary["tasks"] else None)
+                    dkl_per_event, bdkl_per_event = _vap_distance_events(
+                        vap_backend, gt_wav, model_wav, task, events,
+                        cache_dir, mname, clip, boundary=task_boundary)
+                pr_per_event = [None] * len(events)
+                if pr_cfg is not None and task == "pause" and have_wavs:
+                    from fdbja.metrics.pause_response import judge_events
+                    pr_per_event = judge_events(gt_wav, model_wav, events, pr_cfg)
 
-                for i, (ev, tr, dstat) in enumerate(
-                        zip(events, tor_results, dkl_per_event)):
+                for i, (ev, tr, dstat, bstat, prj) in enumerate(
+                        zip(events, tor_results, dkl_per_event, bdkl_per_event,
+                            pr_per_event)):
                     row = {
                         "task": task, "model": mname, "clip": clip,
                         # the role checks drop Smooth TT events; keep the unrestricted index
@@ -205,6 +220,11 @@ def score_offline(config: Config, limit: int = 0,
                         "freq": tr.get("freq"),
                         "mean_dkl": None if dstat is None else dstat["mean_dkl"],
                     }
+                    if boundary is not None and task in boundary["tasks"]:
+                        row["vapd_boundary"] = None if bstat is None else bstat["mean_dkl"]
+                    if pr_cfg is not None and task == "pause":
+                        for k in ("no_response", "interrupt", "pause_response"):
+                            row[k] = None if prj is None else prj[k]
                     # Preserve conditioning variables needed for stratified
                     # analyses without copying transcript text into results.
                     if sys_stats is not None:
@@ -443,9 +463,31 @@ def _write_outputs(combined_path, resp, sf) -> None:
     sf.write(os.path.join(d, "output.wav"), bp, resp.sample_rate)
 
 
+def _boundary_settings(vap_cfg):
+    """Boundary weighting of ``metrics.vap_distance`` or ``None`` (uniform)."""
+    weighting = vap_cfg.get("weighting", "uniform") or "uniform"
+    if weighting == "uniform":
+        return None
+    if weighting != "boundary":
+        raise ValueError("metrics.vap_distance.weighting must be uniform|boundary, "
+                         f"got {weighting!r}")
+    tau = float(vap_cfg.get("tau_seconds", vd.DEFAULT_TAU))
+    if tau <= 0:
+        raise ValueError(f"metrics.vap_distance.tau_seconds must be positive, got {tau}")
+    tasks = list(vap_cfg.get("boundary_tasks", ["smooth_tt"]) or [])
+    bad = set(tasks) - {"pause", "smooth_tt"}
+    if bad:
+        raise ValueError(f"metrics.vap_distance.boundary_tasks: {sorted(bad)} "
+                         "(boundary weighting is defined for pause / smooth_tt)")
+    return {"tau": tau, "tasks": tasks,
+            "pre": float(vap_cfg.get("boundary_pre_seconds", vd.BOUNDARY_PRE)),
+            "post": float(vap_cfg.get("boundary_post_seconds", vd.BOUNDARY_POST))}
+
+
 def _vap_distance_events(backend, gt_wav, model_wav, task, events,
-                         cache_dir, model, clip):
-    """Compute per-event mean d_t; cache VAP probs as npz (git-ignored)."""
+                         cache_dir, model, clip, boundary=None):
+    """Per-event mean d_t and (with ``boundary``) the boundary-weighted mean;
+    cache VAP probs as npz (git-ignored). Returns ``(stats, boundary_stats)``."""
     from fdbja.io_audio import load_stereo_16k
 
     def cached(path, sub):
@@ -464,10 +506,16 @@ def _vap_distance_events(backend, gt_wav, model_wav, task, events,
     dkl = vd.kl_series(p_h, p_m)
     times = t_h[:len(dkl)]
     out = []
+    bout = []
     for ev in events:
         s, e = vd.event_window(task, ev)
         out.append(vd.window_stats(times, dkl, s, e))
-    return out
+        if boundary is None:
+            bout.append(None)
+        else:
+            lo, hi, t0 = vd.boundary_window(task, ev, boundary["pre"], boundary["post"])
+            bout.append(vd.weighted_window_stats(times, dkl, lo, hi, t0, boundary["tau"]))
+    return out, bout
 
 
 def _build_vap_backend(config: Config):
@@ -552,6 +600,13 @@ def _aggregate(rows, config: Config, models=None, asr_backends=None,
                 if alpha:
                     rec["alpha"] = round(float(alpha), 4)
                     rec["score"] = round(float(np.exp(-alpha * dks).mean()), 4)
+            bks = [r["vapd_boundary"] for r in sub if r.get("vapd_boundary") is not None]
+            if bks:
+                rec["vapd_boundary"] = round(float(np.mean(bks)), 4)
+                rec["vapd_boundary_ci"] = sm.bootstrap_ci(bks, boot["n"], seed + 2)
+            prs = [r for r in sub if r.get("pause_response") is not None]
+            if prs:
+                rec.update(sm.pause_response_stats(prs, boot["n"], seed + 3))
             if task == "smooth_tt":
                 rec.update(sm.timing_stats(sub))
             else:
