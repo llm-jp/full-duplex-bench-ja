@@ -351,8 +351,17 @@ uv run fdbja score-offline --config examples/adapters/config.yaml
 `score-offline` はアダプタを作らずファイルだけを読むので、推論用と採点用で config を分ける必要はありません。出力がそろっているシステムだけを採点し、
 `--model` で対象を絞れます(`infer` / `transcribe` も同じ)。
 
-商用 API のアダプタは **2026-08 時点**のプロトコルとモデル名
-(`gemini-live-2.5-flash-preview`、`gpt-realtime`、`grok-voice-latest`)で動作確認しています。
+リーダーボードの商用 API 3 システムの出力は、次のモデル ID と時期で取得しました。
+
+| システム | アダプタ | モデル ID | 声 | 取得時期 |
+|----------|----------|-----------|----|----------|
+| Gemini Live | `gemini_live` | `gemini-3.1-flash-live-preview` | Aoede | 2026-04 |
+| GPT-Realtime | `openai_realtime` | `gpt-realtime` | marin | 2026-07 |
+| Grok Voice | `openai_realtime` | `grok-voice-latest` | eve | 2026-07 |
+
+3 システムとも、発話区間の検出はサーバ側の既定値のままです。Gemini Live の出力は、`gemini_live` アダプタの移植元のスクリプト(設定は同じ)で取得しました。
+`gpt-realtime` と `grok-voice-latest` は別名で、指す先のモデルは提供元の更新で替わります
+(Grok Voice は取得後に新しい世代が公開されています)。いま同じ ID で推論しても、リーダーボードと同じモデルになるとは限りません。
 API 側の変更への追随は保証しません。動かなくなった場合は Issue で報告してください。
 
 ## 何を評価するか
@@ -541,6 +550,9 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
   - `leaderboard` コマンド: `summary.json` をリーダーボードと同じ順位で表示し、`--reference docs/results.json` で掲載値と並べる(採点条件が違えば警告)。
   - CI に Python 3.13 と extras(vap / analysis / always-talk)の import・解決の確認を追加。開発依存に pytest-cov。
   - extra `always-talk`(pyopenjtalk)を追加。古い GPU ドライバでの torch の入れ替えと `uv run --no-sync` の手順を追記。
+  - 商用 API の記載を、掲載値を取得したときの条件に合わせた(掲載値は変わらない)。`configs/default.yaml` の Gemini のモデル ID を、リーダーボードの出力に使った
+    `gemini-3.1-flash-live-preview` に(従来の `gemini-live-2.5-flash-preview` は掲載値の取得に使っていない)。リーダーボードの表示名「Grok Voice 3.0」を
+    「Grok Voice」に(取得は 2026-07 の `grok-voice-latest` で、3.0 の公開より前)。README「モデルアダプタ」とリーダーボードの注記に、取得時期とモデル ID を記載。
   - **採点に影響しうる不具合の修正(0.2.0 向け)**。いずれも**既定は従来どおり**で、掲載値(`docs/`)は変わりません。
     設定で切り替えた場合は、**掲載値と比べる前に全システムを採点し直して確認が必要**です。
     - 相槌語の長音符: 正規化で長音符「ー」を先に消すため、相槌語リストの「えー」「ふーん」「あー」「へー」などが一致しなかった

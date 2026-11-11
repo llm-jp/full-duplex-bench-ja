@@ -15,7 +15,7 @@
   "llmjp_live": "LLM-jp-Live",
   "gemini": "Gemini 3.1 Flash Live",
   "gpt_realtime": "GPT-Realtime (2025-08-28)",
-  "grok_voice": "Grok Voice 3.0",
+  "grok_voice": "Grok Voice",
   "baseline_silence": "常時沈黙",
   "baseline_always_talk": "常時発話"
  },
@@ -116,6 +116,7 @@
   },
   "rescored": "2026-11-04"
  },
- "transcript_boundaries_note": "文字の境界(ASR の文字の時刻だけで人間側の境界を置く、2026-09-28 版の定義)では、Pause の TOR が商用システムで高めに出ていた(Gemini 3.1 Flash Live 0.300 → 0.175、Grok Voice 3.0 0.313 → 0.133、GPT-Realtime 0.208 → 0.154)。Smooth TT の TOR の差は ±0.05 以内。値は results.json の transcript_boundaries にある。",
- "turn_transition_note": "Smooth TT を本当の話者交替の 72 事象に限る(A が相槌主体の発話、A の終わりの直前に B が話している、B の応答が相槌の連なり、のいずれかの事象を除く。ツールキットでは detection.smooth_tt_roles、既定は無効)と次のとおり。"
+ "transcript_boundaries_note": "文字の境界(ASR の文字の時刻だけで人間側の境界を置く、2026-09-28 版の定義)では、Pause の TOR が商用システムで高めに出ていた(Gemini 3.1 Flash Live 0.300 → 0.175、Grok Voice 0.313 → 0.133、GPT-Realtime 0.208 → 0.154)。Smooth TT の TOR の差は ±0.05 以内。値は results.json の transcript_boundaries にある。",
+ "turn_transition_note": "Smooth TT を本当の話者交替の 72 事象に限る(A が相槌主体の発話、A の終わりの直前に B が話している、B の応答が相槌の連なり、のいずれかの事象を除く。ツールキットでは detection.smooth_tt_roles、既定は無効)と次のとおり。",
+ "commercial_note": "商用 API の出力の取得時期とモデル ID: Gemini Live = gemini-3.1-flash-live-preview(2026-04)、GPT-Realtime = gpt-realtime(2026-07)、Grok Voice = grok-voice-latest(2026-07)。発話区間の検出はサーバ側の既定値。gpt-realtime と grok-voice-latest は別名で、指す先のモデルは提供元の更新で替わるため、現在の同じ ID の振る舞いとは一致しないことがある。"
 }

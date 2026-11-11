@@ -61,7 +61,7 @@ models:
     domain: in           # in-domain: trained on LLM-jp-Zoom1 (document leakage!)
   - name: gemini
     adapter: gemini_live
-    model: gemini-live-2.5-flash-preview
+    model: gemini-3.1-flash-live-preview
     domain: out
   - name: jmoshi_ext
     adapter: moshi_ws

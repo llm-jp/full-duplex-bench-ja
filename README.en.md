@@ -248,7 +248,11 @@ used for the paper; report `audio` as a separate condition. VAP-distance is unaf
 
 `moshi_ws` (Moshi-family WebSocket servers), `gemini_live` (Gemini Live API), `openai_realtime`
 (OpenAI Realtime protocol: GPT-Realtime, Grok Voice), `silence` / `always_talk` (trivial baselines).
-Commercial-API adapters were verified against the protocols and model names available **as of 2026-08**;
+The commercial-API rows of the leaderboard were obtained with `gemini-3.1-flash-live-preview` (voice Aoede, 2026-04),
+`gpt-realtime` (voice marin, 2026-07) and `grok-voice-latest` (voice eve, 2026-07), all with the servers' default
+turn detection (the Gemini Live outputs come from the script the `gemini_live` adapter was ported from, with the same
+settings). `gpt-realtime` and `grok-voice-latest` are aliases whose target changes with provider updates
+(newer Grok Voice generations were released after our access), so the same IDs may no longer give the same models;
 we do not guarantee to track API changes.
 
 Known limitations (fairness across adapters, not fixed yet; they may affect the three commercial-API rows of the

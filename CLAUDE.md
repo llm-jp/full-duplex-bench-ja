@@ -23,6 +23,6 @@
 - α(`exp(-α·D_KL)`)はモデル集合から自動較正されるため、モデルを 1 つ足すと全モデルのスコアが変わる。
   `docs/results.json` を更新するときは全モデルを 1 回の実行で採点し直す。
 - `sample-human-eval` はリポジトリ直下の `webui/` を `__file__` 相対で探す。wheel でインストールすると見つからない。
-- Gemini のモデル名は config(`gemini-live-2.5-flash-preview`)とアダプタの既定値(`gemini-3.1-flash-live-preview`)で異なる。config が優先される。
+- 商用 API の `gpt-realtime` と `grok-voice-latest` は別名で、指す先のモデルは提供元の更新で替わる。リーダーボードの出力の取得時期とモデル ID は README「モデルアダプタ」の表が正(Gemini は 2026-04、他の 2 つは 2026-07)。表示名にバージョンを足すときは取得時点の証跡を確認する。
 - TOR の時刻は既定(`detection.system_activity: transcript`)では ASR の文字の終端に依存する。既定の `reazonspeech_whisperx` は区間末の文字を後ろの無音まで伸ばすため、論文時の書き起こしより Pause の TOR が高く出る。ASR を替えて比べるなら `audio`(`data/system_activity.py`)。
 - VAP チェックポイントはリポジトリに同梱しない。既定は MIT の `maai-kyoto/vap_jp_kyoto`(20 Hz / 2.5 s)。2026-10-01 に HF の `main` から外れたのでリビジョン `fe24ac6` で取得する(README「VAP-distance の準備」)。旧来の VAP-Realtime 配布版は学術目的限定。チェックポイントを替えたら `metrics/turnnat.py` の手順でビット順を再検証し、比較対象を全部同じ重みで採点し直す。

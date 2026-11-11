@@ -8,8 +8,7 @@ const TASK_ORDER = ["pause", "smooth_tt"];   // scored tasks
 const SAMPLE_TASKS = ["pause", "smooth_tt", "bc"];
 const UNSCORED = new Set(["bc"]);
 const COMMERCIAL = new Set(["gemini", "gpt_realtime", "grok_voice"]);
-const SHORT = { gpt_realtime: "GPT-Realtime", gemini: "Gemini 3.1 Flash Live",
-  grok_voice: "Grok Voice 3.0" };
+const SHORT = { gpt_realtime: "GPT-Realtime", gemini: "Gemini 3.1 Flash Live" };
 const SVGNS = "http://www.w3.org/2000/svg";
 
 const params = new URLSearchParams(location.search);
@@ -290,6 +289,7 @@ function render(results, meta, human) {
 
   // ---- notes ----
   setText("tb-note", meta.transcript_boundaries_note);
+  setText("com-note", meta.commercial_note);
   setText("tt-note", meta.turn_transition_note
     ? meta.turn_transition_note.replace(/と次のとおり。?$/, "した値。上の「課題別」で切り替えて表示します。") : "");
   const vck = meta.vap_checkpoint || {};
@@ -411,7 +411,7 @@ function drawSlope(h, label, shortL) {
     svgEl("line", { x1, y1: yOf(i), x2, y2: yOf(j), class: "sl" }, g);
     svgEl("circle", { cx: x1, cy: yOf(i), r: 4.5, class: "dot" }, g);
     svgEl("circle", { cx: x2, cy: yOf(j), r: 4.5, class: "dot" }, g);
-    const nm = shortL(r.model).replace(" 3.1 Flash Live", "").replace(" 3.0", "");
+    const nm = shortL(r.model).replace(" 3.1 Flash Live", "");
     svgText(g, x1 - 10, yOf(i) - 1, `${i + 1}. ${nm}`, { class: "sn", "text-anchor": "end" });
     svgText(g, x1 - 10, yOf(i) + 12, (r.v > 0 ? "+" : "") + r.v.toFixed(2), { class: "sv", "text-anchor": "end" });
     svgText(g, x2 + 10, yOf(j) - 1, `${j + 1}. ${nm}`, { class: "sn" });
