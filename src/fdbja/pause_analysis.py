@@ -69,7 +69,10 @@ def vap_cache_root(eval_dir: Path, checkpoint: str | None = None) -> Path:
 def _cached_dkl(cache_root: Path, model: str, clip: str,
                 events: list[dict]) -> list[float | None]:
     gt_path = cache_root / "gt" / "pause" / f"{clip}.npz"
-    model_path = cache_root / model / f"{clip}.npz"
+    # 0.2.0 caches model outputs per task; earlier versions without the task level
+    model_path = cache_root / model / "pause" / f"{clip}.npz"
+    if not model_path.exists():
+        model_path = cache_root / model / f"{clip}.npz"
     if not gt_path.exists() or not model_path.exists():
         return [None] * len(events)
     with np.load(gt_path) as gt, np.load(model_path) as pred:

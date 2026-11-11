@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
-from fdbja.data.event_detection import intervals_overlap
+from fdbja.data.event_detection import MIN_OVERLAP, intervals_overlap
 
 Utterance = Dict[str, Any]
 
@@ -57,14 +57,21 @@ def timing_jsd(human_times: Sequence[float], model_times: Sequence[float],
 
 
 def eval_pause(events, model_b_utts: List[Utterance],
-               bc_max_chars: int = 6, bc_max_duration: float = 1.5):
-    """During a pause the model should stay silent (desired TO=0)."""
+               bc_max_chars: int = 6, bc_max_duration: float = 1.5,
+               overlap_tolerance: float = 0.0):
+    """During a pause the model should stay silent (desired TO=0).
+
+    Model speech counts when it overlaps the gap by at least 0.1 s minus
+    ``overlap_tolerance`` (default 0 = the published numbers, where an
+    overlap of exactly 0.1 s can fall short through floating point; see
+    ``event_detection.detect_pauses``)."""
     results = []
     for p in events:
         to = 0
         for b in model_b_utts:
             if intervals_overlap(b["start"], b["end"], p["start"], p["end"]):
-                if (min(b["end"], p["end"]) - max(b["start"], p["start"])) < 0.1:
+                if ((min(b["end"], p["end"]) - max(b["start"], p["start"]))
+                        < MIN_OVERLAP - overlap_tolerance):
                     continue
                 if (b["num_chars"] > bc_max_chars
                         or (b["end"] - b["start"]) > bc_max_duration):

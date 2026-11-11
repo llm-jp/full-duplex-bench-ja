@@ -40,3 +40,4 @@ wandb/
 # Allow small example manifests / tiny fixtures explicitly if needed:
 # !tests/fixtures/example_manifest.json
 .wrangler/
+.coverage

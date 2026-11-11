@@ -3,6 +3,9 @@
 * 95% intervals: percentile bootstrap over events (the leaderboard's
   ``"ci": "95% bootstrap intervals over events"``), one random stream per
   (task, model) so that adding a model does not change the others.
+  ``output.bootstrap.unit: clip`` resamples clips instead (the events of one
+  clip together, as ``analyze-pause`` does), which accounts for events of the
+  same clip being correlated; ``event`` (default) gives the published intervals.
 * Response timing on Smooth TT: ``lat_*`` are computed from ``latency``
   (clipped at 0, the leaderboard's ``lat_median``); ``onset_*`` from the signed
   start of the response relative to the end of A's utterance, so responses
@@ -23,8 +26,18 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
 
-DEFAULT_BOOTSTRAP = {"n": 10000, "seed": 0}
+DEFAULT_BOOTSTRAP = {"n": 10000, "seed": 0, "unit": "event"}
 CI_NOTE = "95% bootstrap intervals over events"
+CI_NOTES = {"event": CI_NOTE,
+            "clip": "95% bootstrap intervals over clips (events of a clip resampled together)"}
+
+
+def bootstrap_unit(config) -> str:
+    """``output.bootstrap.unit`` (``event`` | ``clip``)."""
+    unit = (config.get("output", "bootstrap", default={}) or {}).get("unit", "event")
+    if unit not in CI_NOTES:
+        raise ValueError(f"output.bootstrap.unit must be event|clip, got {unit!r}")
+    return unit
 
 
 def stream_seed(base: int, *keys: str) -> int:
@@ -33,11 +46,17 @@ def stream_seed(base: int, *keys: str) -> int:
 
 
 def bootstrap_ci(values: Sequence[float], n_boot: int = 10000, seed: int = 0,
-                 level: float = 0.95, stat=np.mean) -> Optional[List[float]]:
+                 level: float = 0.95, stat=np.mean,
+                 clusters: Optional[Sequence[Any]] = None) -> Optional[List[float]]:
     """Percentile bootstrap interval of ``stat`` over ``values`` (events).
 
-    Returns ``[low, high]`` or ``None`` when there are no values.
+    ``clusters`` (one label per value, e.g. the clip) resamples the labels
+    instead of the values: the statistic of a replicate is the mean over all
+    values of the drawn clusters (cluster bootstrap; only the mean is
+    supported). Returns ``[low, high]`` or ``None`` when there are no values.
     """
+    if clusters is not None:
+        return _cluster_ci(values, clusters, n_boot, seed, level, stat)
     x = np.asarray([v for v in values if v is not None], dtype=np.float64)
     if len(x) == 0:
         return None
@@ -50,6 +69,31 @@ def bootstrap_ci(values: Sequence[float], n_boot: int = 10000, seed: int = 0,
         k = min(chunk, n_boot - i)
         idx = rng.integers(0, len(x), size=(k, len(x)))
         stats[i:i + k] = stat(x[idx], axis=1)
+    lo, hi = np.percentile(stats, [(1 - level) / 2 * 100, (1 + level) / 2 * 100])
+    return [round(float(lo), 4), round(float(hi), 4)]
+
+
+def _cluster_ci(values, clusters, n_boot, seed, level, stat) -> Optional[List[float]]:
+    if stat is not np.mean:
+        raise ValueError("the cluster bootstrap supports the mean only")
+    values, clusters = list(values), list(clusters)
+    if len(values) != len(clusters):
+        raise ValueError("one cluster label per value")
+    pairs = [(float(v), c) for v, c in zip(values, clusters) if v is not None]
+    if not pairs or n_boot <= 0:
+        return None
+    _, inv = np.unique(np.array([str(c) for _, c in pairs]), return_inverse=True)
+    x = np.array([v for v, _ in pairs])
+    sums = np.bincount(inv, weights=x)
+    counts = np.bincount(inv).astype(np.float64)
+    k = len(sums)
+    rng = np.random.default_rng(seed)
+    stats = np.empty(n_boot)
+    chunk = max(1, 2_000_000 // k)
+    for i in range(0, n_boot, chunk):
+        m = min(chunk, n_boot - i)
+        idx = rng.integers(0, k, size=(m, k))
+        stats[i:i + m] = sums[idx].sum(1) / counts[idx].sum(1)
     lo, hi = np.percentile(stats, [(1 - level) / 2 * 100, (1 + level) / 2 * 100])
     return [round(float(lo), 4), round(float(hi), 4)]
 
@@ -77,16 +121,17 @@ def timing_stats(rows: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def pause_response_stats(rows: Iterable[Dict[str, Any]], n_boot: int = 10000,
-                         seed: int = 0) -> Dict[str, Any]:
+                         seed: int = 0, unit: str = "event") -> Dict[str, Any]:
     """System value of ``metrics.pause_response``: the event mean of
     no response + interrupt (0-2) and the two rates."""
     rows = [r for r in rows if r.get("pause_response") is not None]
     if not rows:
         return {}
     pr = np.array([r["pause_response"] for r in rows], dtype=np.float64)
+    clusters = [r["clip"] for r in rows] if unit == "clip" else None
     return {
         "pause_response": round(float(pr.mean()), 4),
-        "pause_response_ci": bootstrap_ci(pr, n_boot, seed),
+        "pause_response_ci": bootstrap_ci(pr, n_boot, seed, clusters=clusters),
         "pause_no_response_rate": round(float(np.mean([r["no_response"] for r in rows])), 4),
         "pause_interrupt_rate": round(float(np.mean([r["interrupt"] for r in rows])), 4),
     }
@@ -157,7 +202,7 @@ def scoring_conditions(config, asr_backends: Dict[str, Any],
         "asr_by_model": {k: v for k, v in sorted(asr_backends.items())},
         "vap_checkpoint": vap,
         **_proposed_conditions(config),
-        "ci": CI_NOTE,
+        "ci": CI_NOTES[bootstrap_unit(config)],
         "toolkit_version": __version__,
     }
 
@@ -171,6 +216,8 @@ def _proposed_conditions(config) -> Dict[str, Any]:
         out["vapd_boundary_settings"] = {
             "tau_seconds": float(vap_cfg.get("tau_seconds", 2.0)),
             "tasks": list(vap_cfg.get("boundary_tasks", ["smooth_tt"]) or [])}
+    if vap_cfg.get("enabled") and vap_cfg.get("calibration_exclude_baselines", False):
+        out["alpha_calibration"] = "desired events of non-baseline models"
     pr = config.get("metrics", "pause_response", default={}) or {}
     if pr.get("enabled"):
         from fdbja.metrics.pause_response import PauseResponseConfig

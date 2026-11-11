@@ -14,7 +14,9 @@ tasks: [pause, smooth_tt]   # bc(相槌)は実験的タスク。既定では採�
 
 # Event-detection thresholds (aligned with original Full-Duplex-Bench).
 detection:
-  pause:     { min_gap: 0.4, max_gap: 1.0, min_a_turn_duration: 5.0 }
+  # overlap_tolerance: 0 = published numbers (an overlap of exactly 0.1 s can fall short through
+  # floating point); 1.0e-6 counts it as 0.1 s in the detector and in the Pause TOR (needs re-scoring).
+  pause:     { min_gap: 0.4, max_gap: 1.0, min_a_turn_duration: 5.0, overlap_tolerance: 0.0 }
   smooth_tt: { min_a_duration: 4.0, max_gap: 0.4, min_b_duration: 4.0 }
   bc:        { min_a_duration: 3.0, bc_max_chars: 6, bc_max_duration: 1.5 }
   # Event boundaries: "transcript" = character timestamps (the published
@@ -36,6 +38,7 @@ detection:
     b_pre_max: 0.5           # (b) max seconds of B speech in that window
     b_max_resid_chars: 2     # (c)
     b_min_resid_ratio: 0.3   # (c)
+    match_long_vowel: false  # true: match "えー" "ふーん" etc. with the long-vowel mark (false = published)
   # Model speech intervals for the binary TOR: "transcript" = character
   # timestamps of the model-output ASR (the published numbers); "audio" = voice
   # activity of the model channel of combined.wav (same detector as
@@ -122,6 +125,13 @@ metrics:
     use_gpu: true        # falls back to CPU when CUDA is unavailable
     # exp(-alpha * D_KL); set null to auto-calibrate (median desired -> 0.5)
     alpha: null
+    # VAP probability cache (<eval_dir>/vap_cache/): validate = recompute when the input wav, the
+    # checkpoint file or the frame settings changed (key stored in each npz); trust = reuse any file
+    # (before 0.2.0). vap_revision: optional Hub revision recorded in the key (e.g. fe24ac6).
+    cache: validate
+    # true: calibrate alpha without the trivial baselines (adapter silence / always_talk; silence is
+    # "desired" on every Pause event). false = all models, as before (needs re-scoring when changed).
+    calibration_exclude_baselines: false
     # 境界重み付き VAP-distance(提案指標、既定では使わない)。boundary にすると、従来の等重み平均
     # (event_mean_dkl)はそのままに、境界 t0(Smooth TT = A の話し終わり、Pause = 間の始まり)からの
     # 重み exp(-|t - t0| / tau) で d_t を平均した vapd_boundary を併記する。範囲は判定窓の前 5 s・後 1.5 s まで
@@ -142,4 +152,7 @@ metrics:
 
 output:
   dir: ./results
+  # 95% intervals: unit event = resample events (published intervals); clip = resample clips with
+  # their events together (accounts for events of one clip being correlated; analyze-pause uses clip).
+  bootstrap: { n: 10000, seed: 0, unit: event }
   exporters: [json]     # json | table | wandb

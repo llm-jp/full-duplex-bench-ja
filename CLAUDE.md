@@ -2,7 +2,7 @@
 
 ## 重要なルール
 
-- コミット前に `make lint test` を通す(CI と同じ内容: ruff + pytest、Python 3.10 / 3.12)。
+- コミット前に `make lint test` を通す(CI と同じ内容: ruff + pytest、Python 3.10 / 3.12 / 3.13)。
 - コミットは `type: 要約`(feat / fix / docs / chore / test)。詳細は [CONTRIBUTING.md](CONTRIBUTING.md)。
 - 音声(`*.wav` / `*.mp3` など)、チェックポイント(`*.pt`)、評価ディレクトリ(`data/`, `results/`)はコミットしない。
   例外は `docs/samples/*.mp3`(リーダーボードの試聴用)だけ。

@@ -24,6 +24,19 @@ task and is not scored by default. A summary of the human-judgement study (2026-
 Optional settings: `detection.boundaries: audio`, `detection.smooth_tt_roles.enabled: true` (Smooth TT
 restricted to genuine turn transitions, 197 → 72 events) and `detection.system_activity: audio`.
 
+**Quick start** (with LLM-jp-Zoom1 at hand; a one-minute smoke test on synthetic data is in [Quick start](#quick-start) below)
+
+```bash
+uv sync --extra asr-reazon-whisperx                        # 1. install (pick one ASR backend)
+uv run fdbja reconstruct --config configs/default.yaml     # 2. build the eval clips (set corpus.zoom1_root)
+# responses: `fdbja infer` + `fdbja transcribe`, or place combined.wav ([Model adapters](#model-adapters))
+uv run fdbja score-offline --config configs/default.yaml   # 3. score -> results/summary.json
+uv run fdbja leaderboard --reference docs/results.json     # 4. rank like the leaderboard, next to the published rows
+```
+
+**Contents**: [Requirements](#requirements) / [Quick start](#quick-start) / [What is evaluated](#what-is-evaluated) /
+[Model adapters](#model-adapters) / [Roadmap](#roadmap) / [License](#license) / [Citation](#citation)
+
 ## Requirements
 
 - Python >= 3.10 and [uv](https://docs.astral.sh/uv/) for binary TOR.
@@ -237,6 +250,14 @@ used for the paper; report `audio` as a separate condition. VAP-distance is unaf
 (OpenAI Realtime protocol: GPT-Realtime, Grok Voice), `silence` / `always_talk` (trivial baselines).
 Commercial-API adapters were verified against the protocols and model names available **as of 2026-08**;
 we do not guarantee to track API changes.
+
+Known limitations (fairness across adapters, not fixed yet; they may affect the three commercial-API rows of the
+leaderboard): (1) `gemini_live` / `openai_realtime` ignore the servers' interruption notices
+(`server_content.interrupted`; `input_audio_buffer.speech_started` / `response.cancelled`) and keep all received
+audio on the timeline, whereas a real client stops playback on barge-in, so a reply the API would have cut short is
+scored as continuous speech (a short start in a Pause can become an utterance over 1.5 s, TO = 1); (2) `moshi_ws`
+concatenates the received frames in order while the API adapters place audio by wall-clock arrival time, so
+response latencies (`lat_median`) are not on exactly the same footing across adapters.
 
 Your own model: implement `ModelAdapter.infer(input_audio, sample_rate) -> DialogueResponse`
 (`src/fdbja/adapters/base.py`; `input_audio` is speaker A, mono 16 kHz; `infer` writes the returned

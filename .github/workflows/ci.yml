@@ -11,12 +11,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.12"]
+        python-version: ["3.10", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - run: uv lock --check
       - run: uv sync --locked
       - run: uv run ruff check .
-      - run: uv run pytest
+      - run: uv run pytest --cov=fdbja --cov-report=term
+
+  # The optional extras: the light one (analysis) is installed and imported;
+  # the heavy ones (torch for vap, the compiled pyopenjtalk for always-talk) are
+  # only resolved from the lock file, so CI stays fast and a broken pin still fails.
+  extras:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked --extra vap --dry-run
+      - run: uv sync --locked --extra always-talk --dry-run
+      - run: uv sync --locked --extra analysis
+      - run: uv run python -c "import matplotlib, pandas; import fdbja.turn_profile"
+      - run: uv run pytest -rs tests/test_extras_import.py

@@ -7,6 +7,11 @@ Works with J-Moshi and LLM-jp-Moshi-v1. Ported from the research client
 
 Requires ``opuslib`` and ``websockets`` (install extra ``[infer]``). Needs a
 running server; not exercised in CI without one.
+
+Timeline: the received frames are concatenated in the order they arrive, not
+placed by wall-clock arrival time as in the commercial-API adapters
+(``gemini_live``, ``openai_realtime``), so response latencies are not measured
+on exactly the same footing across adapters (README "既知の限界").
 """
 
 from __future__ import annotations

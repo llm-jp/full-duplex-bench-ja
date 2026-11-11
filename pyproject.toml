@@ -49,7 +49,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [dependency-groups]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "pytest-cov", "ruff"]
 
 [tool.uv]
 # Resolve the lock for the interpreters we support; without an upper bound the

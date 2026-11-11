@@ -13,6 +13,17 @@ timing of the response, not just its content, is what the benchmark scores.
 
 Requires ``websockets`` + ``librosa`` (extra ``[realtime]``) and an API key
 (``OPENAI_API_KEY`` / ``XAI_API_KEY`` by default, or ``api_key`` in config).
+
+Known limitation (fairness across adapters, not yet fixed): this adapter
+ignores the server's interruption notices (``input_audio_buffer.speech_started``,
+``response.cancelled``) and keeps every
+received audio chunk on the timeline. A real client stops playback when the
+user barges in, so a reply that the API would have cut short is scored here as
+continuous speech (e.g. a short start in a Pause can become an utterance over
+1.5 s and TO = 1). The timeline is also built from wall-clock arrival times,
+whereas ``moshi_ws`` concatenates the received frames in order, so response
+latencies (``lat_median``) are not measured on exactly the same footing across
+adapters. See README "既知の限界".
 """
 
 from __future__ import annotations

@@ -72,7 +72,7 @@ def _detect_events(task, gt_jchat, gt_wav=None, boundaries="transcript",
 
 def _tor_events(task, gt_jchat, model_asr_jchat, events=None,
                 system_activity="transcript", model_wav=None, sys_cfg=None,
-                out_utts=None):
+                out_utts=None, overlap_tolerance=0.0):
     """Events and their TO results. ``system_activity="audio"`` takes the
     model's speech intervals from the output wav (``data/system_activity.py``)
     and uses the ASR only for the characters; ``"transcript"`` takes both from
@@ -96,7 +96,8 @@ def _tor_events(task, gt_jchat, model_asr_jchat, events=None,
                          f"got {system_activity!r}")
     if out_utts is not None:
         out_utts.extend(model_b)
-    return events, tor_metric.EVALUATORS[task](events, model_b), stats
+    kw = {"overlap_tolerance": overlap_tolerance} if task == "pause" and overlap_tolerance else {}
+    return events, tor_metric.EVALUATORS[task](events, model_b, **kw), stats
 
 
 #: the window each task judges the model in (clip seconds), as in metrics/tor.py
@@ -126,6 +127,8 @@ def score_offline(config: Config, limit: int = 0,
     vap_cfg = config.get("metrics", "vap_distance", default={}) or {}
     use_vap = vap_cfg.get("enabled", False)
     vap_backend = _build_vap_backend(config) if use_vap else None
+    vap_path = _vap_model_path(vap_cfg) if use_vap else None
+    cache_tag = _vap_cache_tag(vap_cfg, vap_path) if use_vap else None
     boundary = _boundary_settings(vap_cfg) if use_vap else None
     pr_raw = config.get("metrics", "pause_response", default={}) or {}
     pr_cfg = None
@@ -189,7 +192,9 @@ def score_offline(config: Config, limit: int = 0,
                 events, tor_results, sys_stats = _tor_events(
                     task, gt_jchat, _load_jchat(asr_json), events=event_cache[key],
                     system_activity=system_activity, model_wav=model_wav,
-                    sys_cfg=sys_cfg, out_utts=model_utts)
+                    sys_cfg=sys_cfg, out_utts=model_utts,
+                    overlap_tolerance=float(
+                        det_params.get(task, {}).get("overlap_tolerance", 0.0)))
 
                 dkl_per_event = [None] * len(events)
                 bdkl_per_event = [None] * len(events)
@@ -201,7 +206,8 @@ def score_offline(config: Config, limit: int = 0,
                                      and task in boundary["tasks"] else None)
                     dkl_per_event, bdkl_per_event = _vap_distance_events(
                         vap_backend, gt_wav, model_wav, task, events,
-                        cache_dir, mname, clip, boundary=task_boundary)
+                        cache_dir, mname, clip, boundary=task_boundary,
+                        cache_tag=cache_tag)
                 pr_per_event = [None] * len(events)
                 if pr_cfg is not None and task == "pause" and have_wavs:
                     from fdbja.metrics.pause_response import judge_events
@@ -262,11 +268,6 @@ def score_offline(config: Config, limit: int = 0,
                 msg += " (no outputs: run infer + transcribe, or place combined.wav)"
             log(msg)
 
-    vap_path = None
-    if use_vap:
-        root = (vap_cfg.get("vap_realtime_root")
-                or os.environ.get("VAP_REALTIME_ROOT") or "")
-        vap_path = os.path.join(root, "asset", "vap", str(vap_cfg.get("vap_model", "")))
     return _aggregate(rows, config, models=models, asr_backends=asr_backends,
                       vap_path=vap_path)
 
@@ -484,25 +485,72 @@ def _boundary_settings(vap_cfg):
             "post": float(vap_cfg.get("boundary_post_seconds", vd.BOUNDARY_POST))}
 
 
+def _vap_model_path(vap_cfg) -> str:
+    root = (vap_cfg.get("vap_realtime_root")
+            or os.environ.get("VAP_REALTIME_ROOT") or "")
+    return os.path.join(root, "asset", "vap", str(vap_cfg.get("vap_model", "")))
+
+
+def _vap_cache_tag(vap_cfg, vap_path=None):
+    """What a cached VAP probability depends on besides the input audio: the
+    checkpoint (SHA-256 of the file when it is readable, else its name; with
+    ``vap_revision`` the Hub revision too) and the frame settings.
+    ``metrics.vap_distance.cache: trust`` returns ``None`` (reuse any cached
+    file, the behaviour before 0.2.0)."""
+    from fdbja.summary import file_sha256
+
+    mode = vap_cfg.get("cache", "validate") or "validate"
+    if mode == "trust":
+        return None
+    if mode != "validate":
+        raise ValueError(f"metrics.vap_distance.cache must be validate|trust, got {mode!r}")
+    ckpt = file_sha256(vap_path) if vap_path else None
+    cpc = vap_cfg.get("cpc_model")
+    return "|".join(str(x) for x in (
+        ckpt or os.path.basename(str(vap_cfg.get("vap_model", ""))),
+        vap_cfg.get("vap_revision", ""), cpc,
+        vap_cfg.get("frame_rate", 20), vap_cfg.get("context_len_sec", 2.5)))
+
+
+def vap_cache_key(wav_path: str, cache_tag: str) -> str:
+    """Cache key of one VAP probability file: SHA-256 over the input wav's
+    bytes and ``cache_tag`` (checkpoint and frame settings)."""
+    import hashlib
+
+    from fdbja.summary import file_sha256
+
+    return hashlib.sha256(
+        f"{file_sha256(wav_path)}|{cache_tag}".encode("utf-8")).hexdigest()
+
+
 def _vap_distance_events(backend, gt_wav, model_wav, task, events,
-                         cache_dir, model, clip, boundary=None):
+                         cache_dir, model, clip, boundary=None, cache_tag=None):
     """Per-event mean d_t and (with ``boundary``) the boundary-weighted mean;
-    cache VAP probs as npz (git-ignored). Returns ``(stats, boundary_stats)``."""
+    cache VAP probs as npz (git-ignored). Returns ``(stats, boundary_stats)``.
+
+    With ``cache_tag`` (the default ``metrics.vap_distance.cache: validate``)
+    each file stores :func:`vap_cache_key` of its input wav and is recomputed
+    when the wav, the checkpoint or the frame settings changed, or when it
+    carries no key (written before 0.2.0). Model outputs are cached per task
+    (``<model>/<task>/<clip>.npz``) so clip names may repeat across tasks."""
     from fdbja.io_audio import load_stereo_16k
 
     def cached(path, sub):
         cpath = os.path.join(cache_dir, sub, clip + ".npz")
+        key = None if cache_tag is None else vap_cache_key(path, cache_tag)
         if os.path.exists(cpath):
-            d = np.load(cpath)
-            return d["times"], d["probs"]
+            with np.load(cpath) as d:
+                if key is None or ("key" in d.files and str(d["key"]) == key):
+                    return d["times"], d["probs"]
         left, right = load_stereo_16k(path)
         times, probs = backend.probs(left, right)
         os.makedirs(os.path.dirname(cpath), exist_ok=True)
-        np.savez_compressed(cpath, times=times, probs=probs)
+        extra = {} if key is None else {"key": np.array(key)}
+        np.savez_compressed(cpath, times=times, probs=probs, **extra)
         return times, probs
 
     t_h, p_h = cached(gt_wav, os.path.join("gt", task))
-    t_m, p_m = cached(model_wav, model)
+    t_m, p_m = cached(model_wav, model if cache_tag is None else os.path.join(model, task))
     dkl = vd.kl_series(p_h, p_m)
     times = t_h[:len(dkl)]
     out = []
@@ -541,8 +589,23 @@ def _aggregate(rows, config: Config, models=None, asr_backends=None,
 
     vap_cfg = config.get("metrics", "vap_distance", default={}) or {}
     alpha_cfg = vap_cfg.get("alpha")
+    if alpha_cfg is not None and not float(alpha_cfg) > 0:
+        raise ValueError("metrics.vap_distance.alpha must be positive or null "
+                         f"(auto-calibrate), got {alpha_cfg!r}")
+    # the trivial baselines (silence / always_talk) stay out of the alpha
+    # calibration when asked: silence is "desired" on every Pause event
+    calib_skip = set()
+    if vap_cfg.get("calibration_exclude_baselines", False):
+        from fdbja.adapters import BASELINE_ADAPTERS
+        calib_skip = {m["name"] for m in (config.models or [])
+                      if m.get("adapter") in BASELINE_ADAPTERS}
     boot = {**sm.DEFAULT_BOOTSTRAP,
             **(config.get("output", "bootstrap", default={}) or {})}
+    unit = sm.bootstrap_unit(config)
+
+    def ci(vals, recs, s):
+        clusters = [r["clip"] for r in recs] if unit == "clip" else None
+        return sm.bootstrap_ci(vals, boot["n"], s, clusters=clusters)
     models = config.models if models is None else models
     summary = []
     for task in config.tasks:
@@ -550,10 +613,15 @@ def _aggregate(rows, config: Config, models=None, asr_backends=None,
         # alpha per task: from config or auto-calibrate on desired events
         task_dkls_ok = [r["mean_dkl"] for r in rows
                         if r["task"] == task and r["mean_dkl"] is not None
-                        and r["TO"] == desired]
+                        and r["TO"] == desired and r["model"] not in calib_skip]
         alpha = alpha_cfg
         if alpha is None and task_dkls_ok:
             alpha = vd.calibrate_alpha(np.array(task_dkls_ok))
+            if alpha is None:
+                import warnings
+                warnings.warn(f"[{task}] alpha calibration skipped: the median D_KL of the "
+                              "desired events is not positive (no score column)",
+                              RuntimeWarning, stacklevel=2)
         for model in models:
             mname = model["name"]
             sub = [r for r in rows if r["task"] == task and r["model"] == mname]
@@ -567,7 +635,7 @@ def _aggregate(rows, config: Config, models=None, asr_backends=None,
                    "n_clips": len({r["clip"] for r in sub}),
                    "domain": model.get("domain"), "desired_TO": desired,
                    "TOR": round(tor, 4),
-                   "TOR_ci": sm.bootstrap_ci(to, boot["n"], seed)}
+                   "TOR_ci": ci(to, sub, seed)}
             if task == "bc":
                 # backchannel frequency (per second of A) and timing JSD,
                 # as in the original Full-Duplex-Bench Backchannel task
@@ -592,21 +660,23 @@ def _aggregate(rows, config: Config, models=None, asr_backends=None,
                               for r in sub if r["mean_dkl"] is not None])
             if len(dks):
                 rec["event_mean_dkl"] = round(float(dks.mean()), 4)
-                rec["dkl_ci"] = sm.bootstrap_ci(dks, boot["n"], seed + 1)
+                rec["dkl_ci"] = ci(dks, [r for r in sub if r["mean_dkl"] is not None],
+                                   seed + 1)
                 a = auc(wrong, dks)
                 rec["AUC"] = None if a is None else round(a, 4)
                 r_pb = point_biserial(wrong, dks)
                 rec["r_pb"] = None if r_pb is None else round(r_pb, 4)
-                if alpha:
+                if alpha is not None:
                     rec["alpha"] = round(float(alpha), 4)
                     rec["score"] = round(float(np.exp(-alpha * dks).mean()), 4)
-            bks = [r["vapd_boundary"] for r in sub if r.get("vapd_boundary") is not None]
+            b_rows = [r for r in sub if r.get("vapd_boundary") is not None]
+            bks = [r["vapd_boundary"] for r in b_rows]
             if bks:
                 rec["vapd_boundary"] = round(float(np.mean(bks)), 4)
-                rec["vapd_boundary_ci"] = sm.bootstrap_ci(bks, boot["n"], seed + 2)
+                rec["vapd_boundary_ci"] = ci(bks, b_rows, seed + 2)
             prs = [r for r in sub if r.get("pause_response") is not None]
             if prs:
-                rec.update(sm.pause_response_stats(prs, boot["n"], seed + 3))
+                rec.update(sm.pause_response_stats(prs, boot["n"], seed + 3, unit=unit))
             if task == "smooth_tt":
                 rec.update(sm.timing_stats(sub))
             else:

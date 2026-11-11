@@ -69,6 +69,13 @@ def _chars_to_utterance(chars: JChat) -> Utterance:
     }
 
 
+#: minimum overlap (s) for speech to count in a Pause gap (detector and TOR)
+MIN_OVERLAP = 0.1
+#: recommended ``detection.pause.overlap_tolerance``: character timestamps are
+#: given to the millisecond, so this only absorbs floating-point error
+OVERLAP_TOLERANCE = 1e-6
+
+
 def intervals_overlap(s1: float, e1: float, s2: float, e2: float) -> bool:
     return s1 < e2 and s2 < e1
 
@@ -97,16 +104,31 @@ BACKCHANNEL_TOKENS: Tuple[str, ...] = tuple(sorted({
     key=lambda w: (-len(w), w)))
 _LAUGH = re.compile(r"[アハフヘホ]{2,}|[ハフ]+[!！]?")
 _PUNCT = re.compile(r"[、。，．,.!?！？…・\s「」ー]")
+_PUNCT_KEEP_LONG_VOWEL = re.compile(r"[、。，．,.!?！？…・\s「」]")
+_LONG_VOWEL = "ー"
 
 
-def backchannel_residual(text: str) -> Tuple[int, int]:
+def backchannel_residual(text: str, match_long_vowel: bool = False) -> Tuple[int, int]:
     """(characters, characters left after removing laughter and backchannel
-    words). Punctuation, spaces and the long-vowel mark are not counted."""
-    t = _PUNCT.sub("", _LAUGH.sub("", str(text)))
-    n = len(t)
+    words). Punctuation, spaces and the long-vowel mark are not counted.
+
+    ``match_long_vowel=False`` (default, the published definition) removes the
+    long-vowel mark *before* matching, so the words of
+    :data:`BACKCHANNEL_TOKENS` that contain it ("えー", "ふーん", "あー", ...)
+    never match ("えー" -> "え" is left as one content character). ``True``
+    matches the words with the mark in place and drops the remaining marks only
+    when counting (``detection.smooth_tt_roles.match_long_vowel``)."""
+    if not match_long_vowel:
+        t = _PUNCT.sub("", _LAUGH.sub("", str(text)))
+        n = len(t)
+        for w in BACKCHANNEL_TOKENS:
+            t = t.replace(w, "")
+        return n, len(t)
+    t = _PUNCT_KEEP_LONG_VOWEL.sub("", _LAUGH.sub("", str(text)))
+    n = len(t.replace(_LONG_VOWEL, ""))
     for w in BACKCHANNEL_TOKENS:
         t = t.replace(w, "")
-    return n, len(t)
+    return n, len(t.replace(_LONG_VOWEL, ""))
 
 
 @dataclass(frozen=True)
@@ -134,6 +156,9 @@ class SmoothTTRoles:
     b_pre_max: float = 0.5
     b_max_resid_chars: int = 2
     b_min_resid_ratio: float = 0.3
+    #: match backchannel words with the long-vowel mark ("えー", "ふーん");
+    #: False reproduces the published event set (see ``backchannel_residual``)
+    match_long_vowel: bool = False
 
     @classmethod
     def from_config(cls, cfg: Optional[Dict[str, Any]]) -> "SmoothTTRoles":
@@ -169,7 +194,7 @@ def smooth_tt_role_flags(event: Dict[str, Any], jchat: JChat,
     output). Returns the failed checks: ``a_backchannel`` (a),
     ``b_talking_before`` (b, characters), ``b_backchannel`` (c)."""
     flags: List[str] = []
-    n, r = backchannel_residual(event["a_text"])
+    n, r = backchannel_residual(event["a_text"], roles.match_long_vowel)
     a_dur = max(event["a_duration"], 1e-3)
     if (r <= roles.a_max_resid_chars or r / a_dur < roles.a_min_resid_cps
             or r / max(n, 1) < roles.a_min_resid_ratio):
@@ -178,7 +203,7 @@ def smooth_tt_role_flags(event: Dict[str, Any], jchat: JChat,
     b_chars = [(c["start"], c["end"]) for c in jchat if c["speaker"] == "B"]
     if _covered_seconds(b_chars, t - roles.b_pre_window, t) > roles.b_pre_max:
         flags.append("b_talking_before")
-    n, r = backchannel_residual(event["b_text"])
+    n, r = backchannel_residual(event["b_text"], roles.match_long_vowel)
     if r <= roles.b_max_resid_chars or r / max(n, 1) < roles.b_min_resid_ratio:
         flags.append("b_backchannel")
     return flags
@@ -190,9 +215,17 @@ def smooth_tt_role_flags(event: Dict[str, Any], jchat: JChat,
 
 def detect_pauses(jchat: JChat, min_gap: float = 0.4, max_gap: float = 1.0,
                   min_a_turn_duration: float = 5.0,
-                  bc_max_chars: int = 6, bc_max_duration: float = 1.5
+                  bc_max_chars: int = 6, bc_max_duration: float = 1.5,
+                  overlap_tolerance: float = 0.0
                   ) -> List[Dict[str, Any]]:
-    """Intra-turn pauses in A where B stays silent (desired TO=0)."""
+    """Intra-turn pauses in A where B stays silent (desired TO=0).
+
+    B "spoke" in the gap when its overlap with the gap is at least
+    :data:`MIN_OVERLAP` (0.1 s) minus ``overlap_tolerance``. The default 0
+    reproduces the published event set, where an overlap of exactly 0.1 s can
+    fall short through floating point (``1.7 - 1.6 = 0.0999...``);
+    ``detection.pause.overlap_tolerance`` (e.g. :data:`OVERLAP_TOLERANCE`)
+    counts it as 0.1 s."""
     a_utts = group_chars_to_utterances(jchat, "A")
     b_utts = group_chars_to_utterances(jchat, "B")
 
@@ -224,7 +257,8 @@ def detect_pauses(jchat: JChat, min_gap: float = 0.4, max_gap: float = 1.0,
 
         b_spoke = any(
             intervals_overlap(b["start"], b["end"], gap_start, gap_end)
-            and (min(b["end"], gap_end) - max(b["start"], gap_start)) >= 0.1
+            and (min(b["end"], gap_end) - max(b["start"], gap_start))
+            >= MIN_OVERLAP - overlap_tolerance
             for b in b_utts
         )
         if b_spoke:

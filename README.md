@@ -21,6 +21,20 @@
   人の判断との検証(2026-11、クラウドソーシング 150 人)の要点もリーダーボードに載せています。
 - 英語版 README: [README.en.md](README.en.md)
 
+**Quick start**(LLM-jp-Zoom1 が手元にある場合。合成データでの 1 分の動作確認は下の「[クイックスタート](#クイックスタート)」1.)
+
+```bash
+uv sync --extra asr-reazon-whisperx                        # 1. インストール(ASR バックエンドを 1 つ)
+uv run fdbja reconstruct --config configs/default.yaml     # 2. 評価クリップを作る(config の corpus.zoom1_root を設定)
+# 応答を用意: `fdbja infer` + `fdbja transcribe`、または combined.wav を置く(「[モデルアダプタ](#モデルアダプタ)」)
+uv run fdbja score-offline --config configs/default.yaml   # 3. 採点 → results/summary.json
+uv run fdbja leaderboard --reference docs/results.json     # 4. リーダーボードと同じ順位で掲載値と並べる
+```
+
+**目次**: [前提条件](#前提条件) / [クイックスタート](#クイックスタート) / [主要コマンド](#主要コマンド) /
+[何を評価するか](#何を評価するか)([既知の限界](#既知の限界)) / [構成](#構成) / [データ](#データ) / [ライセンス](#ライセンス) /
+[引用](#引用) / [ロードマップ](#ロードマップ) / [変更履歴](#バージョン--変更履歴) / [トラブルシュート](#トラブルシュート) / [謝辞](#謝辞)
+
 ## 前提条件
 
 | 用途 | 必要なもの |
@@ -184,6 +198,7 @@ uv run fdbja reconstruct --config configs/default.yaml           # LLM-jp-Zoom1 
 uv run fdbja infer --config configs/default.yaml [--limit N]     # 話者 A の音声をモデルに流し応答を録る
 uv run fdbja transcribe --config configs/default.yaml [--model NAME] [--task T] [--backend B]   # 応答を ASR して jchat を書く
 uv run fdbja score-offline --config configs/default.yaml [--limit N] [--model NAME]   # TOR + VAP-distance を採点し results.json / summary.json / summary.csv を出力
+uv run fdbja leaderboard --results results/summary.json [--reference docs/results.json]   # リーダーボードと同じ順位(望ましい振る舞いの割合)で表示。採点条件が違えば警告
 uv run fdbja analyze-profile --results results/results.json --out results/profile   # システムごとの傾向(黙る / 被せる / 遅い)と事象単位のレポート
 uv run fdbja analyze-pause --eval-dir data/eval --out results/pause_gap   # Pause をギャップ長別に再集計(bootstrap CI 付き)
 uv run fdbja sample-human-eval --config configs/default.yaml --out ./human_eval   # 人手評価バンドル(Web UI 込み)
@@ -414,6 +429,15 @@ TOR・元の VAP-distance より人の選好と合った 2 つの指標を実装
 VAP-distance は生波形から計算するため 1・3 の影響を受けません(2 は要注意)。
 `sample-human-eval` / `analyze-human-eval` はこれらの妥当性を人手で検証するためのものです。
 
+アダプタ間の公平性について、未修正の点が 2 つあります(リーダーボードの商用 API 3 本の値に効きうる。修正は採点し直しと合わせて行う予定です)。
+
+4. **商用 API アダプタは割り込みの通知を無視する** — `gemini_live` / `openai_realtime` は、サーバが送る割り込みの通知
+   (Gemini の `server_content.interrupted`、OpenAI Realtime の `input_audio_buffer.speech_started` / `response.cancelled`)を処理せず、
+   受信した音声を全部時間軸に残します。実際のクライアントは相手が話し始めたら再生を止めるので、API 側で途中で止まるはずの応答が
+   続けて話したものとして採点されます(例: Pause の間で短く話し始めた応答が 1.5 秒を超える発話になり TO = 1 になりうる)。
+5. **応答の時間軸の作り方がアダプタで異なる** — Moshi 系(`moshi_ws`)は受信したフレームを受信順に連結し、商用 API は壁時計の到着時刻で配置します。
+   応答の遅れ(`lat_median`)は、アダプタをまたぐと厳密には同じ尺度になっていません。
+
 ## 構成
 
 ```
@@ -499,7 +523,7 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 1. **次の版(0.2.0)** — 人の判断で検証した 2 指標(境界重み付き VAP-distance、割り込みと無反応を罰する Pause 指標)の実装。下の「未リリース」の整備と合わせて 0.2.0 として出す。
 2. 評価データの公開(LLM-jp-Zoom1 の公開に連動)。
 3. システムの相槌課題(Backchanneling)を採点対象に(聴取で確認したあと)。
-4. システムが先に話している場面の 2 課題(ユーザの相槌、ユーザの割り込み)。
+4. システムが先に話している場面の 2 課題(ユーザの相槌、ユーザの割り込み)。設計案は [docs/design/next-tasks.md](docs/design/next-tasks.md)。
 
 ## バージョン / 変更履歴
 
@@ -514,7 +538,24 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
   - 人の判断で検証した 2 指標を追加(既定では無効、README「提案指標」): 境界重み付き VAP-distance
     (`metrics.vap_distance.weighting: boundary`、`tau_seconds`、要約の `vapd_boundary`)と、割り込みと無反応を罰する Pause 指標
     (`metrics.pause_response`、要約の `pause_response` / `pause_no_response_rate` / `pause_interrupt_rate`)。既定の採点は変わらない。
+  - `leaderboard` コマンド: `summary.json` をリーダーボードと同じ順位で表示し、`--reference docs/results.json` で掲載値と並べる(採点条件が違えば警告)。
+  - CI に Python 3.13 と extras(vap / analysis / always-talk)の import・解決の確認を追加。開発依存に pytest-cov。
   - extra `always-talk`(pyopenjtalk)を追加。古い GPU ドライバでの torch の入れ替えと `uv run --no-sync` の手順を追記。
+  - **採点に影響しうる不具合の修正(0.2.0 向け)**。いずれも**既定は従来どおり**で、掲載値(`docs/`)は変わりません。
+    設定で切り替えた場合は、**掲載値と比べる前に全システムを採点し直して確認が必要**です。
+    - 相槌語の長音符: 正規化で長音符「ー」を先に消すため、相槌語リストの「えー」「ふーん」「あー」「へー」などが一致しなかった
+      (`smooth_tt_roles` の判定に効く)。`detection.smooth_tt_roles.match_long_vowel: true` で長音符込みで照合する(数えるときだけ長音符を除く)。
+    - 重なり 0.1 秒の端: `1.7 - 1.6 = 0.0999…` のように、ちょうど 0.1 秒の重なりが浮動小数で欠けていた(Pause の事象検出と TOR)。
+      `detection.pause.overlap_tolerance: 1.0e-6` で許容誤差つきで比べる。
+    - α の較正: 望ましい事象の D_KL の中央値が 0 のとき `alpha = inf` になっていた → 較正できないときは `alpha` / `score` を出さない
+      (警告を出す。0 以下の `alpha` の指定はエラー)。自明なベースライン(`silence` / `always_talk`)を較正から除く
+      `metrics.vap_distance.calibration_exclude_baselines: true` を追加(既定 false = 従来どおり全システムで較正)。
+    - VAP キャッシュ: ファイルがあれば読むだけで、`infer` をやり直しても古い確率が使われていた → 各 npz に入力音声の SHA-256・
+      チェックポイントの SHA-256(と任意の `vap_revision`)・フレーム設定から作る key を記録し、一致しなければ計算し直す
+      (`metrics.vap_distance.cache: validate`、既定)。モデル側のキャッシュはタスクごとの階層(`<model>/<task>/`)に。
+      0.1.x で書いたキャッシュ(key なし)は初回に計算し直すため、VAP の推論が一度走ります。従来の動作は `cache: trust`。
+    - bootstrap の単位: `score-offline` は事象単位、`analyze-pause` はクリップ単位と 2 通りあった → `output.bootstrap.unit: event | clip`
+      で選べるように(既定 `event` = 掲載の区間)。`clip` は同じクリップの事象をまとめて引き直す(事象間の相関を考慮)。
 - **0.1.0(公開初版、2026-11-05)**
   - 事象の境界を人間側の音声で付け直す設定(`detection.boundaries: audio`)、Smooth TT を話者交替の事象に限る設定
     (`detection.smooth_tt_roles`)、TOR の発話区間をモデル応答の音声から取る設定(`detection.system_activity: audio`)、

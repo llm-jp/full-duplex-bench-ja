@@ -14,7 +14,7 @@
 ## Pull Request
 
 - PR テンプレート(変更内容 / 確認したこと)を埋める。
-- レビュアー 1 人の approve と CI(ruff + pytest、Python 3.10 / 3.12)の通過を条件に **squash merge**。
+- レビュアー 1 人の approve と CI(ruff + pytest、Python 3.10 / 3.12 / 3.13、extras の import 確認)の通過を条件に **squash merge**。
   squash 後のコミットメッセージも `type: 要約` にそろえる。
 - 送る前に `make lint test`。
 

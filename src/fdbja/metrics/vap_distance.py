@@ -63,9 +63,20 @@ def score_from_dkl(dkl: float, alpha: float) -> float:
     return float(np.exp(-alpha * dkl))
 
 
-def calibrate_alpha(desired_dkls: np.ndarray) -> float:
-    """alpha so the median desired-behavior event maps to score 0.5."""
-    return float(np.log(2) / np.median(desired_dkls))
+def calibrate_alpha(desired_dkls: np.ndarray) -> float | None:
+    """alpha so the median desired-behavior event maps to score 0.5.
+
+    Returns ``None`` (no ``exp(-alpha * D_KL)`` score) when there is no finite
+    value or the median is not positive: ``log 2 / 0`` would give
+    ``alpha = inf`` and scores of 0 / NaN."""
+    x = np.asarray(desired_dkls, dtype=np.float64).ravel()
+    x = x[np.isfinite(x)]
+    if len(x) == 0:
+        return None
+    med = float(np.median(x))
+    if med <= 0:
+        return None
+    return float(np.log(2) / med)
 
 
 def event_window(task: str, event: dict, tt_horizon: float = 2.0

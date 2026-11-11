@@ -34,6 +34,10 @@ OFFLINE = ("offline", None, "")
 #: config keys that are not constructor arguments
 _RESERVED = ("adapter", "name", "domain")
 
+#: the trivial baselines (``adapters/baselines.py``): reported on every task,
+#: never ranked, optionally kept out of the VAP-distance alpha calibration
+BASELINE_ADAPTERS = frozenset({"silence", "always_talk"})
+
 
 def register_adapter(name: str, factory: Callable[..., ModelAdapter]) -> None:
     """Register a custom adapter (a ModelAdapter subclass or any factory)."""
@@ -92,5 +96,5 @@ def build_adapter(spec: dict) -> Optional[ModelAdapter]:
     return _resolve(kind)(**kwargs)
 
 
-__all__ = ["ADAPTERS", "DialogueResponse", "ModelAdapter", "build_adapter",
+__all__ = ["BASELINE_ADAPTERS", "ADAPTERS", "DialogueResponse", "ModelAdapter", "build_adapter",
            "is_offline", "list_adapters", "register_adapter"]

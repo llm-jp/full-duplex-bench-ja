@@ -99,6 +99,14 @@ def main(argv=None) -> int:
     p.add_argument("--model", nargs="+", default=None,
                    help="only these model names from the config")
 
+    p = sub.add_parser("leaderboard",
+                       help="rank the systems of a summary.json like the leaderboard page")
+    p.add_argument("--results", default="results/summary.json",
+                   help="summary.json or results.json written by score-offline")
+    p.add_argument("--reference", default=None,
+                   help="published results to merge in, e.g. docs/results.json "
+                        "(differing scoring conditions are reported)")
+
     p = sub.add_parser("sample-human-eval",
                        help="build crowdsourcing manifests for human validation")
     p.add_argument("--config", required=True)
@@ -183,6 +191,19 @@ def main(argv=None) -> int:
         extra = write_summary(results, config.output_dir)
         print(report.format_table(results))
         print(f"\n[fdbja] wrote {path}, " + ", ".join(extra), file=sys.stderr)
+        return 0
+
+    if args.command == "leaderboard":
+        import json
+
+        from fdbja import report
+        with open(args.results, encoding="utf-8") as f:
+            results = json.load(f)
+        reference = None
+        if args.reference:
+            with open(args.reference, encoding="utf-8") as f:
+                reference = json.load(f)
+        print(report.format_leaderboard(results, reference))
         return 0
 
     if args.command == "sample-human-eval":
