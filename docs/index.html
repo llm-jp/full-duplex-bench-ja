@@ -102,9 +102,18 @@
       青い帯が評価の窓、橙の縦線が人間 B の応答・相槌の開始点。相槌の例は定義を示すためのもので、採点の対象外です。</p>
     <p class="hint"><label class="mix-label"><input type="checkbox" id="mix-toggle" checked>
       刺激音声(話者 A)と同時に再生する(左 ch = 話者 A / 右 ch = 応答。オフにすると応答のみ)</label></p>
+    <div class="controls" role="group" aria-label="サンプルの境界の定義">
+      <span class="ctl-label">境界</span>
+      <div class="seg" id="sample-bounds">
+        <button data-v="audio">音声の境界<small>(表と同じ)</small></button>
+        <button data-v="transcript">文字の境界</button>
+      </div>
+    </div>
+    <p class="hint">話者 A と人間 B の発話の境界を、音声から置くか、ASR の文字の時刻から置くかを切り替えます。
+      青い帯・橙の縦線・TO / D のバッジが、選んだ定義の値に変わります。</p>
     <div id="samples"></div>
-    <details class="tbl"><summary>バッジの読み方</summary>
-      <p class="hint">TO バッジは本家 Full-Duplex-Bench 準拠の<b>転写ベース</b>の判定です。転写に乗らない発声や整列誤差は
+    <details class="tbl"><summary>バッジの見方</summary>
+      <p class="hint">TO バッジは Full-Duplex-Bench と同じく、モデルの応答の<b>転写(ASR)の時刻</b>から判定します。転写に乗らない発声や整列誤差は
         拾えないため、まれに波形の見た目と食い違うことがあります。VAP-distance (D) は生波形から計算されるため、この影響を受けません。
         「無出力」バッジは、そのモデルが全区間で音声を返さなかったことを示します(沈黙が正解の課題では、正しく黙ったのか
         何も生成できなかったのかを指標だけでは区別できません)。</p>

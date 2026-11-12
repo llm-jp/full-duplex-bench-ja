@@ -17,6 +17,7 @@ const state = {
   view: pick(params.get("view"), ["pause", "197", "72"], "pause"),
   metric: pick(params.get("metric"), ["acc", "dkl"], "acc"),
   rank: pick(params.get("rank"), ["pause", "smooth_tt"], "pause"),
+  sb: pick(params.get("sb"), ["audio", "transcript"], "audio"),
 };
 function pick(v, ok, d) { return ok.includes(v) ? v : d; }
 
@@ -505,6 +506,13 @@ let audioCtx = null;
 let nowPlaying = null;         // {state, canvas, raf, co} currently playing
 const waveRegistry = [];       // [{canvas, state}] for resize redraw
 const stimByTask = {};         // task -> {canvas, state} of the stimulus row
+const sampleSyncs = [];        // re-apply the labels when the boundary toggle flips
+
+// A scored sample carries one set of labels (window, marker, note, TO / D)
+// per boundary definition under `boundaries`; bc has a single flat set.
+function sampleView(s) {
+  return (s.boundaries && (s.boundaries[state.sb] || s.boundaries.audio)) || s;
+}
 
 function renderSamples(meta) {
   const host = document.getElementById("samples");
@@ -520,7 +528,7 @@ function renderSamples(meta) {
     h.textContent = meta.task_labels[task] || task;
     host.appendChild(h);
     const p = document.createElement("p");
-    p.className = "hint"; p.textContent = s.note || "";
+    p.className = "hint";
     host.appendChild(p);
 
     const box = document.createElement("div");
@@ -530,32 +538,38 @@ function renderSamples(meta) {
     const rows = [
       { key: "stimulus", label: "刺激音声 (話者A)", cls: "stim" },
       { key: "human", label: "人間B (正解)", cls: "human" },
-      ...Object.entries(s.models || {})
+      // row order follows the audio-boundary D and stays put when toggling
+      ...Object.entries((s.boundaries ? s.boundaries.audio : s).models || {})
         .sort((a, b) => (a[1].dkl ?? Infinity) - (b[1].dkl ?? Infinity))
-        .map(([m, v]) => ({
+        .map(([m]) => ({
           key: m, label: (meta.model_labels || {})[m] || m, cls: "model",
-          badge: UNSCORED.has(task) ? null : v,
+          scored: !UNSCORED.has(task),
         })),
     ];
-    for (const r of rows) box.appendChild(sampleRow(task, r, s));
+    const els = rows.map((r) => sampleRow(task, r));
+    for (const el of els) box.appendChild(el);
+    sampleSyncs.push(() => {
+      const v = sampleView(s);
+      p.textContent = v.note || "";
+      for (const el of els) el.sync(v, s.desired_TO);
+    });
   }
+  bindSeg("sample-bounds", "sb", () => sampleSyncs.forEach((f) => f()));
 }
 
-function sampleRow(task, r, s) {
+function sampleRow(task, r) {
   const row = document.createElement("div");
   row.className = "wave-row " + r.cls;
 
   const lab = document.createElement("div");
   lab.className = "wave-label";
   lab.textContent = r.label;
-  if (r.badge) {
-    const ok = r.badge.TO === s.desired_TO;
-    const b = document.createElement("span");
-    b.className = "wave-badge " + (ok ? "ok" : "ng");
-    b.textContent = `TO=${r.badge.TO}${ok ? " ✓" : " ✗"} D=${r.badge.dkl.toFixed(2)}`;
-    b.title = "TO: ターンを取ったか(✓=望ましい挙動) / D: このイベントの VAP-distance";
+  let badge = null;
+  if (r.scored) {
+    badge = document.createElement("span");
+    badge.title = "TO: ターンを取ったか(✓=望ましい挙動) / D: このイベントの VAP-distance";
     lab.appendChild(document.createElement("br"));
-    lab.appendChild(b);
+    lab.appendChild(badge);
   }
   row.appendChild(lab);
 
@@ -567,8 +581,20 @@ function sampleRow(task, r, s) {
   row.appendChild(cwrap);
 
   const url = `samples/${task}_${r.key}.mp3`;
-  const state = { peaks: null, audio: null, audios: {}, window: s.window,
-                  marker: s.marker, silent: false, row };
+  const state = { peaks: null, audio: null, audios: {}, window: null,
+                  marker: null, silent: false, row };
+  // labels of the selected boundary definition: window, marker and badge
+  row.sync = (v, desiredTO) => {
+    state.window = v.window; state.marker = v.marker;
+    const bd = badge && (v.models || {})[r.key];
+    if (badge) badge.hidden = !bd;
+    if (bd) {
+      const ok = bd.TO === desiredTO;
+      badge.className = "wave-badge " + (ok ? "ok" : "ng");
+      badge.textContent = `TO=${bd.TO}${ok ? " ✓" : " ✗"} D=${bd.dkl.toFixed(2)}`;
+    }
+    if (state.peaks && !(nowPlaying && nowPlaying.state === state)) drawWave(canvas, state, 0);
+  };
   if (r.key === "stimulus") stimByTask[task] = { canvas, state };
 
   loadPeaks(url).then(({ peaks, silent }) => {
