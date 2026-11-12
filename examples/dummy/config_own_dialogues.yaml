@@ -53,4 +53,3 @@ metrics:
 
 output:
   dir: ./results/my_eval
-  exporters: [json]

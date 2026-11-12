@@ -1,4 +1,4 @@
-"""OpenAI-Realtime-protocol adapter (GPT-Realtime and Grok-Voice).
+"""OpenAI-Realtime-protocol adapter (GPT-Realtime and Grok Voice).
 
 Speaks the OpenAI Realtime WebSocket protocol: paced ``input_audio_buffer.append``
 frames in, ``response.output_audio.delta`` frames out. xAI's Grok Voice Agent

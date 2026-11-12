@@ -44,4 +44,3 @@ metrics:
 
 output:
   dir: ./results/dummy
-  exporters: [json]

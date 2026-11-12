@@ -8,8 +8,10 @@ Config-driven evaluation. Pipeline:
                    record the response
     transcribe   : ASR the recorded responses into character-level jchat
                    (backend chosen by ``asr.backend``)
-    score-offline: score precomputed model outputs (binary TOR + VAP-distance)
-                   -> results.json, summary.json, summary.csv
+    score-offline: score precomputed model outputs (binary TOR; VAP-distance
+                   when enabled) -> results.json, summary.json, summary.csv
+    leaderboard  : rank a summary.json like the leaderboard page, optionally
+                   next to the published rows (--reference)
     analyze-profile: per-system turn-taking profile + event-level report
 
 ``reconstruct`` needs the corpus and ``infer`` a model adapter (server or API
@@ -92,7 +94,7 @@ def main(argv=None) -> int:
                         "ch0 = A and ch1 = B: --channel 0 1 --speaker A B")
 
     p = sub.add_parser("score-offline",
-                       help="score precomputed model outputs (TOR + VAP-distance)")
+                       help="score precomputed model outputs (TOR; VAP-distance when enabled)")
     p.add_argument("--config", required=True)
     p.add_argument("--limit", type=int, default=0,
                    help="score only the first N clips per task (debug)")

@@ -135,7 +135,7 @@ metrics:
     # 境界重み付き VAP-distance(提案指標、既定では使わない)。boundary にすると、従来の等重み平均
     # (event_mean_dkl)はそのままに、境界 t0(Smooth TT = A の話し終わり、Pause = 間の始まり)からの
     # 重み exp(-|t - t0| / tau) で d_t を平均した vapd_boundary を併記する。範囲は判定窓の前 5 s・後 1.5 s まで
-    # (人の判断との検証で聴取者が聞いた範囲)。検証は 1 コーパス・9 システムのみ(README「指標」)。
+    # (人の判断との検証で聴取者が聞いた範囲)。検証は 1 コーパス・9 システムのみ(README「提案指標」)。
     weighting: uniform        # uniform | boundary
     tau_seconds: 2.0
     boundary_tasks: [smooth_tt]   # pause も指定可(検証で選ばれたのは Smooth TT のみ)
@@ -155,4 +155,3 @@ output:
   # 95% intervals: unit event = resample events (published intervals); clip = resample clips with
   # their events together (accounts for events of one clip being correlated; analyze-pause uses clip).
   bootstrap: { n: 10000, seed: 0, unit: event }
-  exporters: [json]     # json | table | wandb

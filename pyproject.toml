@@ -11,6 +11,10 @@ dependencies = [
     "pyyaml",
 ]
 
+[project.urls]
+Repository = "https://github.com/llm-jp/full-duplex-bench-ja"
+Leaderboard = "https://llm-jp.github.io/full-duplex-bench-ja/"
+
 [project.optional-dependencies]
 # VAP-distance metric backend (Blackwell GPU needs cu128+)
 vap = ["torch", "torchaudio", "einops"]
@@ -18,7 +22,7 @@ vap = ["torch", "torchaudio", "einops"]
 infer = ["opuslib", "websockets", "torch", "torchaudio"]
 # `infer` with the Gemini Live API
 gemini = ["google-genai", "librosa", "soundfile"]
-# `infer` with OpenAI-Realtime-protocol APIs (GPT-Realtime, Grok-Voice)
+# `infer` with OpenAI-Realtime-protocol APIs (GPT-Realtime, Grok Voice)
 realtime = ["websockets", "librosa"]
 # the always_talk baseline's default speech loop (source: auto), synthesised with Open JTalk on first use
 always-talk = ["pyopenjtalk"]
