@@ -79,11 +79,20 @@ def leaderboard_rows(results: Dict[str, Any], source: str = "") -> List[Dict[str
     return list(models.values())
 
 
+def _condition_value(v: Any) -> Any:
+    """The value of a scoring condition without a trailing description:
+    ``docs/results.json`` records ``"audio (human-side VAD; ...)"`` where a
+    summary written by ``score-offline`` has ``"audio"``."""
+    if isinstance(v, str) and v.strip():
+        return v.split(None, 1)[0].rstrip(".,;:")
+    return v
+
+
 def condition_mismatches(a: Dict[str, Any], b: Dict[str, Any]) -> List[str]:
     """Scoring conditions recorded in both results that differ."""
     out = []
     for k in COMPARABLE_KEYS:
-        if k in a and k in b and a[k] != b[k]:
+        if k in a and k in b and _condition_value(a[k]) != _condition_value(b[k]):
             out.append(f"{k}: {a[k]!r} vs {b[k]!r}")
     return out
 

@@ -42,6 +42,15 @@ def test_reference_rows_and_condition_warning():
     assert "WARNING" not in same
 
 
+def test_condition_with_description():
+    # docs/results.json appends a description to the value
+    ref = {"boundaries": "audio (human-side VAD; detection.boundaries: audio). Same events.",
+           "smooth_tt_roles": False}
+    assert report.condition_mismatches({"boundaries": "audio", "smooth_tt_roles": False}, ref) == []
+    diff = report.condition_mismatches({"boundaries": "transcript", "smooth_tt_roles": True}, ref)
+    assert len(diff) == 2 and diff[0].startswith("boundaries: 'transcript' vs 'audio (")
+
+
 def test_cli(tmp_path, capsys):
     p = tmp_path / "summary.json"
     p.write_text(json.dumps(_res(ROWS)), encoding="utf-8")
