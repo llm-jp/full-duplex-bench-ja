@@ -14,6 +14,8 @@ first use by `fdbja.adapters.always_talk_loop` and cached as `always_talk_loop_j
   (https://creativecommons.org/licenses/by/3.0/). The generated loop is a derivative of that voice; if you
   redistribute it, keep this attribution and the CC BY 3.0 terms.
 
-This loop is not the one used for the leaderboard baseline (that loop's source could not be traced and is not
-redistributed). On 20 held-out pause / 10 smooth_tt clips with `reazonspeech_whisperx` it gave Pause TOR 1.000 /
-Smooth TT TOR 0.000 (leaderboard loop: 0.960 / 0.000; leaderboard baseline: 0.992 / 0.005).
+This loop is not the one behind the `always_talk` row of the leaderboard (the source of that loop could not be
+confirmed, so it is not redistributed). On 20 pause / 10 smooth_tt clips with `reazonspeech_whisperx` this loop
+gave Pause TOR 1.000 / Smooth TT TOR 0.000, and the leaderboard loop 0.960 / 0.000 on the same clips. On the full
+evaluation set the leaderboard row is 0.938 / 0.005 with audio boundaries (0.992 / 0.005 with transcript
+boundaries; `docs/results.json`).

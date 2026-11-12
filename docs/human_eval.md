@@ -1,7 +1,11 @@
 # 人手評価(Human evaluation)
 
 自動指標(二値 TOR / VAP-distance)を人手で検証するためのクラウドソーシング
-用マニフェストを生成する。設計の背景・分析方法は研究側の設計書を参照。
+用マニフェストを生成する。
+
+ここで説明するのは、ツールキットに同梱している評価の設計(Study A / Study B)です。
+リーダーボードに載せた「人の判断との検証(2026-11)」は、同じ事象に対する 2 システムの応答を聞き比べる
+対比較で行っており、この設計とは別です(集計は `docs/human_eval.json`)。
 
 ```
 fdbja sample-human-eval --config configs/default.yaml --out ./human_eval \

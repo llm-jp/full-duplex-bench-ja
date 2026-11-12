@@ -1,21 +1,22 @@
 # Full-Duplex-Bench-JA
 
 **日本語フルデュプレックス音声対話モデル**のターンテイキング評価ツールキット。
-[Full-Duplex-Bench](https://github.com/DanielLin94144/Full-Duplex-Bench)(Lin et al., 2025)の
+[Full-Duplex-Bench](https://github.com/DanielLin94144/Full-Duplex-Bench)(Lin et al., 2025、[arXiv:2503.04721](https://arxiv.org/abs/2503.04721))の
 評価設計を日本語に持ち込んだもので、**人手注釈を必要としない**のが特徴です。
 実対話コーパス(LLM-jp-Zoom1)における対話相手(人間 B)の振る舞いを正解として用い、
 モデルの応答が「人間らしいタイミング」かどうかを採点します。
 
-**範囲**: Full-Duplex-Bench v1 の 4 課題のうち、相手(話者 A)の音声を固定して測れる 2 課題(Pause Handling、Smooth Turn-Taking)を日本語の実対話で実装しています。
-システムが先に話している場面(ユーザの相槌、ユーザの割り込み)と、第三者・背景の発話には未対応です(下の「ロードマップ」)。
+**範囲**: Full-Duplex-Bench v1 の 4 課題(Pause Handling / Backchanneling / Smooth Turn-Taking / User Interruption)のうち、相手(話者 A)の音声を固定して測れる 2 課題(Pause Handling、Smooth Turn-Taking)を日本語の実対話で実装しています。
+Backchanneling(システムの相槌)は事象の定義だけを公開しており、採点していません。User Interruption(ユーザの割り込み)と、v1.5 が扱う重なりの場面(ユーザの相槌、第三者・背景の発話)には未対応です(下の「ロードマップ」)。
 
 - リーダーボード: <https://llm-jp.github.io/full-duplex-bench-ja/>
   (`docs/` を GitHub Pages で配信。結果は `docs/results.json`、サンプル音声は `docs/samples/`)。
-  順位は **TOR で望ましい振る舞いをした割合**(本家 Full-Duplex-Bench と同じ二値指標)で付けています。
-  **VAP-distance は実験的指標**です。人手判断との相関や既存指標との比較による検証が済んでいないため参考値として併記し、
+  順位は **TOR で望ましい振る舞いをした割合**(Full-Duplex-Bench と同じ二値指標)で付けています。
+  ただし Pause のこの値は「黙るほど高い」定義で、聴取実験では人の判断と逆を向きました(リーダーボードの「人の判断との検証」)。
+  **VAP-distance は実験的指標**です。人の判断との照合は聴取実験 1 回(2026-11)だけで、Pause では人の選好と合わなかったため参考値として併記し、
   既定の config では無効にしています(`metrics.vap_distance.enabled: true` で有効化)。
   掲載中の値(2026-11-04、9 システム)は、人間側の発話境界を音声で付け直す設定(`detection.boundaries: audio`)、
-  論文と同じ書き起こし(ReazonSpeech-ESPnet で書き起こし、WhisperX で文字の時刻を整列)、既定の MIT チェックポイント(`maai-kyoto/vap_jp_kyoto`、下記)で採点したもので、
+  ASJ の講演論文(下の「引用」。以下「論文」)と同じ書き起こし(ReazonSpeech-ESPnet で書き起こし、WhisperX で文字の時刻を整列)、既定の MIT チェックポイント(`maai-kyoto/vap_jp_kyoto`、下記)で採点したもので、
   **境界・書き起こし・チェックポイントが違う値は比較できません**(`docs/results.json` の `boundaries` / `asr` / `vap_checkpoint` に記録しています)。
   掲載は Pause Handling と Smooth Turn-Taking の 2 タスクです。bc(相槌)は転写の閾値に依存する実験的タスクとしてコードにだけ残し、既定では採点しません。
   人の判断との検証(2026-11、クラウドソーシング 150 人)の要点もリーダーボードに載せています。
@@ -197,7 +198,7 @@ export VAP_REALTIME_ROOT=$(cd ../VAP-Realtime && pwd)
 uv run fdbja reconstruct --config configs/default.yaml           # LLM-jp-Zoom1 → 事象検出 → 20 秒クリップ + manifest
 uv run fdbja infer --config configs/default.yaml [--limit N]     # 話者 A の音声をモデルに流し応答を録る
 uv run fdbja transcribe --config configs/default.yaml [--model NAME] [--task T] [--backend B]   # 応答を ASR して jchat を書く
-uv run fdbja score-offline --config configs/default.yaml [--limit N] [--model NAME]   # TOR + VAP-distance を採点し results.json / summary.json / summary.csv を出力
+uv run fdbja score-offline --config configs/default.yaml [--limit N] [--model NAME]   # TOR(有効にした場合は VAP-distance も)を採点し results.json / summary.json / summary.csv を出力
 uv run fdbja leaderboard --results results/summary.json [--reference docs/results.json]   # リーダーボードと同じ順位(望ましい振る舞いの割合)で表示。採点条件が違えば警告
 uv run fdbja analyze-profile --results results/results.json --out results/profile   # システムごとの傾向(黙る / 被せる / 遅い)と事象単位のレポート
 uv run fdbja analyze-pause --eval-dir data/eval --out results/pause_gap   # Pause をギャップ長別に再集計(bootstrap CI 付き)
@@ -224,7 +225,7 @@ uv run fdbja analyze-human-eval --responses <dir> --bundle ./human_eval --out <d
 | キー | 内容 |
 |-----|------|
 | `n` / `n_clips` | 採点した事象の数 / クリップの数 |
-| `TOR` / `TOR_ci` | 二値 TOR と 95% 区間(事象を単位とする bootstrap、10000 回、百分位。`output.bootstrap: {n, seed}` で変更可) |
+| `TOR` / `TOR_ci` | 二値 TOR と 95% 区間(事象を単位とする bootstrap、10000 回、百分位。`output.bootstrap: {n, seed}` で変更可。リーダーボードに掲載した区間は 2,000 回で計算したもの) |
 | `lat_median` / `lat_q1` / `lat_q3` / `lat_n` | Smooth TT でターンを取った事象の応答の遅れ(A の発話終了から応答の開始まで、秒)。リーダーボードと同じく負の値は 0 に丸めたもの |
 | `onset_median` / `onset_q1` / `onset_q3` / `overlap_rate` | 同じ遅れを丸めずに保持したもの(-0.5〜+2.0 秒)と、そのうち A が話し終える前に話し始めた(被せた)割合 |
 | `event_mean_dkl` / `dkl_ci` | VAP-distance(有効にした場合のみ)とその 95% 区間 |
@@ -381,8 +382,8 @@ API 側の変更への追随は保証しません。動かなくなった場合�
   モデル応答の ASR 転写から判定します。リーダーボードの順位はこの指標で望ましい振る舞いをした割合で付けます。
 - **VAP-distance**(連続、**実験的**)— 同じ話者 A の音声に対し、**人間**の応答と**モデル**の応答をそれぞれ凍結
   [VAP](https://github.com/inokoj/VAP-Realtime) に通し、次話者予測分布間の KL 距離を測ります。
-  二値が捨てる「タイミングの良し悪し」を連続値で捉える狙いですが、人手判断との相関・既存の自動指標との比較・
-  チェックポイントへの頑健性の検証がまだ終わっていません(別途、論文として検証中)。
+  二値が捨てる「タイミングの良し悪し」を連続値で捉える狙いですが、人の判断との照合は聴取実験 1 回(2026-11)だけで、
+  Pause では人の選好と合いませんでした(リーダーボードの「人の判断との検証」)。別のデータでの確認と、チェックポイントへの頑健性の検証は済んでいません。
   既定の config では無効で、`metrics.vap_distance.enabled: true` にした場合だけ参考値として併記されます。
   報告するときは「実験的指標」と添えてください。
 
@@ -421,7 +422,7 @@ TOR・元の VAP-distance より人の選好と合った 2 つの指標を実装
   システムの値は事象平均です。有声区間は応答音声(`combined.wav` の ch1)と A(GT の ch0)のエネルギー VAD
   (50 ms 枠、各チャネルの 99.5 パーセンタイルの 5 %)から取り、ASR も VAP も使いません。要約の列は `pause_response`
   (`pause_response_ci_*`)、`pause_no_response_rate`、`pause_interrupt_rate`。閾値 4 つは config で変えられます。
-  録音の人間 B はこの評価セットの間でほとんど声を出していない(100 事象中 12)一方、聴取者は間で短く反応したシステムを選んだため、
+  録音の人間 B はこの評価セットの間でほとんど声を出していない(聴取に使った 100 事象のうち 12)一方、聴取者は間で短く反応したシステムを選んだため、
   人間 B との距離ではなく「反応したか」と「被せて続けなかったか」を直接数えます。相槌・息・雑音は区別しません。
 
 ### 既知の限界
@@ -452,8 +453,8 @@ VAP-distance は生波形から計算するため 1・3 の影響を受けませ
 ```
 src/fdbja/
   cli.py                    # fdbja コマンド(reconstruct | infer | transcribe | score-offline
-                            #              | analyze-pause | analyze-profile | sample-human-eval
-                            #              | analyze-human-eval)
+                            #              | leaderboard | analyze-pause | analyze-profile
+                            #              | sample-human-eval | analyze-human-eval)
   config.py  runner.py  report.py  io_audio.py
   summary.py                # 95% 区間・応答の遅れ・採点条件(summary.json / summary.csv)
   turn_profile.py           # analyze-profile(システムの傾向と事象単位のレポート)
@@ -483,6 +484,8 @@ config 駆動で、**データはコードと別レイヤ**として扱います
 
 リポジトリには音声・コーパスを同梱しません(`docs/samples/` の試聴用抜粋 — 3 事象 × 刺激・人間 B・モデル 2 つ — を除く)。
 評価クリップは LLM-jp-Zoom1 から `reconstruct` でローカル生成します。
+LLM-jp-Zoom1 は公開準備中です。コーパスが手元に無い場合は、合成データでの動作確認(クイックスタート 1.)と、
+自前の 2 チャネル対話からの評価セット作成(同 3.)が使えます。
 入手方法、in-domain / out-of-domain の報告義務、held-out の方針は [DATASET.md](DATASET.md) を参照。
 
 ## ライセンス
@@ -494,7 +497,7 @@ config 駆動で、**データはコードと別レイヤ**として扱います
 |---------|------|------|
 | VAP-Realtime(コード) | MIT | [inokoj/VAP-Realtime](https://github.com/inokoj/VAP-Realtime) |
 | 日本語 VAP チェックポイント `vap_state_dict_jp_kyoto_20hz_2500msec.pt`(既定) | MIT。本リポジトリには含めず、Hugging Face からリビジョン `fe24ac6` を指定して取得 | [maai-kyoto/vap_jp_kyoto](https://huggingface.co/maai-kyoto/vap_jp_kyoto) |
-| 日本語 VAP チェックポイント `vap_state_dict_jp_20hz_2500msec.pt`(2026-07-08 版のリーダーボードで使用。現行版は MIT チェックポイントで再採点済み) | **学術目的のみ**(academic purposes only)。同じコード経路で読み込める | VAP-Realtime README「Lisence」節 |
+| 日本語 VAP チェックポイント `vap_state_dict_jp_20hz_2500msec.pt`(2026-07 時点のリーダーボードで使用。現在の掲載値は MIT チェックポイントで採点し直したもの) | **学術目的のみ**(academic purposes only)。同じコード経路で読み込める | VAP-Realtime README「Lisence」節(綴りは原文のまま) |
 | CPC エンコーダ `60k_epoch4-d0f474de.pt` | MIT(facebookresearch/CPC_audio) | 同上 |
 | ReazonSpeech(コード、`reazonspeech-{nemo,k2,espnet}-asr`) | Apache-2.0 | [reazon-research/ReazonSpeech](https://github.com/reazon-research/ReazonSpeech) |
 | ReazonSpeech モデル(`reazonspeech-nemo-v2` / `reazonspeech-k2-v2` / `reazonspeech-espnet-v2`) | Apache-2.0(各モデルカード) | [Hugging Face: reazon-research](https://huggingface.co/reazon-research) |
@@ -505,7 +508,7 @@ config 駆動で、**データはコードと別レイヤ**として扱います
 | WhisperX が日本語整列に使う wav2vec2 モデル(`jonatasgrosman/wav2vec2-large-xlsr-53-japanese`) | Apache-2.0(モデルカード) | [Hugging Face](https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-japanese) |
 | Full-Duplex-Bench(設計の出典) | CC BY-NC 4.0。本リポジトリはコードを流用せず、事象定義と TOR の定義を独立に再実装 | [DanielLin94144/Full-Duplex-Bench](https://github.com/DanielLin94144/Full-Duplex-Bench) |
 | LLM-jp-Zoom1(評価コーパス) | コーパスの利用条件に従う。`docs/samples/` の音声は同コーパスからの抜粋で、同じ条件が及ぶ | [DATASET.md](DATASET.md) |
-| 評価対象モデルの出力(`docs/samples/`) | LLM-jp-Moshi-v1 と J-Moshi-ext(CC BY-NC 4.0 のモデル)の出力のみ収録。商用 API の出力は収録していない | 各モデルカード |
+| 評価対象モデルの出力(`docs/samples/`) | LLM-jp-Moshi-v1(Apache-2.0)と J-Moshi-ext(CC BY-NC 4.0)の出力のみ収録。商用 API の出力は収録していない | 各モデルカード |
 
 既定の構成(コード Apache-2.0、VAP-Realtime MIT、VAP チェックポイント MIT、CPC MIT、ReazonSpeech / ESPnet Apache-2.0、
 WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用の制限はありません。
@@ -529,10 +532,10 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 
 ## ロードマップ
 
-1. **次の版(0.2.0)** — 人の判断で検証した 2 指標(境界重み付き VAP-distance、割り込みと無反応を罰する Pause 指標)の実装。下の「未リリース」の整備と合わせて 0.2.0 として出す。
+1. **次のバージョン(0.2.0)** — 人の判断で検証した 2 指標(境界重み付き VAP-distance、割り込みと無反応を罰する Pause 指標)は main に実装済みです(既定では無効)。下の「未リリース」の整備と合わせて 0.2.0 としてリリースします。
 2. 評価データの公開(LLM-jp-Zoom1 の公開に連動)。
 3. システムの相槌課題(Backchanneling)を採点対象に(聴取で確認したあと)。
-4. システムが先に話している場面の 2 課題(ユーザの相槌、ユーザの割り込み)。設計案は [docs/design/next-tasks.md](docs/design/next-tasks.md)。
+4. システムが先に話している場面の 2 課題(v1 の User Interruption と、v1.5 のユーザの相槌)。設計案は [docs/design/next-tasks.md](docs/design/next-tasks.md)。
 
 ## バージョン / 変更履歴
 
@@ -553,6 +556,9 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
   - 商用 API の記載を、掲載値を取得したときの条件に合わせた(掲載値は変わらない)。`configs/default.yaml` の Gemini のモデル ID を、リーダーボードの出力に使った
     `gemini-3.1-flash-live-preview` に(従来の `gemini-live-2.5-flash-preview` は掲載値の取得に使っていない)。リーダーボードの表示名「Grok Voice 3.0」を
     「Grok Voice」に(取得は 2026-07 の `grok-voice-latest` で、3.0 の公開より前)。README「モデルアダプタ」とリーダーボードの注記に、取得時期とモデル ID を記載。
+  - リーダーボードのサンプル欄に境界の切り替え(音声の境界 / 文字の境界)を追加し、Smooth TT のサンプル事象を差し替え(掲載値は変わらない)。
+  - `leaderboard --reference`: 参照側の採点条件に説明文が付いていても値の一致を判定するように修正(`docs/results.json` と並べると境界が同じでも警告が出ていた)。
+  - 文書の整理: 「範囲」の記述を Full-Duplex-Bench v1 / v1.5 の課題名に合わせ、VAP-distance の検証状況、サンプル音声のモデルのライセンス、`docs/` 配下の古い記述を更新。どこからも読まれていなかった config の `output.exporters` を削除。
   - **採点に影響しうる不具合の修正(0.2.0 向け)**。いずれも**既定は従来どおり**で、掲載値(`docs/`)は変わりません。
     設定で切り替えた場合は、**掲載値と比べる前に全システムを採点し直して確認が必要**です。
     - 相槌語の長音符: 正規化で長音符「ー」を先に消すため、相槌語リストの「えー」「ふーん」「あー」「へー」などが一致しなかった
@@ -594,11 +600,10 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 | `score-offline` が何も採点しない(`scored 0 clips`) | `corpus.eval_dir` 配下に `<task>/<clip>.json` と `<task>_<model>_asr/text/<clip>.json` の両方があるか確認。片方が無いクリップは黙ってスキップされます。後者は `fdbja transcribe` が書きます |
 | `ASR backend '...' is missing a dependency` | バックエンドの extra が入っていません。`uv sync --extra asr-reazon-whisperx`(NeMo は `asr-nemo`、k2 は `asr-k2`)。extra 同士は排他なので環境を分けてください |
 | `.[asr-reazon-whisperx]` の import で `numpy.core.multiarray failed to import` | `ctc-segmentation` の wheel が numpy 1.x 向けにビルドされています。`uv pip install cython setuptools` の後、`uv pip install --no-build-isolation --no-cache --reinstall --no-binary ctc-segmentation ctc-segmentation` で手元の numpy に対して再ビルド |
-| Blackwell 世代の GPU(sm_120)で ASR が CPU に落ちる / CUDA エラー | `uv pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128` を extra より先に入れる(下の torch の行も参照) |
+| Blackwell 世代の GPU(sm_120)で torch が動かない / ASR が CPU に落ちる / CUDA エラー | cu128 以上の torch が必要。`uv pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128` を extra より先に入れる |
 | `metrics.vap_distance.vap_realtime_root or $VAP_REALTIME_ROOT must be set` | VAP-Realtime を clone し、`VAP_REALTIME_ROOT=/path/to/VAP-Realtime` を設定。`asset/cpc/` は clone に含まれる。`asset/vap/` には「VAP-distance の準備」の手順で `vap_state_dict_jp_kyoto_20hz_2500msec.pt` を置く |
 | Hugging Face から `vap_state_dict_jp_kyoto_20hz_2500msec.pt` が見つからない(404) | 2026-10-01 に `main` から外されました。URL の `main` をリビジョン `fe24ac60d8fcc80463edde97ed90e3ceca5e5b88` に置き換える(「VAP-distance の準備」) |
 | VAP チェックポイントを替えたら D_KL の値が変わった | 仕様どおりです。VAP は凍結した計測器で、チェックポイントが違えば値は比較できません。比較する全モデルを同じチェックポイントで採点し直し、`results.json` の `vap_checkpoint` を確認してください |
-| torch が Blackwell GPU(sm_120)で動かない | `uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128` で cu128 以上を入れる |
 | α(`exp(-α·D_KL)` のスケール)がモデル追加のたびに変わる | α はモデル集合から自動較正されます。モデルを追加したら全モデルを 1 回の `score-offline` で採点し直してください |
 | GPU があるのに torch が CPU で動く / `CUDA driver version is insufficient` | ロックされた torch は CUDA 13.0 版でドライバ 580 以上が必要。「GPU ドライバが古い場合」の手順で入れ替え、`uv run --no-sync` で実行する |
 | 入れ替えた torch が元に戻る | `uv run` / `uv sync` はロックファイルに合わせて環境を同期し直す。`uv run --no-sync` か `UV_NO_SYNC=1` |
@@ -610,5 +615,5 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 
 ## 謝辞
 
-[Full-Duplex-Bench](https://github.com/DanielLin94144/Full-Duplex-Bench)(Lin et al., 2025)の評価設計と、
+[Full-Duplex-Bench](https://github.com/DanielLin94144/Full-Duplex-Bench)(Lin et al., 2025、arXiv:2503.04721)の評価設計と、
 [VAP-Realtime](https://github.com/inokoj/VAP-Realtime) / [MaAI](https://huggingface.co/maai-kyoto)(Inoue et al.、京都大学)の日本語 VAP モデルに基づいています。

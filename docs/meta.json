@@ -86,7 +86,7 @@
       10.22,
       "人間Bの応答開始"
      ],
-     "note": "話者 A のターン終了(音声では 10.32 秒)から 2 秒間が評価の窓(青い帯)。人間 B は終了の 0.10 秒前、10.22 秒(橙の縦線)に話し始めた。モデルもこの窓でターンを取る(TO=1)のが望ましい。判定に使う応答の開始は転写の時刻で、LLM-jp-Moshi-v1 が 11.94 秒(波形では 10.4 秒付近から発声)、J-Moshi-ext が 12.17 秒。どちらも窓に入る。",
+     "note": "話者 A のターン終了(音声では 10.32 秒)から 2 秒間が評価の窓(青い帯)。人間 B は終了の 0.10 秒前、10.22 秒(橙の縦線)に話し始めた。モデルもこの窓でターンを取る(TO=1)のが望ましい。判定に使う応答の開始は転写の時刻で、LLM-jp-Moshi-v1 が 11.94 秒(波形では 10.4 秒付近から発声。転写の文字の時刻は整列で遅れることがある)、J-Moshi-ext が 12.17 秒。どちらも窓に入る。",
      "models": {
       "jmoshi_ext": {
        "TO": 1,
@@ -147,9 +147,8 @@
  "samples_note": "試聴用の抜粋は各課題 1 事象、モデルは LLM-jp-Moshi-v1 と J-Moshi-ext の 2 つ。TO / D のバッジは上の表と同じ採点(2026-11-04、D は maai-kyoto/vap_jp_kyoto)の事象ごとの値で、「境界」の切り替えで音声の境界の値と文字の境界の値を表示する。TO は、話者 A のターン終了の 0.5 秒前から窓の終わりまでにモデルの応答が始まれば 1。 境界の定義で TO が変わる事象は、Smooth Turn-Taking の 197 事象のうち LLM-jp-Moshi-v1 で 20、J-Moshi-ext で 6、Pause Handling の 240 事象のうち 18 と 12。",
  "vap_checkpoint": {
   "samples": "vap_state_dict_jp_kyoto_20hz_2500msec.pt (maai-kyoto/vap_jp_kyoto, MIT)",
-  "leaderboard": "vap_state_dict_jp_kyoto_20hz_2500msec.pt (maai-kyoto/vap_jp_kyoto, MIT; rescored 2026-09-28)"
+  "leaderboard": "vap_state_dict_jp_kyoto_20hz_2500msec.pt (maai-kyoto/vap_jp_kyoto, MIT)"
  },
- "events_note": "公開版の掲載は pause / smooth_tt の 2 タスク。bc(相槌)は転写の閾値に依存する実験的タスクとしてコードにのみ残す（公開コードの検出器で 125 事象、07-08 の 314 とは比較不可）。相槌・割り込みはシステム/ユーザ × 相槌/割り込みの 2×2 で別途測る。",
  "scoring": {
   "boundaries": "音声の境界(人間側 A・B の発話境界を音声の VAD で付け直す。ツールキットでは detection.boundaries: audio、既定は transcript)",
   "asr": "ReazonSpeech-ESPnet で書き起こし、WhisperX で文字の時刻を整列(論文と同じ転写)",
@@ -162,7 +161,7 @@
   },
   "rescored": "2026-11-04"
  },
- "transcript_boundaries_note": "文字の境界(ASR の文字の時刻だけで人間側の境界を置く、2026-09-28 版の定義)では、Pause の TOR が商用システムで高めに出ていた(Gemini 3.1 Flash Live 0.300 → 0.175、Grok Voice 0.313 → 0.133、GPT-Realtime 0.208 → 0.154)。Smooth TT の TOR の差は ±0.05 以内。値は results.json の transcript_boundaries にある。",
+ "transcript_boundaries_note": "文字の境界(ASR の文字の時刻だけで人間側の境界を置く、2026-09-28 時点の掲載値の定義)では、Pause の TOR が商用システムで高めに出ていた(Gemini 3.1 Flash Live 0.300 → 0.175、Grok Voice 0.313 → 0.133、GPT-Realtime 0.208 → 0.154)。Smooth TT の TOR の差は ±0.05 以内。値は results.json の transcript_boundaries にある。",
  "turn_transition_note": "Smooth TT を本当の話者交替の 72 事象に限る(A が相槌主体の発話、A の終わりの直前に B が話している、B の応答が相槌の連なり、のいずれかの事象を除く。ツールキットでは detection.smooth_tt_roles、既定は無効)と次のとおり。",
  "commercial_note": "商用 API の出力の取得時期とモデル ID: Gemini Live = gemini-3.1-flash-live-preview(2026-04)、GPT-Realtime = gpt-realtime(2026-07)、Grok Voice = grok-voice-latest(2026-07)。発話区間の検出はサーバ側の既定値。gpt-realtime と grok-voice-latest は別名で、指す先のモデルは提供元の更新で替わるため、現在の同じ ID の振る舞いとは一致しないことがある。"
 }

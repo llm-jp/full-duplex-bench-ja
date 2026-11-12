@@ -13,16 +13,16 @@ The reference evaluation set is built from **LLM-jp-Zoom1** (~934 h of
 Zoom-recorded casual Japanese dialogue, character-level time-aligned
 transcripts). Apart from the excerpts above, it is **not redistributed here**.
 
-- Obtain LLM-jp-Zoom1 under its own license/terms from the corpus owners.
+- Obtain LLM-jp-Zoom1 under its own license/terms (its public release is in preparation; see below).
 - Point `corpus.zoom1_root` in your config at the local copy.
 - `fdbja reconstruct` then detects events and builds the 20 s evaluation clips
   and manifests under `corpus.eval_dir` (git-ignored).
 
 ### Release gating
-LLM-jp-Zoom1 will be **released for commercial use soon** (by a team member).
-Public release of Full-Duplex-Bench-JA **data** is gated on that release; cite the
+LLM-jp-Zoom1 is being prepared for public release under terms that allow commercial use.
+The release of the Full-Duplex-Bench-JA evaluation **data** is gated on that release; cite the
 LLM-jp-Zoom1 dataset paper once available. Until then this repository
-ships **code only** (the toolkit can be open-sourced independently of the data).
+ships **code only**, plus the excerpts in `docs/samples/`.
 
 ### Provenance instead of a held-out split
 `reconstruct` writes `manifest.jsonl` with the source `session_id`, the event `key` and
@@ -55,6 +55,6 @@ out-of-domain models (J-Moshi, Gemini).
   checkpoint into `<VAP_REALTIME_ROOT>/asset/vap/`.
 - The measurement instrument must stay fixed within a comparison: VAP-distance values from
   different checkpoints are not comparable. `docs/results.json` records which checkpoint
-  produced each table (see `README.md`, "リーダーボード").
+  produced each table (the `vap_checkpoint` key).
 - ASR uses ReazonSpeech-ESPnet + WhisperX (wav2vec 2.0 forced alignment) by default; see the
   README for the other backends.

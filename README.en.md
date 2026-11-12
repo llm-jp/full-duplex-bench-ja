@@ -2,25 +2,32 @@
 
 Turn-taking evaluation toolkit for **Japanese full-duplex spoken dialogue models**.
 It brings the evaluation design of [Full-Duplex-Bench](https://github.com/DanielLin94144/Full-Duplex-Bench)
-(Lin et al., 2025) to Japanese and **needs no manual annotation**: the behaviour of the human
+(Lin et al., 2025, [arXiv:2503.04721](https://arxiv.org/abs/2503.04721)) to Japanese and **needs no manual annotation**: the behaviour of the human
 interlocutor (speaker B) in a real dialogue corpus (LLM-jp-Zoom1) is used as the reference.
 
-**Scope**: of the four Full-Duplex-Bench v1 tasks, the two that can be measured with the partner's
-(speaker A's) audio held fixed — Pause Handling and Smooth Turn-Taking — are implemented on real Japanese
-dialogues. Scenes where the system is already speaking (user backchannels, user interruptions) and
-third-party / background speech are not covered yet (see Roadmap).
+**Scope**: of the four Full-Duplex-Bench v1 tasks (Pause Handling, Backchanneling, Smooth Turn-Taking,
+User Interruption), the two that can be measured with the partner's (speaker A's) audio held fixed — Pause
+Handling and Smooth Turn-Taking — are implemented on real Japanese dialogues. For Backchanneling (the system's
+backchannels) only the event definition is published; it is not scored. User Interruption and the overlap
+scenarios of v1.5 (user backchannels, third-party and background speech) are not covered yet (see Roadmap).
 
 The full README is in Japanese: [README.md](README.md). Leaderboard: <https://llm-jp.github.io/full-duplex-bench-ja/>
-(ranked by TOR agreement, the binary metric of the original Full-Duplex-Bench. **VAP-distance is an
-experimental metric**: its validation against human judgements is still in progress, so it is shown
-for reference only and is disabled in the default config (`metrics.vap_distance.enabled: true` to
-opt in). The current table (2026-11-04, nine systems) was scored with human-side boundaries
-re-placed on the audio (`detection.boundaries: audio`; the default stays `transcript`), the paper's
-transcripts (ReazonSpeech-ESPnet + WhisperX) and the MIT default checkpoint below,
-`maai-kyoto/vap_jp_kyoto`; values from different boundaries, transcripts or checkpoints are not
-comparable — see `boundaries`, `asr` and `vap_checkpoint` in `docs/results.json`. The leaderboard lists
-Pause Handling and Smooth Turn-Taking; the backchannel (bc) task stays in the code as an experimental
-task and is not scored by default. A summary of the human-judgement study (2026-11) is on the page).
+
+- **Ranking**: the share of events with the desired behaviour under TOR, the binary metric of
+  Full-Duplex-Bench (Pause: 1 − TOR; Smooth TT: TOR). For Pause this value rises the more a system stays
+  silent, and in the listening test it pointed the opposite way to the listeners' preference (see the
+  human-judgement validation section of the leaderboard, 2026-11).
+- **VAP-distance is an experimental metric**: it has been compared with human judgements in one listening
+  test (2026-11) and did not agree with the listeners on Pause, so it is shown for reference only and is
+  disabled in the default config (`metrics.vap_distance.enabled: true` to opt in).
+- **Scoring conditions of the current table** (2026-11-04, nine systems): human-side boundaries re-placed on
+  the audio (`detection.boundaries: audio`; the default stays `transcript`), the transcripts used for the ASJ
+  talk paper (see [Citation](#citation); "the paper" below) made with ReazonSpeech-ESPnet + WhisperX, and the
+  MIT default checkpoint `maai-kyoto/vap_jp_kyoto`. Values from different boundaries, transcripts or
+  checkpoints are not comparable — see `boundaries`, `asr` and `vap_checkpoint` in `docs/results.json`.
+- **Tasks**: the leaderboard lists Pause Handling and Smooth Turn-Taking; the backchannel (bc) task stays in
+  the code as an experimental task and is not scored by default.
+
 Optional settings: `detection.boundaries: audio`, `detection.smooth_tt_roles.enabled: true` (Smooth TT
 restricted to genuine turn transitions, 197 → 72 events) and `detection.system_activity: audio`.
 
@@ -35,7 +42,7 @@ uv run fdbja leaderboard --reference docs/results.json     # 4. rank like the le
 ```
 
 **Contents**: [Requirements](#requirements) / [Quick start](#quick-start) / [What is evaluated](#what-is-evaluated) /
-[Model adapters](#model-adapters) / [Roadmap](#roadmap) / [License](#license) / [Citation](#citation)
+[Model adapters](#model-adapters) / [Known limitations](#known-limitations) / [Roadmap](#roadmap) / [License](#license) / [Citation](#citation)
 
 ## Requirements
 
@@ -166,7 +173,7 @@ are not comparable with the leaderboard; report the data source, event counts an
 times `t_start` / `t_end` and the system utterances near the judgement window, `sys_segments`), `summary.json`
 (the same without the events; the shape of `docs/results.json`) and `summary.csv` (one row per task x system,
 intervals split into `*_low` / `*_high`). The summary uses the keys of `docs/results.json`: `n` (events),
-`n_clips`, `TOR`, `TOR_ci` (95% percentile bootstrap over events, 10000 replicates; `output.bootstrap: {n, seed}`),
+`n_clips`, `TOR`, `TOR_ci` (95% percentile bootstrap over events, 10000 replicates; `output.bootstrap: {n, seed}`; the intervals on the leaderboard were computed with 2,000 replicates),
 `lat_median` / `lat_q1` / `lat_q3` (Smooth TT response latency of the taken turns, negative values clipped to 0
 as on the leaderboard), `onset_median` / `onset_q1` / `onset_q3` (the same latency without clipping, -0.5 to
 +2.0 s) and `overlap_rate` (share of taken turns that started before A finished), `event_mean_dkl` / `dkl_ci`
@@ -192,16 +199,16 @@ Smooth TT no-response share (`profile.png` / `profile.svg`, needs matplotlib fro
 
 Primary metric: **TOR** (binary takeover rate, ASR-based, same definition as Full-Duplex-Bench).
 Experimental metric (off by default): **VAP-distance** (KL divergence between next-speaker
-distributions of a frozen VAP model given the human response vs. the model response); its
-validation against human judgements and existing metrics is still in progress, so label it as
-experimental when reporting. Trivial baselines (`silence`, `always_talk`) are reported on every
+distributions of a frozen VAP model given the human response vs. the model response); it has been
+compared with human judgements in one listening test (2026-11) and did not agree with the listeners on
+Pause, so label it as experimental when reporting. Trivial baselines (`silence`, `always_talk`) are reported on every
 task. A TurnNat-style likelihood score is included for comparison. The `always_talk` speech loop is synthesised on first use with Open JTalk (voice "Mei", CC BY 3.0; attribution in [src/fdbja/assets/README.md](src/fdbja/assets/README.md)) and needs `pyopenjtalk`, or pass `source_wav`.
 
 **What the metrics are for**: the turn-taking metrics measure whether a system falls outside the range
-(band) that people perceive as natural; individual style inside the band (how often it backchannels,
+that people perceive as natural; individual style inside that range (how often it backchannels,
 how long its pauses are) is not scored. For Smooth TT, "close to the recorded human B" held as the
-centre of the band; for Pause it did not (in the human-judgement study, systems that produced a short
-vocalisation in the pause were preferred), so the Pause metric under validation measures whether the
+centre of the range; for Pause it did not (in the human-judgement study, systems that produced a short
+vocalisation in the pause were preferred), so the proposed Pause metric measures whether the
 system reacted briefly in the pause (a backchannel or not) and did not keep talking over the partner.
 Backchannelling during the partner's speech is a separate task whose definition is published but not scored.
 
@@ -229,7 +236,7 @@ single listening test, and has not been repeated on other data.
   audio (ch1 of `combined.wav`) and A (ch0 of the GT clip) with an energy detector (50 ms frames, 5 % of each
   channel's 99.5th-percentile energy); neither ASR nor VAP is used. Summary columns: `pause_response`
   (`pause_response_ci_*`), `pause_no_response_rate`, `pause_interrupt_rate`; the four thresholds are configurable.
-  The recorded human B rarely speaks in these gaps (12 of 100 events) while listeners preferred systems that reacted
+  The recorded human B rarely speaks in these gaps (12 of the 100 events used in the listening test) while listeners preferred systems that reacted
   briefly, so the metric counts the reaction and the talking-over directly instead of the distance to the human B.
   Backchannels, breaths and noise are not told apart.
 
@@ -283,13 +290,35 @@ uv run python examples/dummy/energy_asr.py --config examples/adapters/config.yam
 uv run fdbja score-offline --config examples/adapters/config.yaml
 ```
 
+## Known limitations
+
+The binary TOR is decided on ASR transcripts and inherits their errors (details in the Japanese README,
+「既知の限界」).
+
+1. **Alignment delay**: the character alignment can place the start of an utterance late, so a response that
+   overlaps the judgement window is missed (onset shift: median 0.14 s, 90th percentile 0.94 s).
+2. **Missing reference audio**: short backchannels of human B can be removed by the silence gating of the
+   per-speaker recording tracks and remain only in the transcript. This can also affect the reference of
+   VAP-distance.
+3. **ASR output on near-silent audio**: a short word transcribed over a long stretch falls outside the
+   backchannel exemption (at most 6 characters and 1.5 s) and counts as a takeover.
+4. **The commercial-API adapters ignore interruption notices** from the server, so a response that the API
+   would have cut short is scored as if it had continued. This can affect the three commercial-API rows.
+5. **The response timeline is built differently per adapter** (the Moshi adapter concatenates frames in
+   arrival order; the API adapters place audio by wall-clock arrival time), so the response latency is not
+   strictly on the same scale across adapters.
+
+VAP-distance is computed from the waveform and is not affected by 1 and 3.
+
 ## Roadmap
 
-1. **Next release (0.2.0)** — implement the two metrics validated against human judgements (boundary-weighted
-   VAP-distance; a Pause metric that penalises both interrupting and not reacting).
+1. **Next release (0.2.0)** — the two metrics validated against human judgements (boundary-weighted
+   VAP-distance; a Pause metric that penalises both interrupting and not reacting) are implemented on `main`
+   (off by default) and will be released as 0.2.0.
 2. Release of the evaluation data (tied to the public release of LLM-jp-Zoom1).
 3. Score the system backchannel task (after confirming it with a listening test).
-4. The two tasks where the system is already speaking (user backchannels, user interruptions).
+4. The two tasks where the system is already speaking (User Interruption of v1 and the user backchannel
+   scenario of v1.5).
 
 ## License
 
@@ -301,13 +330,14 @@ Code: Apache-2.0. Backends and data are **not** covered:
   (`vap_state_dict_jp_20hz_2500msec.pt`) is academic-only and loads through the same code path;
   its terms then apply to the results. The leaderboard no longer uses it.
 - ReazonSpeech code and models (nemo-v2 / k2-v2 / espnet-v2): Apache-2.0. NVIDIA NeMo: Apache-2.0.
+  ESPnet and sherpa-onnx (dependencies of the `asr-reazon-whisperx` and `asr-k2` extras): Apache-2.0.
   WhisperX: BSD-2-Clause; its Japanese alignment model `jonatasgrosman/wav2vec2-large-xlsr-53-japanese`
   is Apache-2.0.
 - Full-Duplex-Bench is CC BY-NC 4.0; this toolkit reimplements the event and TOR definitions
   independently and does not reuse its code.
 - LLM-jp-Zoom1 and the excerpts in `docs/samples/` (three events; stimulus, human B and two models)
-  follow the corpus terms (see DATASET.md). The model outputs kept there are from LLM-jp-Moshi-v1 and
-  J-Moshi-ext (CC BY-NC 4.0 models); commercial-API outputs are not included.
+  follow the corpus terms (see DATASET.md). The model outputs kept there are from LLM-jp-Moshi-v1
+  (Apache-2.0) and J-Moshi-ext (CC BY-NC 4.0); commercial-API outputs are not included.
 
 ## Citation
 

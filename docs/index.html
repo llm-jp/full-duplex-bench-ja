@@ -14,8 +14,8 @@
       相手の<b>ターンの終わりで話し始められるか</b>(Smooth Turn-Taking)を、実際の人間どうしの対話(LLM-jp-Zoom1)で採点しました。
       順位は<b>望ましい振る舞いの割合</b>(Pause は間でターンを取らなかった割合 = 1 − TOR、Smooth TT は話し終わりでターンを取った割合 = TOR)です。
       ただし Pause のこの値は「黙るほど高い」定義で、<a href="#validation-sec">人の判断とは逆を向く</a>ことが分かっています。</p>
-    <p class="hint">範囲: Full-Duplex-Bench v1 の 4 課題のうち、相手(話者 A)の音声を固定して測れる 2 課題(Pause Handling、Smooth Turn-Taking)を日本語の実対話で実装しています。
-      システムが先に話している場面(ユーザの相槌、ユーザの割り込み)と、第三者・背景の発話には未対応です。</p>
+    <p class="hint">範囲: Full-Duplex-Bench v1 の 4 課題(Pause Handling / Backchanneling / Smooth Turn-Taking / User Interruption)のうち、相手(話者 A)の音声を固定して測れる 2 課題(Pause Handling、Smooth Turn-Taking)を日本語の実対話で実装しています。
+      Backchanneling(システムの相槌)は事象の定義だけを公開しており、採点していません。User Interruption(ユーザの割り込み)と、v1.5 が扱う重なりの場面(ユーザの相槌、第三者・背景の発話)には未対応です。</p>
     <p id="meta" class="meta"></p>
   </header>
 
@@ -131,14 +131,14 @@
     <h2>注記</h2>
     <details class="tbl"><summary>指標の定義</summary>
       <p><b>TOR</b> = モデルがターンを取った割合。<b>望ましい振る舞いの割合</b> = 課題で望ましいとされる側(Pause はターンを取らない、Smooth TT は取る)に一致した割合
-        (Pause は 1 − TOR、Smooth TT は TOR。本家 Full-Duplex-Bench と同じ二値の判定)。総合 = 2 課題の平均。
+        (Pause は 1 − TOR、Smooth TT は TOR。Full-Duplex-Bench と同じ二値の判定)。総合 = 2 課題の平均。
         <b>VAP-distance</b>(実験的)= 人間の音声活動予測(VAP)分布とモデル応答の分布の距離(D<sub>KL</sub>、小さいほど人間の応答に近い)。
         相槌は事象の定義のみを公開しており、採点の対象外です。</p>
     </details>
     <details class="tbl"><summary>境界と転写</summary>
       <p>人間側の発話境界は<b>音声の境界</b>(人間側 A・B の境界を音声の VAD で付け直したもの、ツールキットでは
         <code>detection.boundaries: audio</code>)。ツールキットの既定(<code>transcript</code>)は文字の境界です。
-        モデル応答の転写は論文と同じ手順(ReazonSpeech-ESPnet で書き起こし、WhisperX で文字の時刻を整列)。
+        モデル応答の転写は ASJ の講演論文(README「引用」)と同じ手順(ReazonSpeech-ESPnet で書き起こし、WhisperX で文字の時刻を整列)。
         ツールキット既定の ASR で一から回すと TOR は一致しません(文字の終端が後ろの無音まで伸びるため)。</p>
       <p id="tb-note"></p>
     </details>
@@ -149,7 +149,7 @@
 
   <footer>
     <p>コード: <a id="repo" href="#">llm-jp/full-duplex-bench-ja</a>
-      (Apache-2.0)。評価データ(LLM-jp-Zoom1)は近日中に公開予定。</p>
+      (Apache-2.0)。評価データ(LLM-jp-Zoom1)は公開準備中です。</p>
     <p id="load-err" class="err"></p>
   </footer>
 </div>
