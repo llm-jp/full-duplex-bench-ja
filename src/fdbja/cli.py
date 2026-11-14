@@ -14,6 +14,14 @@ Config-driven evaluation. Pipeline:
                    next to the published rows (--reference)
     analyze-profile: per-system turn-taking profile + event-level report
 
+Outside the benchmark (no config, no transcript, numpy + soundfile only):
+
+    measure      : timing statistics of any two-channel recording (user on
+                   one channel, system on the other); with --profile, scores
+                   against a reference profile
+    make-profile : build a reference profile from two-channel human-human
+                   recordings (language / relationship / situation / medium)
+
 ``reconstruct`` needs the corpus and ``infer`` a model adapter (server or API
 key); ``examples/dummy/`` runs every stage on a synthetic corpus instead.
 
@@ -161,7 +169,84 @@ def main(argv=None) -> int:
     p.add_argument("--slow-onset", type=float, default=1.0,
                    help="'slow' when the median Smooth TT onset (s) >= this")
 
+    p = sub.add_parser(
+        "measure",
+        help="timing statistics of any two-channel recording from the audio alone "
+             "(response latency, pauses, overlap); not comparable with the leaderboard")
+    p.add_argument("audio", help="two-channel wav, a directory of them, or the "
+                                 "user's mono wav together with --system")
+    p.add_argument("--system", default=None, help="the system's mono wav (two mono inputs)")
+    p.add_argument("--user-channel", type=int, default=0,
+                   help="channel of the user (default 0; the other is the system)")
+    p.add_argument("--system-channel", type=int, default=None,
+                   help="channel of the system (needed with more than two channels)")
+    p.add_argument("--profile", default=None,
+                   help="'generic' (rule constants, not a human norm) or a profile "
+                        "JSON written by make-profile; adds the deviation from the "
+                        "profile and the pause reaction penalty, next to the values "
+                        "of the profile's own recordings")
+    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                   help="detection setting, e.g. turn_min_seconds=4 or vad.margin_db=12 "
+                        "(repeatable; default: the profile's settings)")
+    p.add_argument("--condition", action="append", default=[], metavar="KEY=VALUE",
+                   help="what was recorded (model, voice, network, ...), copied to "
+                        "the output (repeatable)")
+    p.add_argument("--condition-file", action="append", default=[], metavar="KEY=PATH",
+                   help="record the SHA-256 prefix of a file (e.g. a prompt) as a "
+                        "condition without its content (repeatable)")
+    p.add_argument("--json", default=None, help="also write the full result (with events)")
+
+    p = sub.add_parser(
+        "make-profile",
+        help="build a reference profile for `measure --profile` from two-channel "
+             "human-human recordings (with the scores of those recordings under "
+             "the profile)")
+    p.add_argument("recordings", nargs="+", help="two-channel wav files or directories")
+    p.add_argument("--language", required=True, help="e.g. ja")
+    p.add_argument("--relationship", required=True, help="e.g. strangers, friends")
+    p.add_argument("--situation", required=True, help="e.g. chat, customer support")
+    p.add_argument("--medium", required=True, help="e.g. video call, telephone, face to face")
+    p.add_argument("--source", default=None, help="what the recordings are")
+    p.add_argument("--name", default=None, help="profile name (default: from the four fields)")
+    p.add_argument("--tolerance", type=float, nargs=2, default=[5.0, 95.0],
+                   metavar=("LOW", "HIGH"),
+                   help="percentiles of the human response latency that bound the "
+                        "tolerance range (default 5 95)")
+    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                   help="detection setting (repeatable)")
+    p.add_argument("-o", "--out", required=True, help="output profile JSON")
+
     args = parser.parse_args(argv)
+
+    if args.command == "measure":
+        return _cmd_measure(args)
+
+    if args.command == "make-profile":
+        from fdbja import measurement as ms
+        profile = ms.make_profile(
+            args.recordings, language=args.language, relationship=args.relationship,
+            situation=args.situation, medium=args.medium, source=args.source,
+            name=args.name, config=ms.parse_settings(args.set),
+            tolerance_percentiles=tuple(args.tolerance))
+        path = ms.write_profile(profile, args.out)
+        tol, meta = profile["norms"]["response_latency"], profile["meta"]
+        print(f"[fdbja] wrote {path}: {ms.profile_id(profile)}, "
+              f"{meta['n_recordings']} recordings, {meta['n_events']['responses']} responses, "
+              f"latency tolerance {tol['low']:+.2f} to {tol['high']:+.2f} s", file=sys.stderr)
+        own = profile["reference_score"]
+
+        def pct(x):
+            return "-" if x is None else f"{100 * x:.1f} %"
+        penalty = own["pause_reaction_penalty"]
+        print(f"[fdbja] these recordings under the profile (optimistic: the range was "
+              f"derived from them): latency in the range {pct(own['latency_in_tolerance_rate'])}, "
+              f"no response {pct(own['turn_end_no_response_rate'])} "
+              f"(n = {own['n_turn_ends']}), pause reaction penalty "
+              f"{'-' if penalty is None else format(penalty, '.3f')} "
+              f"(n = {own['n_pauses']})", file=sys.stderr)
+        for w in meta.get("warnings", []):
+            print(f"[fdbja] warning: {w}", file=sys.stderr)
+        return 0
 
     if args.command == "reconstruct":
         from fdbja.data.reconstruct import reconstruct, reconstruct_from_list
@@ -236,6 +321,39 @@ def main(argv=None) -> int:
             vap_checkpoint=args.vap_checkpoint)
         return 0
     return 1
+
+
+def _cmd_measure(args) -> int:
+    import json
+
+    from fdbja import measurement as ms
+
+    conditions = {}
+    for item in args.condition:
+        if "=" not in item:
+            print(f"fdbja measure: --condition expects KEY=VALUE, got {item!r}", file=sys.stderr)
+            return 2
+        key, value = item.split("=", 1)
+        conditions[key] = value
+    for item in args.condition_file:
+        if "=" not in item:
+            print(f"fdbja measure: --condition-file expects KEY=PATH, got {item!r}",
+                  file=sys.stderr)
+            return 2
+        key, path = item.split("=", 1)
+        with open(path, "rb") as f:
+            conditions[key] = ms.text_hash(f.read())
+    result = ms.measure(args.audio, args.system, user_channel=args.user_channel,
+                        system_channel=args.system_channel, profile=args.profile,
+                        config=ms.parse_settings(args.set) if args.set else None,
+                        conditions=conditions)
+    print(ms.format_report(result))
+    if args.json:
+        with open(args.json, "w", encoding="utf-8") as f:
+            json.dump(result.to_dict(), f, ensure_ascii=False, indent=1)
+            f.write("\n")
+        print(f"[fdbja] wrote {args.json}", file=sys.stderr)
+    return 0
 
 
 def _cmd_transcribe(args) -> int:

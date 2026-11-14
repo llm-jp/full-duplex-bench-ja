@@ -167,6 +167,132 @@ Events are detected from the character timestamps only, so consider `detection.b
 the human boundaries on the audio. Clips are 20 s long; shorter recordings are not used. Numbers on your own set
 are not comparable with the leaderboard; report the data source, event counts and settings.
 
+### Measuring your own two-channel recordings (`fdbja measure`)
+
+Timing statistics of any dialogue recording with the user and the system on separate channels, without the
+evaluation set. No transcript and no annotation; the base dependencies (numpy, soundfile, pyyaml) are enough
+(`uv sync`, no extra).
+
+```bash
+uv run fdbja measure rec.wav --condition model=my-model      # ch0 = user, ch1 = system (--user-channel 1 to swap)
+uv run fdbja measure recordings/ --json out.json             # a directory: one row per recording and the total
+uv run fdbja make-profile human_dialogues/ --language ja --relationship strangers \
+    --situation chat --medium "video call" -o profile.json   # reference profile from human-human recordings
+uv run fdbja measure rec.wav --profile profile.json          # adds scores against the profile
+```
+
+```python
+from fdbja import measure, load_profile, make_profile
+m = measure("rec.wav", conditions={"model": "my-model"})    # two mono files: measure("user.wav", "system.wav")
+print(m.stats["turn_end"]["latency_median"], m.signature)    # arrays: measure(x, sample_rate=16000)
+```
+
+It reports, from events detected in the audio with the frame-energy detector: the signed response latency at
+the user's turn ends (median, quartiles, count; negative = started before the user had finished) and the share
+of turn ends without a response, with the number and share of turn ends that were not counted because the
+system was already speaking; the share of pauses inside the user's turns (0.4 to 1.0 s) in which the system
+was voiced, split into short (at most 1.5 s) and long; how often the system starts while the user is speaking
+and the share of time both are voiced; and each speaker's share of speaking time.
+
+- **Not comparable with the leaderboard.** The events are detected in the recording itself (not the fixed
+  events of the evaluation set) and no transcript is used; the keys are named differently from `results.json`.
+- Short / long speech in a pause is judged **by length only**; whether it is a backchannel or a take-over is
+  not examined.
+- Report the numbers with the `signature` of the output (version, detection settings, profile and channel
+  assignment in one line, e.g. `fdbja:0.2.0.dev0|measure|vad:energy(p56)|events:default|profile:none|ch:user=0,sys=1`)
+  and the recording conditions, which `--condition key=value` copies to the output (model, voice, prompt,
+  network, ...; any key). `--condition-file prompt=prompt.txt` records only a hash of the file.
+- Thresholds are changed with `--set turn_min_seconds=4` (`config={"turn_min_seconds": 4}` in Python) and then
+  appear in the signature. The defaults are the benchmark's rule constants. Setting `turn_min_seconds` to 4
+  does not bring the events closer to the annotated events of the benchmark (the default is 1.5).
+- A user turn end that arrives while the system is speaking is not counted (no response latency can be
+  defined). For a system that keeps talking this share (`turn_end.skipped_system_speaking_rate`) is large, and
+  the no-response rate and the latency then describe the remaining turn ends only; a warning is printed from
+  0.3 (a guide chosen by hand, not a validated value).
+- With a **reference profile** (`--profile`) the output has three layers (`layers` in the JSON says which
+  value belongs to which):
+  - (a) descriptive statistics: the list above; no profile needed.
+  - (b) deviation from the human norm: the share of turn ends whose response falls inside the profile's
+    tolerance range, and the distance from it. **A turn end without a response counts as outside the range.**
+    This says how close the timing is to the human behaviour in the profile, which is not necessarily what
+    listeners judge to be natural.
+  - (c) compared with human judgement: `pause_reaction_penalty`, the sum of the no-reaction and barge-in rates
+    of the pause rule of `metrics/pause_response.py` applied to the pauses detected here. Exploratory: its
+    composition was chosen on the data of a single listening test, and its agreement with listeners has not
+    been verified independently on the events that `measure` detects.
+
+  A profile made with `make-profile` carries the scores of its own recordings under the same settings
+  (`reference_score`), and `measure` prints them next to each score. Human recordings do not reach 100 % in
+  the range either, so interpret a score against these values (the same recordings the range was derived
+  from: an optimistic guide). The only bundled profile, `generic`, is made
+  of the rule constants and is **not a norm derived from human dialogue data** (its tolerance range is the
+  response window, so the in-range share equals the response rate). Timing norms depend on the language, the
+  relationship, the situation and the medium: build a profile from matching human-human recordings with
+  `make-profile`, which records those four fields, the source, the numbers of recordings and events, and the
+  detection settings.
+- Energy-based: noise, laughter and breaths are not told apart from speech, and noise, cross-talk between the
+  channels, clipping and a very low recording level shift the numbers ("Supported recording conditions" below).
+
+#### Supported recording conditions
+
+What follows was **checked on artificially degraded recordings only**; it was **not checked on real room noise,
+reverberation or coded (compressed) speech**. Recordings of the evaluation set (16 kHz, clips of a few tens of
+seconds) were degraded in one of three ways — stationary noise (white, pink) added, the other channel mixed in at
+a fixed gain with a delay of 0.05 s, the level changed by a fixed gain — and the range was sought in which the
+numbers of `measure` (event counts, median latency, the rates) stay where they were.
+
+- Channel separation: the other speaker's voice should leak in at −30 dB or less when it leaks one way (the
+  system's voice into the user channel) and at −40 dB or less when it leaks both ways. Above that the leaked
+  voice is counted as speech of the channel: overlap and pauses start to grow, and at −20 dB the overlap, the
+  system starts during user speech and `pause_reaction_penalty` grow a lot while turn ends are lost. If a
+  microphone picks up a loudspeaker, use the recording after echo cancellation, one speaker per channel.
+- A nearly silent channel: when one channel has no or almost no voice (a system that does not speak), even a weak leak
+  of −40 dB is counted as speech of that channel, because the voice threshold follows whatever sound the
+  channel has. A channel with only a little voice is also moved by a weaker leak (−30 dB) than a channel with
+  more voice.
+- Noise: stationary noise should be at least 25 dB below the speech (SNR). Around 20 dB the noise fills the
+  silences: slightly more overlap, slightly fewer pauses and turn ends. At 15 dB and below weak speech is
+  missed, and the number of turn ends, the no-response rate and the latency come out too large. Laughter,
+  breaths and coughs are not told apart from speech at any level.
+- Level: use recordings that are not clipped (clipping gives slightly more overlap and slightly fewer pauses
+  and turn ends). When the speech is below −40 dBFS, the fixed lower limit of the voice threshold
+  (`min_level_db`, −60 dBFS by default) cuts weak speech away and pauses and turn ends increase; lower the
+  limit, e.g. `--set min_level_db=-84`.
+- Sampling rate: 16 / 24 / 48 kHz give almost the same result.
+- Length: checked up to 60 minutes. Memory use is about 6 times the size of the wav file. There is one
+  voice threshold per recording and channel, so split a recording whose level changes a lot on the way.
+- A loud sound in a short recording: in a recording of less than a minute, half a second of a sound much
+  louder than the speech (a bang, howling) raises the threshold and speech is missed. In recordings of ten
+  minutes and more the effect is slight.
+
+`measure` estimates the quality of each recording per channel (`quality` and `recordings[].quality` in the
+JSON, the "recording quality" table in the text) and puts a warning in `warnings` when a recording seems to be
+outside the range above, with the direction in which the numbers are shifted. The measured values themselves
+do not depend on the warnings.
+
+| Warning | Raised when | Direction of the shift |
+|---|---|---|
+| noise (`noise`) | the speech level is less than 22 dB above the median level of the frames without voice (not raised at an SNR of 25 dB, raised at 20 dB) | fewer pauses and turn ends, more overlap; with stronger noise a higher no-response rate and longer latency |
+| suspected leak (`leak`) | the leak level estimated from the cross-correlation of the channels while the other speaker is talking (normalised maximum 0.05 or more) is −27.5 dB or more; in a channel with little voice also below that, when the leaked voice comes within 5 dB of the channel's voice threshold | more overlap, more system starts during user speech and more voice in pauses, fewer turn ends |
+| clipping (`clipping`) | 0.1 % or more of the samples are at the channel's peak value | slightly more overlap, slightly fewer pauses and turn ends |
+| low level (`low_level`) | the voice threshold was set by the fixed lower limit (`min_level_db`) | more pauses and turn ends, less overlap; lowering the limit (`--set min_level_db=-84`) restores them |
+
+- A channel with almost no voice (voice in less than 2 % of the frames) gets a note (`notes`), not a
+  warning: the numbers are not necessarily shifted, but even a weak leak would change them.
+- The warnings are guides based on estimates from the recording, with thresholds taken from the artificial
+  degradations above. The leak estimate comes from the cross-correlation of the channels (within ±0.2 s) while
+  the other speaker is talking, and can also be large when both speakers make similar sounds at the same time
+  (laughing together). A recording without a warning is not guaranteed to be inside the range either
+  (reverberation, non-stationary noise and coding artefacts are not estimated).
+- The share of samples at the peak value looks at the waveform only, so test signals such as pure tones count
+  as "clipped".
+- The thresholds are in one place, `fdbja/recording_quality.py`, and are recorded in `quality.thresholds`.
+  For a directory, `quality` holds the median, minimum and maximum over the recordings and the number of
+  recordings with each warning (`quality.flags`).
+
+Design, constraints found when validating on real recordings, and limits:
+[docs/design/measure-entry.md](docs/design/measure-entry.md) (in Japanese).
+
 ### Outputs (`score-offline`, `analyze-profile`)
 
 `score-offline` writes `results.json` (summary, scoring conditions and per-event decisions, including the event

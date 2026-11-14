@@ -80,15 +80,21 @@ def voiced_runs(va: np.ndarray, times: np.ndarray, dt: float
 
 def judge_event(va_sys: Sequence[bool], va_a: Sequence[bool], times: Sequence[float],
                 gap_start: float, gap_end: float,
-                cfg: PauseResponseConfig = DEFAULT_PAUSE_RESPONSE) -> Dict[str, Any]:
+                cfg: PauseResponseConfig = DEFAULT_PAUSE_RESPONSE,
+                runs: Optional[Sequence[Tuple[float, float]]] = None) -> Dict[str, Any]:
     """No response / interrupt of one Pause event from frame-level voice
     activity of the system (``va_sys``) and speaker A (``va_a``) on the frame
-    grid ``times`` (frame starts, spacing ``1 / cfg.frame_rate``)."""
+    grid ``times`` (frame starts, spacing ``1 / cfg.frame_rate``).
+
+    ``runs``: ``voiced_runs(va_sys, times, 1 / cfg.frame_rate)`` computed by the
+    caller, to judge many events of one recording without finding the runs
+    again for each of them."""
     dt = 1.0 / cfg.frame_rate
     vs = np.asarray(va_sys, dtype=bool)
     va = np.asarray(va_a, dtype=bool)
     t = np.asarray(times, dtype=np.float64)
-    runs = voiced_runs(vs, t, dt)
+    if runs is None:
+        runs = voiced_runs(vs, t, dt)
     in_gap = [max(0.0, min(e, gap_end) - max(s, gap_start)) for s, e in runs]
     responded = any(x >= cfg.min_response_seconds - TOL for x in in_gap)
     persists = any(gap_start <= s <= gap_end
