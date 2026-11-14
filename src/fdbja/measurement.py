@@ -71,7 +71,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
-from fdbja.data.event_boundaries import DEFAULT_VAD, VADConfig, voice_activity
+from fdbja import recording_quality as rq
+from fdbja.data.event_boundaries import DEFAULT_VAD, VADConfig, voice_activity_levels
 from fdbja.data.event_detection import MIN_OVERLAP
 from fdbja.data.system_activity import speech_segments
 from fdbja.metrics.pause_response import (
@@ -750,13 +751,32 @@ def _read(path: PathLike) -> Tuple[np.ndarray, int]:
     return x, int(sr)
 
 
-def _activity(x: np.ndarray, sr: int, cfg: MeasureConfig) -> Tuple[np.ndarray, float]:
-    """Voice activity of a mono signal and the frame length in seconds. The
-    signal is used at its own sampling rate (no resampling)."""
+Activity = Tuple[np.ndarray, np.ndarray, float]
+
+
+def _activity_levels(x: np.ndarray, sr: int, cfg: MeasureConfig) -> Tuple[Activity, float]:
+    """``(voice activity, frame levels, threshold)`` of a mono signal and the
+    frame length in seconds. The signal is used at its own sampling rate (no
+    resampling)."""
     n = int(round(sr * cfg.vad.frame))
     if n < 1:
         raise ValueError(f"sampling rate {sr} Hz is too low for {cfg.vad.frame} s frames")
-    return voice_activity(np.asarray(x), sr, cfg.vad, cfg.min_level_db), n / sr
+    return voice_activity_levels(np.asarray(x), sr, cfg.vad, cfg.min_level_db), n / sr
+
+
+def _activity(x: np.ndarray, sr: int, cfg: MeasureConfig) -> Tuple[np.ndarray, float]:
+    """Voice activity of a mono signal and the frame length in seconds."""
+    act, dt = _activity_levels(x, sr, cfg)
+    return act[0], dt
+
+
+def _quality(user: np.ndarray, system: np.ndarray, sr: int, cfg: MeasureConfig,
+             act_u: Activity, act_s: Activity) -> Dict[str, Any]:
+    """Recording quality estimates of one recording, with their flags."""
+    q = rq.recording_quality(np.asarray(user), np.asarray(system), sr, cfg.vad,
+                             cfg.min_level_db, act_u, act_s)
+    q["flags"] = rq.flags_of(q)
+    return q
 
 
 def _expand(src: Union[PathLike, Sequence[PathLike]]) -> List[str]:
@@ -797,8 +817,9 @@ def _channels(n_channels: int, user: int, system: Optional[int], what: str
 
 def _load(audio: Any, system: Any, sample_rate: Optional[int], user_channel: int,
           system_channel: Optional[int], cfg: MeasureConfig
-          ) -> Tuple[np.ndarray, np.ndarray, float, str, str]:
-    """``(va_user, va_system, dt, name, channel description)`` of one input."""
+          ) -> Tuple[np.ndarray, np.ndarray, float, str, str, Dict[str, Any]]:
+    """``(va_user, va_system, dt, name, channel description, recording
+    quality)`` of one input."""
     is_array = isinstance(audio, np.ndarray)
     if is_array:
         if sample_rate is None:
@@ -811,9 +832,10 @@ def _load(audio: Any, system: Any, sample_rate: Optional[int], user_channel: int
         name = os.path.basename(str(audio))
     if system is None:
         u, s = _channels(x.shape[1], user_channel, system_channel, name)
-        va_u, dt = _activity(x[:, u], sr, cfg)
-        va_s, _ = _activity(x[:, s], sr, cfg)
-        return va_u, va_s, dt, name, f"user={u},sys={s}"
+        act_u, dt = _activity_levels(x[:, u], sr, cfg)
+        act_s, _ = _activity_levels(x[:, s], sr, cfg)
+        return (act_u[0], act_s[0], dt, name, f"user={u},sys={s}",
+                _quality(x[:, u], x[:, s], sr, cfg, act_u, act_s))
     if isinstance(system, np.ndarray):
         y, sr_y = (system[:, None] if system.ndim == 1 else system), sr
     else:
@@ -822,12 +844,13 @@ def _load(audio: Any, system: Any, sample_rate: Optional[int], user_channel: int
     if x.shape[1] != 1 or y.shape[1] != 1:
         raise ValueError("with two inputs each must be mono "
                          f"(got {x.shape[1]} and {y.shape[1]} channels)")
-    va_u, dt = _activity(x[:, 0], sr, cfg)
-    va_s, dt_s = _activity(y[:, 0], sr_y, cfg)
+    act_u, dt = _activity_levels(x[:, 0], sr, cfg)
+    act_s, dt_s = _activity_levels(y[:, 0], sr_y, cfg)
     if abs(dt - dt_s) > 1e-9:
         raise ValueError(f"the two inputs give different frame lengths ({sr} Hz and "
                          f"{sr_y} Hz); resample one of them")
-    return va_u, va_s, dt, name, "user=input1,sys=input2"
+    return (act_u[0], act_s[0], dt, name, "user=input1,sys=input2",
+            _quality(x[:, 0], y[:, 0], sr, cfg, act_u, act_s))
 
 
 # ---------------------------------------------------------------------------
@@ -845,6 +868,11 @@ class Measurement:
     three layers of :data:`LAYERS`, and what each layer claims;
     ``recordings``: name, duration and statistics of each recording;
     ``events``: every detected event (``recording`` = its index);
+    ``quality``: estimates of the recording conditions (noise, leak between
+    the channels, clipping, level; :mod:`fdbja.recording_quality`), pooled
+    over the recordings; each recording carries its own under ``quality``.
+    A condition outside the range the detector was checked for is reported
+    in ``warnings``; ``notes`` are remarks that do not question the numbers;
     ``signature``: how the numbers were made (:func:`signature`);
     ``conditions``: what was recorded, as given by the caller.
     """
@@ -857,6 +885,8 @@ class Measurement:
     config: Dict[str, Any]
     profile: Optional[Dict[str, Any]] = None
     warnings: List[str] = field(default_factory=list)
+    quality: Optional[Dict[str, Any]] = None
+    notes: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -866,11 +896,13 @@ class Measurement:
             "layers": copy.deepcopy(LAYERS),
             "stats": self.stats,
             "score": self.score,
+            "quality": self.quality,
             "recordings": self.recordings,
             "events": self.events,
             "config": self.config,
             "profile": self.profile,
             "warnings": self.warnings,
+            "notes": self.notes,
         }
 
     def __str__(self) -> str:
@@ -916,13 +948,13 @@ def measure(audio: Any, system: Any = None, *, sample_rate: Optional[int] = None
         inputs = list(_expand(audio))
     analyses, recordings, events, chans = [], [], [], set()
     for i, item in enumerate(inputs):
-        va_u, va_s, dt, name, ch = _load(item, system, sample_rate, user_channel,
-                                         system_channel, cfg)
+        va_u, va_s, dt, name, ch, quality = _load(item, system, sample_rate, user_channel,
+                                                  system_channel, cfg)
         a = analyse(va_u, va_s, dt, cfg, rule)
         analyses.append(a)
         chans.add(ch)
         recordings.append({"name": name, "duration_seconds": a["duration"],
-                           "stats": summarise([a])})
+                           "stats": summarise([a]), "quality": quality})
         for ev in a["turn_ends"] + a["pauses"] + a["starts"]:
             events.append({"recording": i, **ev})
         if a["user_seconds"] == 0 or a["system_seconds"] == 0:
@@ -940,6 +972,10 @@ def measure(audio: Any, system: Any = None, *, sample_rate: Optional[int] = None
             f"({100 * te['skipped_system_speaking_rate']:.1f} %) were not counted because "
             "the system was already speaking; the no-response rate and the latency "
             "describe the remaining turn ends only, interpret them with care")
+    qualities = [r["quality"] for r in recordings]
+    q_warnings, notes = rq.messages([r["name"] for r in recordings], qualities,
+                                    cfg.min_level_db)
+    warnings += q_warnings
     channels = chans.pop() if len(chans) == 1 else "mixed"
     return Measurement(
         stats=stats,
@@ -953,6 +989,8 @@ def measure(audio: Any, system: Any = None, *, sample_rate: Optional[int] = None
                   "description": prof.get("description"), "meta": prof["meta"],
                   "norms": prof["norms"]} if prof else None),
         warnings=warnings,
+        quality=rq.pool(qualities),
+        notes=notes,
     )
 
 
@@ -1085,9 +1123,12 @@ def format_report(m: Measurement) -> str:
         if own:
             out += [""] + _note("profile's own recordings = " + REFERENCE_SCORE_BASIS
                                 + "; " + REFERENCE_SCORE_NOTE)
+    if m.quality:
+        out += [""] + rq.report_lines(m.quality)
     out += ["", f"signature: {m.signature}"]
     if m.conditions:
         out.append("conditions: " + "; ".join(f"{k}={v}" for k, v in m.conditions.items()))
     out += [f"warning: {w}" for w in m.warnings]
+    out += [f"note: {w}" for w in m.notes]
     out.append(f"note: {NOT_COMPARABLE}")
     return "\n".join(out)

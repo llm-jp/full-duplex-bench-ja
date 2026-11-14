@@ -159,6 +159,16 @@ def voice_activity(x: np.ndarray, sr: int,
     voice; ``None`` (the benchmark's event detection) keeps the relative
     threshold alone.
     """
+    return voice_activity_levels(x, sr, cfg, min_level_db)[0]
+
+
+def voice_activity_levels(x: np.ndarray, sr: int,
+                          cfg: VADConfig = DEFAULT_VAD,
+                          min_level_db: Optional[float] = None
+                          ) -> Tuple[np.ndarray, np.ndarray, float]:
+    """:func:`voice_activity` together with what it was decided from:
+    ``(voice activity, frame levels in dBFS, threshold in dBFS)``. The
+    threshold is ``inf`` for an all-zero channel."""
     db = frame_db(x, sr, cfg.frame)
     thr = threshold_db(db, cfg)
     if min_level_db is not None:
@@ -166,7 +176,7 @@ def voice_activity(x: np.ndarray, sr: int,
     v = db > thr
     v = _drop_short(v, True, int(round(cfg.min_voiced / cfg.frame)), keep_edges=False)
     v = _drop_short(v, False, int(round(cfg.min_hole / cfg.frame)))
-    return v
+    return v, db, thr
 
 
 # ---------------------------------------------------------------------------
