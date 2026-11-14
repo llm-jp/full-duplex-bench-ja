@@ -101,6 +101,14 @@ def test_response_needs_0_2_s_inside_the_gap():
     assert judge_event(_on(t, (5.4, 5.9)), a, t, *GAP)["no_response"] == 0
 
 
+def test_runs_given_by_the_caller_change_nothing():
+    t = _grid()
+    a = _on(t, (0.0, GAP[0]), (GAP[1], 10.0))
+    for spans in ((), ((5.2, 5.4),), ((4.0, 5.15),), ((5.4, 5.9), (7.0, 9.0)), ((0.0, 10.0),)):
+        vs = _on(t, *spans)
+        assert judge_event(vs, a, t, *GAP, runs=voiced_runs(vs, t, DT)) == judge_event(vs, a, t, *GAP)
+
+
 def test_interrupt_rules_and_their_boundaries():
     t = _grid()
     a = _on(t, (0.0, GAP[0]), (GAP[1], 10.0))

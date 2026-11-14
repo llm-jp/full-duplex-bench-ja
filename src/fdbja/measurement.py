@@ -78,6 +78,7 @@ from fdbja.metrics.pause_response import (
     DEFAULT_PAUSE_RESPONSE,
     PauseResponseConfig,
     judge_event,
+    voiced_runs,
 )
 
 TOL = 1e-6
@@ -273,6 +274,7 @@ def analyse(va_user: np.ndarray, va_system: np.ndarray, dt: float,
     pauses: List[Dict[str, Any]] = []
     skipped = {"short_turn": 0, "system_speaking": 0, "truncated": 0}
     responses = set()
+    system_runs = None
     for turn in _turns(u_utts, cfg.pause_max_gap):
         t_s, t_e = u_utts[turn[0]][0], u_utts[turn[-1]][1]
         # --- pauses inside the turn
@@ -288,7 +290,9 @@ def analyse(va_user: np.ndarray, va_system: np.ndarray, dt: float,
                 longest = max((e - s for s, e in inside), default=0.0)
                 outcome = ("silent" if not inside else
                            "long" if longest > cfg.short_max_seconds + TOL else "short")
-                j = judge_event(vs, vu, times, g_s, g_e, rule)
+                if system_runs is None:      # once per recording, not once per pause
+                    system_runs = voiced_runs(vs, times, 1.0 / rule.frame_rate)
+                j = judge_event(vs, vu, times, g_s, g_e, rule, runs=system_runs)
                 pauses.append({
                     "type": "pause", "start": g_s, "end": g_e,
                     "duration": round(g_e - g_s, 3), "outcome": outcome,
