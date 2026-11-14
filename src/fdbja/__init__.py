@@ -1,7 +1,7 @@
 """Full-Duplex-Bench-JA: evaluation toolkit for Japanese full-duplex
 spoken dialogue models (turn-taking)."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0.dev0"
 
 #: public entry points of ``fdbja.measurement``, imported on first use so that
 #: ``import fdbja`` stays free of numpy
