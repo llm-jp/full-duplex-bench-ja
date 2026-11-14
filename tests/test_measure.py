@@ -338,5 +338,49 @@ class BaseDependenciesOnlyTest(unittest.TestCase):
         self.assertEqual(got.stdout.strip(), "False")
 
 
+class FaintNoiseTest(unittest.TestCase):
+    """A channel in which nobody speaks must come out silent, whatever its noise."""
+
+    def _faint(self):
+        # a system channel that never rises above -80 dBFS: noise at -100 dBFS
+        # with louder stretches at -84 dBFS (what a codec leaves in a silent
+        # output). A threshold relative to the channel marks the louder
+        # stretches as voice.
+        rng = np.random.default_rng(3)
+        x = rng.standard_normal(int(TOTAL * SR)) * 1e-5
+        t = np.arange(len(x)) / SR
+        for s, e in [(4.5, 7.0), (12.2, 13.4), (23.3, 26.0)]:
+            m = (t >= s) & (t < e)
+            x[m] = rng.standard_normal(int(m.sum())) * 6e-5
+        return x.astype(np.float32)
+
+    def test_relative_threshold_alone_marks_noise(self):
+        cfg = ms.MeasureConfig.from_dict({"min_level_db": -120.0})
+        va, _dt = ms._activity(self._faint(), SR, cfg)
+        self.assertGreater(va.mean(), 0.1)
+
+    def test_default_keeps_a_faint_channel_silent(self):
+        va, _dt = ms._activity(self._faint(), SR, ms.DEFAULT_MEASURE)
+        self.assertEqual(int(va.sum()), 0)
+        m = measure(_signal(USER), self._faint(), sample_rate=SR)
+        self.assertEqual(m.stats["speaking"]["system_seconds"], 0.0)
+        self.assertEqual(m.stats["pause"]["voiced_rate"], 0.0)
+        self.assertEqual(m.stats["turn_end"]["no_response_rate"], 1.0)
+        self.assertEqual(m.stats["turn_end"]["skipped"]["system_speaking"], 0)
+
+    def test_speech_at_normal_level_is_unchanged(self):
+        x = _stereo(USER, SYSTEM)
+        off = ms.MeasureConfig.from_dict({"min_level_db": -120.0})
+        for ch in (0, 1):
+            a, _ = ms._activity(x[:, ch], SR, ms.DEFAULT_MEASURE)
+            b, _ = ms._activity(x[:, ch], SR, off)
+            self.assertTrue(np.array_equal(a, b))
+
+    def test_setting_is_in_the_signature_when_changed(self):
+        cfg = ms.MeasureConfig.from_dict({"min_level_db": -70.0})
+        self.assertIn("min_level_db=-70.0", ms.signature(cfg))
+        self.assertIn("events:default", ms.signature(ms.DEFAULT_MEASURE))
+
+
 if __name__ == "__main__":
     unittest.main()

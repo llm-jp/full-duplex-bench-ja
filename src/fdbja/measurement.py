@@ -96,6 +96,10 @@ PathLike = Union[str, "os.PathLike[str]"]
 class MeasureConfig:
     """Detection settings; the defaults are the benchmark's rule constants."""
     vad: VADConfig = DEFAULT_VAD
+    # frames below this level (dBFS) are never voice: the detector's threshold is
+    # relative to each channel, and without a lower bound the noise of a channel
+    # in which nobody speaks is marked as speech
+    min_level_db: float = -60.0
     merge_gap: float = 0.3                  # voiced runs this close are one utterance
     short_max_seconds: float = 1.5          # a short vocalisation lasts at most this
     min_overlap: float = MIN_OVERLAP        # overlaps shorter than this are ignored
@@ -641,7 +645,7 @@ def _activity(x: np.ndarray, sr: int, cfg: MeasureConfig) -> Tuple[np.ndarray, f
     n = int(round(sr * cfg.vad.frame))
     if n < 1:
         raise ValueError(f"sampling rate {sr} Hz is too low for {cfg.vad.frame} s frames")
-    return voice_activity(np.asarray(x), sr, cfg.vad), n / sr
+    return voice_activity(np.asarray(x), sr, cfg.vad, cfg.min_level_db), n / sr
 
 
 def _expand(src: Union[PathLike, Sequence[PathLike]]) -> List[str]:

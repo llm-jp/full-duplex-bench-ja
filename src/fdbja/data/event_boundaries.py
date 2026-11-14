@@ -149,10 +149,21 @@ def _drop_short(mask: np.ndarray, value: bool, min_frames: int,
 
 
 def voice_activity(x: np.ndarray, sr: int,
-                   cfg: VADConfig = DEFAULT_VAD) -> np.ndarray:
-    """Boolean voice activity per ``cfg.frame`` frame of a mono signal."""
+                   cfg: VADConfig = DEFAULT_VAD,
+                   min_level_db: Optional[float] = None) -> np.ndarray:
+    """Boolean voice activity per ``cfg.frame`` frame of a mono signal.
+
+    The threshold is relative to the channel's own level, so a channel that
+    holds only faint noise would have the louder part of that noise marked as
+    voice. With ``min_level_db`` (dBFS) frames below that level are never
+    voice; ``None`` (the benchmark's event detection) keeps the relative
+    threshold alone.
+    """
     db = frame_db(x, sr, cfg.frame)
-    v = db > threshold_db(db, cfg)
+    thr = threshold_db(db, cfg)
+    if min_level_db is not None:
+        thr = max(thr, float(min_level_db))
+    v = db > thr
     v = _drop_short(v, True, int(round(cfg.min_voiced / cfg.frame)), keep_edges=False)
     v = _drop_short(v, False, int(round(cfg.min_hole / cfg.frame)))
     return v
