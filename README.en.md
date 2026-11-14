@@ -167,6 +167,55 @@ Events are detected from the character timestamps only, so consider `detection.b
 the human boundaries on the audio. Clips are 20 s long; shorter recordings are not used. Numbers on your own set
 are not comparable with the leaderboard; report the data source, event counts and settings.
 
+### Measuring your own two-channel recordings (`fdbja measure`)
+
+Timing statistics of any dialogue recording with the user and the system on separate channels, without the
+evaluation set. No transcript and no annotation; the base dependencies (numpy, soundfile, pyyaml) are enough
+(`uv sync`, no extra).
+
+```bash
+uv run fdbja measure rec.wav --condition model=my-model      # ch0 = user, ch1 = system (--user-channel 1 to swap)
+uv run fdbja measure recordings/ --json out.json             # a directory: one row per recording and the total
+uv run fdbja make-profile human_dialogues/ --language ja --relationship strangers \
+    --situation chat --medium "video call" -o profile.json   # reference profile from human-human recordings
+uv run fdbja measure rec.wav --profile profile.json          # adds scores against the profile
+```
+
+```python
+from fdbja import measure, load_profile, make_profile
+m = measure("rec.wav", conditions={"model": "my-model"})    # two mono files: measure("user.wav", "system.wav")
+print(m.stats["turn_end"]["latency_median"], m.signature)    # arrays: measure(x, sample_rate=16000)
+```
+
+It reports, from events detected in the audio with the frame-energy detector: the signed response latency at
+the user's turn ends (median, quartiles, count; negative = started before the user had finished) and the share
+of turn ends without a response; the share of pauses inside the user's turns (0.4 to 1.0 s) in which the system
+was voiced, split into short (at most 1.5 s) and long; how often the system starts while the user is speaking
+and the share of time both are voiced; and each speaker's share of speaking time.
+
+- **Not comparable with the leaderboard.** The events are detected in the recording itself (not the fixed
+  events of the evaluation set) and no transcript is used; the keys are named differently from `results.json`.
+- Short / long speech in a pause is judged **by length only**; whether it is a backchannel or a take-over is
+  not examined.
+- Report the numbers with the `signature` of the output (version, detection settings, profile and channel
+  assignment in one line, e.g. `fdbja:0.2.0|measure|vad:energy(p56)|events:default|profile:none|ch:user=0,sys=1`)
+  and the recording conditions, which `--condition key=value` copies to the output (model, voice, prompt,
+  network, ...; any key). `--condition-file prompt=prompt.txt` records only a hash of the file.
+- Thresholds are changed with `--set turn_min_seconds=4` (`config={"turn_min_seconds": 4}` in Python) and then
+  appear in the signature. The defaults are the benchmark's rule constants.
+- With a **reference profile** (`--profile`) the output adds the share of responses inside the profile's
+  tolerance range, the distance from it, and the no-reaction and barge-in rates of the pause rule of
+  `metrics/pause_response.py` applied to the pauses detected here. The only bundled profile, `generic`, is made
+  of the rule constants and is **not a norm derived from human dialogue data** (its tolerance range is the
+  response window, so the in-range share equals the response rate). Timing norms depend on the language, the
+  relationship, the situation and the medium: build a profile from matching human-human recordings with
+  `make-profile`, which records those four fields, the source, the numbers of recordings and events, and the
+  detection settings.
+- Energy-based: noise, laughter and breaths are not told apart from speech, and cross-talk between the
+  channels inflates the overlap.
+
+Design and limits: [docs/design/measure-entry.md](docs/design/measure-entry.md) (in Japanese).
+
 ### Outputs (`score-offline`, `analyze-profile`)
 
 `score-offline` writes `results.json` (summary, scoring conditions and per-event decisions, including the event

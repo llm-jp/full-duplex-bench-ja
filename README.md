@@ -176,6 +176,53 @@ uv run fdbja score-offline --config examples/dummy/config_own_dialogues.yaml
 - クリップは 20 秒で、20 秒より短い録音からは作れません。
 - 自前の評価セットの数値は LLM-jp-Zoom1 の評価セット(リーダーボード)とは比較できません。データの出典・事象数・設定を添えて報告してください。
 
+### 4. 自分の 2 チャネル音声を測る(`fdbja measure`)
+
+評価セットを使わずに、手元の対話の録音(ユーザとシステムが別々のチャネルに入った wav)からタイミングの統計を出します。
+転写も注釈も要らず、基本依存(numpy / soundfile / pyyaml)だけで動きます(`uv sync` のみ、extra は不要)。
+
+```bash
+uv run fdbja measure rec.wav --condition model=my-model      # ch0 = ユーザ、ch1 = システム(逆なら --user-channel 1)
+uv run fdbja measure recordings/ --json out.json             # ディレクトリ: 録音ごとの行と全体の集計
+uv run fdbja make-profile human_dialogues/ --language ja --relationship strangers \
+    --situation chat --medium "video call" -o profile.json   # 人どうしの録音から基準プロファイルを作る
+uv run fdbja measure rec.wav --profile profile.json          # プロファイルに照らしたスコアを追加
+```
+
+```python
+from fdbja import measure, load_profile, make_profile
+m = measure("rec.wav", conditions={"model": "my-model"})    # mono 2 本なら measure("user.wav", "system.wav")
+print(m.stats["turn_end"]["latency_median"], m.signature)    # numpy 配列なら measure(x, sample_rate=16000)
+```
+
+出力は次の記述統計です(音量ベースの検出器で、音声だけから事象を検出します)。
+
+| 事象 | 出力 |
+|---|---|
+| ユーザのターンの終わり | 応答の遅延(符号つき。負 = ユーザが話し終える前に話し始めた)の中央値・四分位・件数、応答なしの割合 |
+| ユーザのターン内の休止(0.4〜1.0 秒) | システムが声を出した割合。1.5 秒以下を「短い発声」、それより長いものを「長い発声」に分ける |
+| ユーザの発話中にシステムが話し始めた箇所 | 回数(ユーザの発話 1 分あたり)、両者が同時に声を出していた時間の割合 |
+| 全体 | 話者ごとの発話時間の割合 |
+
+- **リーダーボードの数値とは比較できません**。事象を録音そのものから検出しており(評価セットの固定の事象ではない)、転写も使いません。
+  取り違えないよう、キー名も `results.json` とは別にしてあります。
+- 休止の中の「短い発声 / 長い発声」は**長さだけで判定**しています。相槌かどうか、ターンを取ったかどうかは見ていません。
+- 数値には出力の `signature`(バージョン・検出の設定・プロファイル・チャネルの割り当てを 1 行にしたもの。例:
+  `fdbja:0.2.0|measure|vad:energy(p56)|events:default|profile:none|ch:user=0,sys=1`)と、録音の条件を添えて報告してください。
+  録音の条件は `--condition key=value` で出力に残せます(モデル、声、プロンプト、回線など。key は自由)。
+  プロンプトの中身を出したくないときは `--condition-file prompt=prompt.txt` でハッシュだけを記録できます。
+- 閾値は `--set turn_min_seconds=4`(Python では `config={"turn_min_seconds": 4}`)のように変えられ、変えた項目は `signature` に出ます。
+  既定値はベンチマークのルール定数です(応答の窓 −0.5〜+2.0 秒、短い発声の上限 1.5 秒、0.1 秒未満の重なりは無視 など)。
+- **基準プロファイル**(`--profile`)を渡すと、応答の遅延がプロファイルの許容範囲に入った割合、許容範囲からの外れ(秒)、
+  休止に対する無反応と割り込みの割合(`metrics/pause_response.py` のルールを、ここで検出した休止に適用したもの)を加えます。
+  同梱のプロファイルは `generic` だけです。これはルール定数だけから作ったもので、**人の対話のデータに基づく規範ではありません**
+  (許容範囲 = 応答の窓なので、許容範囲に入った割合は応答ありの割合と同じ値になります)。
+  タイミングの規範は言語・関係性・場面・媒体で変わるので、規範として使うときは対象に合った人どうしの録音から `make-profile` で作ってください。
+  プロファイルには言語・関係性・場面・媒体・出典・録音数・事象数・検出の設定が記録されます。
+- 音量ベースなので、雑音・笑い・息と発話を区別しません。チャネル間の音漏れがある録音では重なりが過大になります。
+
+設計(どの変数をどこに記録するか)と限界は [docs/design/measure-entry.md](docs/design/measure-entry.md) にあります。
+
 ### VAP-distance の準備(実験的指標を使う場合のみ)
 
 ```bash
@@ -204,6 +251,8 @@ uv run fdbja analyze-profile --results results/results.json --out results/profil
 uv run fdbja analyze-pause --eval-dir data/eval --out results/pause_gap   # Pause をギャップ長別に再集計(bootstrap CI 付き)
 uv run fdbja sample-human-eval --config configs/default.yaml --out ./human_eval   # 人手評価バンドル(Web UI 込み)
 uv run fdbja analyze-human-eval --responses <dir> --bundle ./human_eval --out <dir>   # 回収した回答の集計と自動指標との照合
+uv run fdbja measure rec.wav [--profile generic] [--condition key=value]   # 任意の 2 チャネル録音のタイミング統計(転写なし、リーダーボードとは比較不可)
+uv run fdbja make-profile <dir> --language ja --relationship R --situation S --medium M -o profile.json   # 人どうしの録音から measure 用の基準プロファイル
 ```
 
 各コマンドの引数は `uv run fdbja <command> --help` を参照。人手評価の設計と手順は
@@ -455,9 +504,11 @@ src/fdbja/
   cli.py                    # fdbja コマンド(reconstruct | infer | transcribe | score-offline
                             #              | leaderboard | analyze-pause | analyze-profile
                             #              | sample-human-eval | analyze-human-eval)
+                            #              | measure | make-profile)
   config.py  runner.py  report.py  io_audio.py
   summary.py                # 95% 区間・応答の遅れ・採点条件(summary.json / summary.csv)
   turn_profile.py           # analyze-profile(システムの傾向と事象単位のレポート)
+  measurement.py            # measure / make-profile(任意の 2 チャネル録音のタイミング統計、基準プロファイル)
   data/event_detection.py   # pause / smooth_tt / bc 検出器(jchat 入力)
   data/reconstruct.py       # コーパス → 評価クリップ + manifest
   metrics/tor.py            # 二値 Takeover Rate
@@ -557,6 +608,9 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
     `gemini-3.1-flash-live-preview` に(従来の `gemini-live-2.5-flash-preview` は掲載値の取得に使っていない)。リーダーボードの表示名「Grok Voice 3.0」を
     「Grok Voice」に(取得は 2026-07 の `grok-voice-latest` で、3.0 の公開より前)。README「モデルアダプタ」とリーダーボードの注記に、取得時期とモデル ID を記載。
   - リーダーボードのサンプル欄に境界の切り替え(音声の境界 / 文字の境界)を追加し、Smooth TT のサンプル事象を差し替え(掲載値は変わらない)。
+  - `measure` / `make-profile` コマンドと `from fdbja import measure, load_profile, make_profile`: 任意の 2 チャネル録音から、
+    転写なしでタイミングの統計(応答の遅延、休止の中の発声、重なり、発話時間の割合)を出す入口。基本依存だけで動く。
+    差し替え可能な基準プロファイル(同梱は `generic` のみ)と、数値に添える `signature`。リーダーボードの数値とは比較できない(README「自分の 2 チャネル音声を測る」)。
   - `leaderboard --reference`: 参照側の採点条件に説明文が付いていても値の一致を判定するように修正(`docs/results.json` と並べると境界が同じでも警告が出ていた)。
   - 文書の整理: 「範囲」の記述を Full-Duplex-Bench v1 / v1.5 の課題名に合わせ、VAP-distance の検証状況、サンプル音声のモデルのライセンス、`docs/` 配下の古い記述を更新。どこからも読まれていなかった config の `output.exporters` を削除。
   - **採点に影響しうる不具合の修正(0.2.0 向け)**。いずれも**既定は従来どおり**で、掲載値(`docs/`)は変わりません。
