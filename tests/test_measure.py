@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 import soundfile as sf
@@ -31,6 +32,8 @@ SYSTEM = [(4.5, 7.0),                   # response to turn 1, +0.5 s
 # a human-human dialogue: A (channel 0) and B (channel 1) alternate
 HUMAN_A = [(1.0, 4.0), (7.6, 10.6), (14.2, 17.0)]
 HUMAN_B = [(4.3, 7.0), (11.0, 14.0)]    # latencies B: +0.3, +0.4; A: +0.6, +0.2
+# a system that is speaking at every one of the user's turn ends
+BUSY = [(2.0, 6.0), (10.0, 18.0), (21.0, 29.0), (31.0, 35.0)]
 
 
 def _signal(segments, total=TOTAL, sr=SR, seed=0):
@@ -251,6 +254,95 @@ class ProfileTest(_Files):
         m = measure(x, sample_rate=SR, profile=profile, config={})
         self.assertTrue(any("differ" in w for w in m.warnings))
 
+    def _human_profile(self, **kw):
+        # two "human-human" recordings: plain alternation, and one with pauses
+        self.wav("human/h1.wav", _stereo(HUMAN_A, HUMAN_B, total=20.0))
+        self.wav("human/h2.wav", _stereo(USER, SYSTEM))
+        return make_profile(os.path.join(self.dir, "human"), language="ja",
+                            relationship="strangers", situation="chat",
+                            medium="video call", **kw)
+
+    def test_profile_stores_the_scores_of_its_own_recordings(self):
+        profile = self._human_profile(tolerance_percentiles=(0, 100))
+        own = profile["reference_score"]
+        self.assertEqual(
+            set(own),
+            {"basis", "note", "latency_in_tolerance_rate", "latency_deviation_mean",
+             "turn_end_no_response_rate", "n_turn_ends", "pause_no_reaction_rate",
+             "pause_barge_in_rate", "pause_reaction_penalty", "n_pauses"})
+        # said in the JSON itself: the same recordings, hence optimistic
+        self.assertIn("recordings this profile was made from", own["basis"])
+        self.assertIn("optimistic", own["note"])
+        self.assertEqual(own["n_turn_ends"], profile["meta"]["n_events"]["turn_ends"])
+        self.assertEqual(own["n_pauses"], profile["meta"]["n_events"]["pauses"])
+        self.assertEqual(own["turn_end_no_response_rate"],
+                         profile["reference"]["turn_end"]["no_response_rate"])
+        # even with a range that holds every human latency the share is below
+        # 1: a turn end without a response counts as outside the range
+        self.assertGreater(own["turn_end_no_response_rate"], 0.0)
+        self.assertAlmostEqual(own["latency_in_tolerance_rate"],
+                               1 - own["turn_end_no_response_rate"], places=3)
+        self.assertEqual(own["latency_deviation_mean"], 0.0)
+        # the same values as measuring those recordings under the profile, each
+        # speaker in turn as the user
+        human = os.path.join(self.dir, "human")
+        sides = [measure(human, profile=profile, user_channel=ch).score for ch in (0, 1)]
+        for n_key, keys in (("n_turn_ends", ["latency_in_tolerance_rate",
+                                             "turn_end_no_response_rate"]),
+                            ("n_pauses", ["pause_no_reaction_rate", "pause_barge_in_rate",
+                                          "pause_reaction_penalty"])):
+            n = sum(s[n_key] for s in sides)
+            self.assertEqual(own[n_key], n)
+            self.assertGreater(n, 0)
+            for k in keys:
+                pooled = sum(s[k] * s[n_key] for s in sides if s[n_key]) / n
+                self.assertAlmostEqual(own[k], pooled, places=3, msg=k)
+        # with the default 5-95 % range some human responses fall outside by
+        # construction
+        narrow = self._human_profile()["reference_score"]
+        self.assertLess(narrow["latency_in_tolerance_rate"],
+                        1 - narrow["turn_end_no_response_rate"])
+        self.assertGreater(narrow["latency_deviation_mean"], 0.0)
+
+    def test_scores_are_shown_next_to_those_of_the_profile(self):
+        profile = self._human_profile(tolerance_percentiles=(0, 100))
+        own = profile["reference_score"]
+        m = measure(_stereo(USER, SYSTEM), sample_rate=SR, profile=profile)
+        self.assertEqual(m.score["reference_score"], own)
+        self.assertEqual(m.to_dict()["score"]["reference_score"], own)
+        self.assertEqual(m.score["turn_end_no_response_rate"],
+                         m.stats["turn_end"]["no_response_rate"])
+        text = str(m)
+        self.assertIn(f"(profile's own recordings: {100 * own['latency_in_tolerance_rate']:.1f} %"
+                      f", n = {own['n_turn_ends']})", text)
+        self.assertIn(f"(profile's own recordings: {own['pause_reaction_penalty']:.3f}"
+                      f", n = {own['n_pauses']})", text)
+        self.assertIn("optimistic", text)
+        self.assertNotIn("note", m.score)
+
+    def test_profile_without_scores_of_its_own_recordings_still_loads(self):
+        # a profile written before ``reference_score`` existed
+        old = self._human_profile()
+        del old["reference_score"]
+        path = ms.write_profile(old, os.path.join(self.dir, "old.json"))
+        self.assertEqual(load_profile(path), old)
+        m = measure(_stereo(USER, SYSTEM), sample_rate=SR, profile=path)
+        self.assertIsNone(m.score["reference_score"])
+        self.assertIsNotNone(m.score["latency_in_tolerance_rate"])
+        self.assertIn("earlier version", m.score["note"])
+        text = str(m)
+        self.assertNotIn("profile's own recordings:", text)
+        self.assertIn("profile reference", text)
+        json.dumps(m.to_dict())
+        # the built-in profile has none either
+        g = measure(_stereo(USER, SYSTEM), sample_rate=SR, profile="generic")
+        self.assertIsNone(g.score["reference_score"])
+        self.assertNotIn("profile's own recordings:", str(g))
+        bad = self._human_profile()
+        bad["reference_score"] = [0.5]
+        with self.assertRaises(ValueError):
+            load_profile(bad)
+
     def test_malformed_profile(self):
         with self.assertRaises(ValueError):
             load_profile({"format": "something-else"})
@@ -261,6 +353,89 @@ class ProfileTest(_Files):
         with self.assertRaises(ValueError):                         # no response at all
             make_profile(self.wav("s.wav", _stereo(USER, [])), language="ja",
                          relationship="x", situation="x", medium="x")
+
+
+class LayersAndSkippedTurnEndsTest(unittest.TestCase):
+    def test_share_of_turn_ends_skipped_because_the_system_was_speaking(self):
+        m = measure(_stereo(USER, SYSTEM), sample_rate=SR)
+        te = m.stats["turn_end"]
+        # 3 turn ends counted, 1 skipped: 1 / 4
+        self.assertEqual((te["n"], te["skipped"]["system_speaking"]), (3, 1))
+        self.assertEqual(te["skipped_system_speaking_rate"], 0.25)
+        self.assertEqual(m.recordings[0]["stats"]["turn_end"]["skipped_system_speaking_rate"], 0.25)
+        self.assertIn("not counted: system already speaking", str(m))
+        self.assertIn("1 / 4 (25.0 %)", str(m))
+        self.assertLess(0.25, ms.SYSTEM_SPEAKING_NOTICE)
+        self.assertEqual(m.warnings, [])
+        # the notice follows the constant
+        with mock.patch.object(ms, "SYSTEM_SPEAKING_NOTICE", 0.25):
+            noted = measure(_stereo(USER, SYSTEM), sample_rate=SR)
+        self.assertTrue(any("already speaking" in w for w in noted.warnings))
+
+    def test_system_speaking_at_every_turn_end(self):
+        m = measure(_stereo(USER, BUSY), sample_rate=SR)
+        te = m.stats["turn_end"]
+        self.assertEqual((te["n"], te["skipped"]["system_speaking"]), (0, 4))
+        self.assertEqual(te["skipped_system_speaking_rate"], 1.0)
+        self.assertIsNone(te["no_response_rate"])       # nothing left to describe
+        notices = [w for w in m.warnings if "already speaking" in w]
+        self.assertEqual(len(notices), 1)
+        self.assertIn("4 of 4 user turn ends (100.0 %)", notices[0])
+        self.assertIn("interpret them with care", notices[0])
+        self.assertIn("warning: 4 of 4 user turn ends", str(m))
+        # not the channel-assignment hint: turn ends were found, then skipped
+        self.assertFalse(any("no turn end detected" in w for w in m.warnings))
+        self.assertTrue(any("already speaking" in w for w in m.to_dict()["warnings"]))
+        # no candidate at all: no share, no notice
+        quiet = measure(_stereo([], SYSTEM), sample_rate=SR)
+        self.assertIsNone(quiet.stats["turn_end"]["skipped_system_speaking_rate"])
+        self.assertTrue(any("no turn end detected" in w for w in quiet.warnings))
+
+    def test_every_score_value_belongs_to_one_layer(self):
+        m = measure(_stereo(USER, SYSTEM), sample_rate=SR, profile="generic")
+        res = m.to_dict()
+        layers = res["layers"]
+        self.assertEqual(list(layers), ["descriptive", "human_norm", "human_judgement"])
+        self.assertEqual(layers["descriptive"]["keys"], ["stats"])
+        # only the pause reaction penalty is compared with human judgement
+        self.assertEqual(layers["human_judgement"]["keys"], ["score.pause_reaction_penalty"])
+        self.assertIn("exploratory", layers["human_judgement"]["note"])
+        self.assertIn("single listening test", layers["human_judgement"]["note"])
+        self.assertIn("not necessarily what listeners judge", layers["human_norm"]["note"])
+        self.assertIn("counts as outside the tolerance range", layers["human_norm"]["note"])
+        listed = [k for layer in layers.values() for k in layer["keys"] + layer["components"]]
+        self.assertEqual(len(listed), len(set(listed)))
+        values = {f"score.{k}" for k in res["score"]
+                  if k not in ("profile", "latency_tolerance", "n_turn_ends", "n_pauses",
+                               "reference", "reference_score", "note")}
+        self.assertEqual(values, set(listed) - {"stats"})
+        for layer in layers.values():
+            self.assertTrue(layer["title"] and layer["note"])
+        # the layers are there without a profile too (the score is then null)
+        self.assertEqual(measure(_stereo(USER, SYSTEM), sample_rate=SR).to_dict()["layers"], layers)
+        # a copy: editing the output does not edit the module
+        layers["descriptive"]["keys"].append("x")
+        self.assertEqual(ms.LAYERS["descriptive"]["keys"], ["stats"])
+        json.dumps(res)
+
+    def test_report_has_one_block_per_layer(self):
+        plain = str(measure(_stereo(USER, SYSTEM), sample_rate=SR))
+        self.assertIn("[a] descriptive statistics", plain)
+        self.assertNotIn("[b]", plain)
+        self.assertNotIn("[c]", plain)
+        text = str(measure(_stereo(USER, SYSTEM), sample_rate=SR, profile="generic"))
+        a, b, c = (text.index(h) for h in ("[a] descriptive statistics",
+                                           "[b] deviation from the human norm",
+                                           "[c] compared with human judgement"))
+        self.assertTrue(a < b < c)
+        between = text[b:c]
+        self.assertIn("latency within", between)
+        self.assertIn("no response (counted as outside the range)", between)
+        self.assertIn("not necessarily", between)
+        self.assertNotIn("reaction penalty", between)
+        self.assertIn("pauses: reaction penalty", text[c:])
+        self.assertIn("exploratory", text[c:])
+        self.assertNotIn("user turn ends", text[b:])
 
 
 class SignatureTest(unittest.TestCase):

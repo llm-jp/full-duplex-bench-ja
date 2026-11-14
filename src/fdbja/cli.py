@@ -182,7 +182,9 @@ def main(argv=None) -> int:
                    help="channel of the system (needed with more than two channels)")
     p.add_argument("--profile", default=None,
                    help="'generic' (rule constants, not a human norm) or a profile "
-                        "JSON written by make-profile; adds scores")
+                        "JSON written by make-profile; adds the deviation from the "
+                        "profile and the pause reaction penalty, next to the values "
+                        "of the profile's own recordings")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                    help="detection setting, e.g. turn_min_seconds=4 or vad.margin_db=12 "
                         "(repeatable; default: the profile's settings)")
@@ -197,7 +199,8 @@ def main(argv=None) -> int:
     p = sub.add_parser(
         "make-profile",
         help="build a reference profile for `measure --profile` from two-channel "
-             "human-human recordings")
+             "human-human recordings (with the scores of those recordings under "
+             "the profile)")
     p.add_argument("recordings", nargs="+", help="two-channel wav files or directories")
     p.add_argument("--language", required=True, help="e.g. ja")
     p.add_argument("--relationship", required=True, help="e.g. strangers, friends")
@@ -230,6 +233,17 @@ def main(argv=None) -> int:
         print(f"[fdbja] wrote {path}: {ms.profile_id(profile)}, "
               f"{meta['n_recordings']} recordings, {meta['n_events']['responses']} responses, "
               f"latency tolerance {tol['low']:+.2f} to {tol['high']:+.2f} s", file=sys.stderr)
+        own = profile["reference_score"]
+
+        def pct(x):
+            return "-" if x is None else f"{100 * x:.1f} %"
+        penalty = own["pause_reaction_penalty"]
+        print(f"[fdbja] these recordings under the profile (optimistic: the range was "
+              f"derived from them): latency in the range {pct(own['latency_in_tolerance_rate'])}, "
+              f"no response {pct(own['turn_end_no_response_rate'])} "
+              f"(n = {own['n_turn_ends']}), pause reaction penalty "
+              f"{'-' if penalty is None else format(penalty, '.3f')} "
+              f"(n = {own['n_pauses']})", file=sys.stderr)
         for w in meta.get("warnings", []):
             print(f"[fdbja] warning: {w}", file=sys.stderr)
         return 0
