@@ -189,7 +189,8 @@ print(m.stats["turn_end"]["latency_median"], m.signature)    # arrays: measure(x
 
 It reports, from events detected in the audio with the frame-energy detector: the signed response latency at
 the user's turn ends (median, quartiles, count; negative = started before the user had finished) and the share
-of turn ends without a response; the share of pauses inside the user's turns (0.4 to 1.0 s) in which the system
+of turn ends without a response, with the number and share of turn ends that were not counted because the
+system was already speaking; the share of pauses inside the user's turns (0.4 to 1.0 s) in which the system
 was voiced, split into short (at most 1.5 s) and long; how often the system starts while the user is speaking
 and the share of time both are voiced; and each speaker's share of speaking time.
 
@@ -198,14 +199,32 @@ and the share of time both are voiced; and each speaker's share of speaking time
 - Short / long speech in a pause is judged **by length only**; whether it is a backchannel or a take-over is
   not examined.
 - Report the numbers with the `signature` of the output (version, detection settings, profile and channel
-  assignment in one line, e.g. `fdbja:0.2.0|measure|vad:energy(p56)|events:default|profile:none|ch:user=0,sys=1`)
+  assignment in one line, e.g. `fdbja:0.2.0.dev0|measure|vad:energy(p56)|events:default|profile:none|ch:user=0,sys=1`)
   and the recording conditions, which `--condition key=value` copies to the output (model, voice, prompt,
   network, ...; any key). `--condition-file prompt=prompt.txt` records only a hash of the file.
 - Thresholds are changed with `--set turn_min_seconds=4` (`config={"turn_min_seconds": 4}` in Python) and then
-  appear in the signature. The defaults are the benchmark's rule constants.
-- With a **reference profile** (`--profile`) the output adds the share of responses inside the profile's
-  tolerance range, the distance from it, and the no-reaction and barge-in rates of the pause rule of
-  `metrics/pause_response.py` applied to the pauses detected here. The only bundled profile, `generic`, is made
+  appear in the signature. The defaults are the benchmark's rule constants. Setting `turn_min_seconds` to 4
+  does not bring the events closer to the annotated events of the benchmark (the default is 1.5).
+- A user turn end that arrives while the system is speaking is not counted (no response latency can be
+  defined). For a system that keeps talking this share (`turn_end.skipped_system_speaking_rate`) is large, and
+  the no-response rate and the latency then describe the remaining turn ends only; a warning is printed from
+  0.3 (a guide chosen by hand, not a validated value).
+- With a **reference profile** (`--profile`) the output has three layers (`layers` in the JSON says which
+  value belongs to which):
+  - (a) descriptive statistics: the list above; no profile needed.
+  - (b) deviation from the human norm: the share of turn ends whose response falls inside the profile's
+    tolerance range, and the distance from it. **A turn end without a response counts as outside the range.**
+    This says how close the timing is to the human behaviour in the profile, which is not necessarily what
+    listeners judge to be natural.
+  - (c) compared with human judgement: `pause_reaction_penalty`, the sum of the no-reaction and barge-in rates
+    of the pause rule of `metrics/pause_response.py` applied to the pauses detected here. Exploratory: its
+    composition was chosen on the data of a single listening test, and its agreement with listeners has not
+    been verified independently on the events that `measure` detects.
+
+  A profile made with `make-profile` carries the scores of its own recordings under the same settings
+  (`reference_score`), and `measure` prints them next to each score. Human recordings do not reach 100 % in
+  the range either, so interpret a score against these values (the same recordings the range was derived
+  from: an optimistic guide). The only bundled profile, `generic`, is made
   of the rule constants and is **not a norm derived from human dialogue data** (its tolerance range is the
   response window, so the in-range share equals the response rate). Timing norms depend on the language, the
   relationship, the situation and the medium: build a profile from matching human-human recordings with
@@ -214,7 +233,8 @@ and the share of time both are voiced; and each speaker's share of speaking time
 - Energy-based: noise, laughter and breaths are not told apart from speech, and cross-talk between the
   channels inflates the overlap.
 
-Design and limits: [docs/design/measure-entry.md](docs/design/measure-entry.md) (in Japanese).
+Design, constraints found when validating on real recordings, and limits:
+[docs/design/measure-entry.md](docs/design/measure-entry.md) (in Japanese).
 
 ### Outputs (`score-offline`, `analyze-profile`)
 
