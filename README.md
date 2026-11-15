@@ -321,7 +321,7 @@ uv run fdbja analyze-profile --results results/results.json --out results/profil
 uv run fdbja analyze-pause --eval-dir data/eval --out results/pause_gap   # Pause をギャップ長別に再集計(bootstrap CI 付き)
 uv run fdbja sample-human-eval --config configs/default.yaml --out ./human_eval   # 人手評価バンドル(Web UI 込み)
 uv run fdbja analyze-human-eval --responses <dir> --bundle ./human_eval --out <dir>   # 回収した回答の集計と自動指標との照合
-uv run fdbja measure rec.wav [--profile generic] [--condition key=value]   # 任意の 2 チャネル録音のタイミング統計(転写なし、リーダーボードとは比較不可)
+uv run fdbja measure rec.wav [--target listener-judgement|human-likeness|both] [--profile generic] [--condition key=value]   # 任意の 2 チャネル録音のタイミング統計(転写なし、リーダーボードとは比較不可)
 uv run fdbja make-profile <dir> --language ja --relationship R --situation S --medium M -o profile.json   # 人どうしの録音から measure 用の基準プロファイル
 ```
 
@@ -686,6 +686,8 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
   - ASR バックエンドの依存(`asr-reazon-whisperx` / `asr-nemo` / `asr-k2`)を extra から dependency group に移した
     (`uv sync --extra asr-...` は `uv sync --group asr-...` に)。ReazonSpeech は git リポジトリからだけ配布されており、
     PyPI が git の URL を直接指す依存を持つパッケージを受け付けないため。ロックファイルの各パッケージのバージョンは変わらない。
+  - PyPI での配布の準備: tag(`v*`)を push すると、配布物を組み立てて検査し、PyPI に公開するワークフロー
+    (`.github/workflows/publish.yml`、Trusted Publishing)。バージョンの一致と、配布物のメタデータに直接 URL の依存が無いことのテストを追加。
   - extra `always-talk`(pyopenjtalk)を追加。古い GPU ドライバでの torch の入れ替えと `uv run --no-sync` の手順を追記。
   - 商用 API の記載を、掲載値を取得したときの条件に合わせた(掲載値は変わらない)。`configs/default.yaml` の Gemini のモデル ID を、リーダーボードの出力に使った
     `gemini-3.1-flash-live-preview` に(従来の `gemini-live-2.5-flash-preview` は掲載値の取得に使っていない)。リーダーボードの表示名「Grok Voice 3.0」を
