@@ -186,7 +186,8 @@ uv run fdbja measure rec.wav --condition model=my-model      # ch0 = ユーザ�
 uv run fdbja measure recordings/ --json out.json             # ディレクトリ: 録音ごとの行と全体の集計
 uv run fdbja make-profile human_dialogues/ --language ja --relationship strangers \
     --situation chat --medium "video call" -o profile.json   # 人どうしの録音から基準プロファイルを作る
-uv run fdbja measure rec.wav --profile profile.json          # プロファイルに照らしたスコアを追加
+uv run fdbja measure rec.wav --profile profile.json          # 人の規範からの外れも出す(--target both と同じ)
+uv run fdbja measure rec.wav --profile profile.json --target human-likeness   # 人の規範からの外れだけ
 ```
 
 ```python
@@ -195,7 +196,8 @@ m = measure("rec.wav", conditions={"model": "my-model"})    # mono 2 本なら m
 print(m.stats["turn_end"]["latency_median"], m.signature)    # numpy 配列なら measure(x, sample_rate=16000)
 ```
 
-出力は次の記述統計です(音量ベースの検出器で、音声だけから事象を検出します)。
+出力の基本は次の記述統計です(音量ベースの検出器で、音声だけから事象を検出します)。
+これに、`--target` で選んだ対象のスコアが付きます(下の「何に照らして測るか」)。
 
 | 事象 | 出力 |
 |---|---|
@@ -207,8 +209,8 @@ print(m.stats["turn_end"]["latency_median"], m.signature)    # numpy 配列な�
 - **リーダーボードの数値とは比較できません**。事象を録音そのものから検出しており(評価セットの固定の事象ではない)、転写も使いません。
   取り違えないよう、キー名も `results.json` とは別にしてあります。
 - 休止の中の「短い発声 / 長い発声」は**長さだけで判定**しています。相槌かどうか、ターンを取ったかどうかは見ていません。
-- 数値には出力の `signature`(バージョン・検出の設定・プロファイル・チャネルの割り当てを 1 行にしたもの。例:
-  `fdbja:0.2.0.dev0|measure|vad:energy(p56)|events:default|profile:none|ch:user=0,sys=1`)と、録音の条件を添えて報告してください。
+- 数値には出力の `signature`(バージョン・検出の設定・プロファイル・スコアの対象・チャネルの割り当てを 1 行にしたもの。例:
+  `fdbja:0.2.0|measure|vad:energy(p56)|events:default|profile:none|target:listener-judgement|ch:user=0,sys=1`)と、録音の条件を添えて報告してください。
   録音の条件は `--condition key=value` で出力に残せます(モデル、声、プロンプト、回線など。key は自由)。
   プロンプトの中身を出したくないときは `--condition-file prompt=prompt.txt` でハッシュだけを記録できます。
 - 閾値は `--set turn_min_seconds=4`(Python では `config={"turn_min_seconds": 4}`)のように変えられ、変えた項目は `signature` に出ます。
@@ -217,13 +219,22 @@ print(m.stats["turn_end"]["latency_median"], m.signature)    # numpy 配列な�
 - システムが話している最中に来たユーザのターンの終わりは数えません(応答の遅延を定義できないため)。
   話し続けるシステムではこの割合(`turn_end.skipped_system_speaking_rate`)が大きくなり、応答なしの割合と遅延は残ったターンの終わりだけの値になります。
   割合が 0.3 以上のときは警告を出します(0.3 は目安で、検証した値ではありません)。
-- **基準プロファイル**(`--profile`)を渡すと、出力は 3 つの層になります(JSON の `layers` に、どの値がどの層に属するかが入ります)。
-  - (a) 記述統計: 上の表。プロファイルは要りません。
-  - (b) 人の規範からの外れ: 応答の遅延がプロファイルの許容範囲に入った割合と、許容範囲からの外れ(秒)。**応答なしは許容範囲の外として数えます**。
-    「人のふるまいに近いか」を表す値で、「聴取者が自然と判断するか」を表すとは限りません。
-  - (c) 人の判断と照合した指標: 休止に対する無反応と割り込みの割合の和(`pause_reaction_penalty`。`metrics/pause_response.py` のルールを、
-    ここで検出した休止に適用したもの)。探索的な指標です。構成は 1 回の聴取実験のデータで決めたもので、
-    `measure` の事象検出の上での聴取との対応は独立に検証していません。
+- **何に照らして測るか(`--target`)**。記述統計(層 a)に加えて、次の 2 つの対象のスコアを出せます。
+  2 つは別のキーで返ります。引数によって同じキーの意味が変わることはありません。選んだ対象は `signature` に入り、
+  JSON の `layers` にどの値がどの層に属するかが、`layers_reported` に出力した層が入ります。
+  - `listener-judgement`(聴取者の判断、層 c。`--profile` なしの既定): 休止に対する無反応と割り込みの割合の和
+    (`pause_reaction_penalty`。0〜2、小さいほどよい。`metrics/pause_response.py` のルールを、ここで検出した休止に適用したもの)。
+    プロファイルは要りません。このルールは、構成を決めた聴取実験とは別の、事前登録した聴取実験 1 回で、
+    第三者の聴取者が自然と判断した側との対応を確認しています(下の「提案指標」)。
+    確認したのはベンチマークの固定の休止の事象の上でであり、`measure` が自分で検出した休止の上では確認していません。
+    ターンの終わりについて、同じように確認した指標はまだありません。
+    また、聴取者が自然と判断することと、対話の当事者が好むことは同じとは限りません。
+  - `human-likeness`(人間らしさ、層 b。`--profile` が必要): 応答の遅延がプロファイルの許容範囲に入った割合と、許容範囲からの外れ(秒)。
+    **応答なしは許容範囲の外として数えます**。「人のふるまいに近いか」を表す値で、「聴取者が自然と判断するか」を表すとは限りません。
+  - `both`(`--profile` を渡したときの既定): 両方。
+
+  `--profile` なしで `human-likeness` / `both` を指定するとエラーになります(比べる規範が無いため)。綴りは `listener-judgment` も受け付けます。
+  Python では `measure("rec.wav", profile="profile.json", target="human-likeness")`。
 
   `make-profile` で作ったプロファイルは、基準にした録音自身を同じ設定で採点した値(`reference_score`)を持ち、`measure` は各スコアの横にその値を並べます。
   人どうしの録音でも許容範囲に入った割合は 1 に届かないので、スコアはこの値と比べて解釈してください(同じ録音での値なので、楽観的な目安です)。
@@ -514,7 +525,13 @@ Pause では成り立たず(人の判断との検証で、間に短く声を出�
 人の判断との検証([リーダーボードの「人の判断との検証」](https://llm-jp.github.io/full-duplex-bench-ja/#validation-sec)、聴取実験 2026-11)で、
 TOR・元の VAP-distance より人の選好と合った 2 つの指標を実装しています。どちらも既定の採点(TOR、元の VAP-distance)は変えず、
 有効にしたときだけ `score-offline` の要約(`summary.json` / `summary.csv`)と事象単位の結果に列が加わります。
-既定で無効にしているのは、検証が 1 コーパス(LLM-jp-Zoom1)・9 システムの聴取実験 1 回だけで、別のデータでの確認が済んでいないためです。
+既定で無効にしているのは、検証が 1 コーパス(LLM-jp-Zoom1)の評価セットの上に限られ、別のコーパスでの確認が済んでいないためです。
+検証の状況は 2 つの指標で違います。
+
+- Pause 指標: 構成を決めた聴取実験(9 システム)のあと、**事前登録した 2 回目の聴取実験**で聴取者の判断との対応を確認しました。
+  2 回目は同じ評価セットの事象で、1 回目に提示していないシステムの組だけを使いました(実システム 7 つ)。
+  参加者の一部は 1 回目にも参加していました(その参加者を除いた分析でも向きは同じでした)。2 回目の数値はまだ掲載していません。
+- 境界重み付き VAP-distance: 検証は 1 回目の聴取実験だけで、構成もそのデータで選んだものです。
 
 - **境界重み付き VAP-distance**(Smooth TT 用、`metrics.vap_distance.weighting: boundary`、`vap_distance.enabled: true` が前提)—
   元の VAP-distance が判定窓の D_KL(P_t‖Q_t) を等重みで平均するのに対し、境界 t0(A の話し終わり)からの重み
@@ -640,14 +657,15 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 
 ## ロードマップ
 
-1. **次のバージョン(0.2.0)** — 人の判断で検証した 2 指標(境界重み付き VAP-distance、割り込みと無反応を罰する Pause 指標)は main に実装済みです(既定では無効)。下の「未リリース」の整備と合わせて 0.2.0 としてリリースします。
+1. **0.2.0 のリリース** — 人の判断で検証した 2 指標(境界重み付き VAP-distance、割り込みと無反応を罰する Pause 指標。既定では無効)と、
+   手元の録音を測る `measure` を、下の変更履歴「0.2.0」の整備と合わせてリリースします。PyPI での配布もこのバージョンからの予定です。
 2. 評価データの公開(LLM-jp-Zoom1 の公開に連動)。
 3. システムの相槌課題(Backchanneling)を採点対象に(聴取で確認したあと)。
 4. システムが先に話している場面の 2 課題(v1 の User Interruption と、v1.5 のユーザの相槌)。設計案は [docs/design/next-tasks.md](docs/design/next-tasks.md)。
 
 ## バージョン / 変更履歴
 
-- **未リリース(main)** — 外部の利用者が自前のデータ・モデルで評価するための整備。採点の定義と既定値は変えていない(既存の数値は同じ手順で再現する)。
+- **0.2.0(未リリース)** — 外部の利用者が自前のデータ・モデルで評価するための整備。採点の定義と既定値は変えていない(既存の数値は同じ手順で再現する)。
   - 自前の 2 チャネル対話から評価セットを作る経路: `transcribe --wav` に `--channel 0 1 --speaker A B`(2 チャンネルを話者ラベル付きで 1 つの jchat に)、
     `reconstruct` に任意のディレクトリ構成を読む `corpus.layout: generic`(`--layout generic`)、話者ラベルが A / B でない転写の警告。合成データの `--layout generic --audio-only`。
   - 自作モデルをつなぐ口: `fdbja.adapters.register_adapter`、config の `adapter: "モジュール:クラス"` と `adapter: offline`、例 `examples/adapters/`。
@@ -668,7 +686,9 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
   - `measure` / `make-profile` コマンドと `from fdbja import measure, load_profile, make_profile`: 任意の 2 チャネル録音から、
     転写なしでタイミングの統計(応答の遅延、休止の中の発声、重なり、発話時間の割合)を出す入口。基本依存だけで動く。
     差し替え可能な基準プロファイル(同梱は `generic` のみ。`make-profile` で作ったものは基準の録音自身の採点値を持つ)と、数値に添える `signature`。
-    出力は記述統計 / 人の規範からの外れ / 人の判断と照合した指標(探索的)の 3 つの層に分けて示す。リーダーボードの数値とは比較できない(README「自分の 2 チャネル音声を測る」)。
+    出力は記述統計 / 人の規範からの外れ / 聴取者の判断と照合した指標の 3 つの層に分けて示し、スコアの対象は `--target`
+    (`listener-judgement` / `human-likeness` / `both`)で選ぶ。聴取者の判断と照合した指標(休止に対する無反応と割り込み)はプロファイルなしでも出る。
+    2 つの対象は別のキーで返し、選んだ対象は `signature` に入る。リーダーボードの数値とは比較できない(README「自分の 2 チャネル音声を測る」)。
     録音ごと・チャネルごとに録音の品質(雑音、チャネル間の音漏れ、クリップ、録音レベル)を推定し、確かめた範囲の外と思われる録音には、
     値のずれる向きを添えた警告を出す(計測値は変えない)。範囲と警告の条件は README「対応する録音条件」。
   - `leaderboard --reference`: 参照側の採点条件に説明文が付いていても値の一致を判定するように修正(`docs/results.json` と並べると境界が同じでも警告が出ていた)。
