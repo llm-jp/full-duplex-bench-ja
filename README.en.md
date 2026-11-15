@@ -384,7 +384,11 @@ repeated on another corpus. When reading the Pause ranking, note that:
   share of pauses with a barge-in is larger than the share of pauses with a reaction;
 - any voice of at least 0.2 s counts as a reaction; backchannels, breaths and noise are not told apart;
 - listeners preferred systems that reacted briefly in the pause and did not talk over the partner. This is
-  not the behaviour of the recorded human B, who rarely speaks in the pauses of this evaluation set.
+  not the behaviour of the recorded human B, who rarely speaks in the pauses of this evaluation set;
+- the three commercial-API rows can be affected by two unfixed points of the adapters (items 4 and 5 of the
+  known limitations below): interruption notices are ignored, so a response that the API would have cut
+  short can be counted as a barge-in, and responses are placed by arrival time, so a reaction in the pause
+  appears later by the network delay.
 
 - **Boundary-weighted VAP-distance** (Smooth TT; `metrics.vap_distance.weighting: boundary`, needs
   `vap_distance.enabled: true`). Instead of the equal-weight mean of D_KL(P_t‖Q_t) over the judgement window, d_t is
