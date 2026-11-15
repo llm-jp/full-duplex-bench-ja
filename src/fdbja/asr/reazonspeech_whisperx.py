@@ -15,7 +15,7 @@ The ESPnet checkpoint is fetched with ``huggingface_hub`` and loaded directly
 ``espnet_model_zoo``'s own downloader is not used because its releases for
 Python < 3.12 no longer cope with the Hub's redirects.
 
-Install: ``uv sync --extra asr-reazon-whisperx``.
+Install: ``uv sync --group asr-reazon-whisperx``.
 """
 
 from __future__ import annotations

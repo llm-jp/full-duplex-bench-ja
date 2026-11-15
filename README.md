@@ -25,7 +25,7 @@ Backchanneling(システムの相槌)は事象の定義だけを公開してお�
 **Quick start**(LLM-jp-Zoom1 が手元にある場合。合成データでの 1 分の動作確認は下の「[クイックスタート](#クイックスタート)」1.)
 
 ```bash
-uv sync --extra asr-reazon-whisperx                        # 1. インストール(ASR バックエンドを 1 つ)
+uv sync --group asr-reazon-whisperx                        # 1. インストール(ASR バックエンドを 1 つ)
 uv run fdbja reconstruct --config configs/default.yaml     # 2. 評価クリップを作る(config の corpus.zoom1_root を設定)
 # 応答を用意: `fdbja infer` + `fdbja transcribe`、または combined.wav を置く(「[モデルアダプタ](#モデルアダプタ)」)
 uv run fdbja score-offline --config configs/default.yaml   # 3. 採点 → results/summary.json
@@ -42,7 +42,7 @@ uv run fdbja leaderboard --reference docs/results.json     # 4. リーダーボ�
 |------|-----------|
 | 採点(二値 TOR) | Python 3.10 以上、[uv](https://docs.astral.sh/uv/) |
 | 採点(VAP-distance) | 上に加えて `.[vap]`(torch)、[VAP-Realtime](https://github.com/inokoj/VAP-Realtime) のローカル clone(CPC エンコーダ同梱)、日本語 VAP チェックポイント [`maai-kyoto/vap_jp_kyoto`](https://huggingface.co/maai-kyoto/vap_jp_kyoto) の `vap_state_dict_jp_kyoto_20hz_2500msec.pt`(MIT。リビジョン固定で取得)を `<VAP_REALTIME_ROOT>/asset/vap/` に置く。手順は下の「VAP-distance の準備」 |
-| モデル出力の ASR 転写(`transcribe`) | いずれか 1 つの extra: `.[asr-reazon-whisperx]`(既定。ReazonSpeech-ESPnet + WhisperX。論文の数値を出した経路)/ `.[asr-nemo]`(ReazonSpeech NeMo v2、整列器なしで高速)/ `.[asr-k2]`(ReazonSpeech k2 v2、CPU 可)。モデルの重みは初回実行時に Hugging Face Hub から取得 |
+| モデル出力の ASR 転写(`transcribe`) | いずれか 1 つの dependency group(clone した場所で `uv sync --group <名前>`): `asr-reazon-whisperx`(既定。ReazonSpeech-ESPnet + WhisperX。論文の数値を出した経路)/ `asr-nemo`(ReazonSpeech NeMo v2、整列器なしで高速)/ `asr-k2`(ReazonSpeech k2 v2、CPU 可)。モデルの重みは初回実行時に Hugging Face Hub から取得 |
 | 評価クリップの生成 | LLM-jp-Zoom1 のローカルコピー([DATASET.md](DATASET.md))、または自前の 2 チャネル対話の録音(下の「3. 自前の 2 チャネル対話から評価セットを作る」) |
 | モデル推論(`infer`) | 評価対象に応じて Moshi 系 WebSocket サーバ、`GOOGLE_API_KEY`、`OPENAI_API_KEY`、`XAI_API_KEY`。自作モデルは `ModelAdapter` を実装する(「モデルアダプタ」) |
 | 常時発話のベースライン(`always_talk`、既定の `source: auto`) | `.[always-talk]`(pyopenjtalk。初回に Open JTalk で 60 秒の音声ループを合成)。入れない場合は `source_wav` に音声ファイルを指定 |
@@ -51,11 +51,11 @@ uv run fdbja leaderboard --reference docs/results.json     # 4. リーダーボ�
 ### GPU ドライバが古い場合(torch の入れ替えと `--no-sync`)
 
 `nvidia-smi` の右上の `CUDA Version` が 12.x(例: ドライバ 550 系 = CUDA 12.4)の環境では、ロックされた torch は GPU を使えません
-(CPU に落ちる、または `CUDA driver version is insufficient` などのエラー)。extra を入れたあと、ドライバに合う CUDA の版の torch に入れ替えます。
+(CPU に落ちる、または `CUDA driver version is insufficient` などのエラー)。依存を入れたあと、ドライバに合う CUDA の版の torch に入れ替えます。
 
 ```bash
 nvidia-smi | head -4                                        # 右上の CUDA Version を確認
-uv sync --extra asr-reazon-whisperx                         # まず通常どおり入れる
+uv sync --group asr-reazon-whisperx                         # まず通常どおり入れる
 uv pip install --reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu126   # CUDA 12.x のドライバ向け
 uv run --no-sync python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 uv run --no-sync fdbja transcribe --config configs/default.yaml
@@ -93,7 +93,7 @@ VAP-distance も確かめる場合は、下の「VAP-distance の準備」を済
 ### 2. 実データで評価する
 
 ```bash
-uv sync --extra asr-reazon-whisperx                         # ASR バックエンド(1 つ選ぶ。下の表を参照)
+uv sync --group asr-reazon-whisperx                         # ASR バックエンド(1 つ選ぶ。下の表を参照)
 # configs/default.yaml の corpus.zoom1_root を LLM-jp-Zoom1 の場所に、models を評価対象に合わせて書き換える
 uv run fdbja reconstruct --config configs/default.yaml      # LLM-jp-Zoom1 → 事象検出 → 20 秒クリップ + manifest
 uv run fdbja infer --config configs/default.yaml            # 話者 A の音声をモデルに流し応答を録る
@@ -180,13 +180,16 @@ uv run fdbja score-offline --config examples/dummy/config_own_dialogues.yaml
 
 評価セットを使わずに、手元の対話の録音(ユーザとシステムが別々のチャネルに入った wav)からタイミングの統計を出します。
 転写も注釈も要らず、基本依存(numpy / soundfile / pyyaml)だけで動きます(`uv sync` のみ、extra は不要)。
+0.2.0 からは PyPI でも配布する予定で、リポジトリを clone せずに `pip install fdbja` で入れて `fdbja measure rec.wav` と呼べるようになります
+(その場合は下のコマンドの `uv run` を外してください)。
 
 ```bash
 uv run fdbja measure rec.wav --condition model=my-model      # ch0 = ユーザ、ch1 = システム(逆なら --user-channel 1)
 uv run fdbja measure recordings/ --json out.json             # ディレクトリ: 録音ごとの行と全体の集計
 uv run fdbja make-profile human_dialogues/ --language ja --relationship strangers \
     --situation chat --medium "video call" -o profile.json   # 人どうしの録音から基準プロファイルを作る
-uv run fdbja measure rec.wav --profile profile.json          # プロファイルに照らしたスコアを追加
+uv run fdbja measure rec.wav --profile profile.json          # 人の規範からの外れも出す(--target both と同じ)
+uv run fdbja measure rec.wav --profile profile.json --target human-likeness   # 人の規範からの外れだけ
 ```
 
 ```python
@@ -195,20 +198,21 @@ m = measure("rec.wav", conditions={"model": "my-model"})    # mono 2 本なら m
 print(m.stats["turn_end"]["latency_median"], m.signature)    # numpy 配列なら measure(x, sample_rate=16000)
 ```
 
-出力は次の記述統計です(音量ベースの検出器で、音声だけから事象を検出します)。
+出力の基本は次の記述統計です(音量ベースの検出器で、音声だけから事象を検出します)。
+これに、`--target` で選んだ対象のスコアが付きます(下の「何に照らして測るか」)。
 
 | 事象 | 出力 |
 |---|---|
 | ユーザのターンの終わり | 応答の遅延(符号つき。負 = ユーザが話し終える前に話し始めた)の中央値・四分位・件数、応答なしの割合、システムが話している最中で数えなかったターンの終わりの件数と割合 |
-| ユーザのターン内の休止(0.4〜1.0 秒) | システムが声を出した割合。1.5 秒以下を「短い発声」、それより長いものを「長い発声」に分ける |
+| ユーザのターン内のポーズ(0.4〜1.0 秒) | システムが声を出した割合。1.5 秒以下を「短い発声」、それより長いものを「長い発声」に分ける |
 | ユーザの発話中にシステムが話し始めた箇所 | 回数(ユーザの発話 1 分あたり)、両者が同時に声を出していた時間の割合 |
 | 全体 | 話者ごとの発話時間の割合 |
 
 - **リーダーボードの数値とは比較できません**。事象を録音そのものから検出しており(評価セットの固定の事象ではない)、転写も使いません。
   取り違えないよう、キー名も `results.json` とは別にしてあります。
-- 休止の中の「短い発声 / 長い発声」は**長さだけで判定**しています。相槌かどうか、ターンを取ったかどうかは見ていません。
-- 数値には出力の `signature`(バージョン・検出の設定・プロファイル・チャネルの割り当てを 1 行にしたもの。例:
-  `fdbja:0.2.0.dev0|measure|vad:energy(p56)|events:default|profile:none|ch:user=0,sys=1`)と、録音の条件を添えて報告してください。
+- ポーズの中の「短い発声 / 長い発声」は**長さだけで判定**しています。相槌かどうか、ターンを取ったかどうかは見ていません。
+- 数値には出力の `signature`(バージョン・検出の設定・プロファイル・スコアの対象・チャネルの割り当てを 1 行にしたもの。例:
+  `fdbja:0.2.0|measure|vad:energy(p56)|events:default|profile:none|target:listener-judgement|ch:user=0,sys=1`)と、録音の条件を添えて報告してください。
   録音の条件は `--condition key=value` で出力に残せます(モデル、声、プロンプト、回線など。key は自由)。
   プロンプトの中身を出したくないときは `--condition-file prompt=prompt.txt` でハッシュだけを記録できます。
 - 閾値は `--set turn_min_seconds=4`(Python では `config={"turn_min_seconds": 4}`)のように変えられ、変えた項目は `signature` に出ます。
@@ -217,13 +221,22 @@ print(m.stats["turn_end"]["latency_median"], m.signature)    # numpy 配列な�
 - システムが話している最中に来たユーザのターンの終わりは数えません(応答の遅延を定義できないため)。
   話し続けるシステムではこの割合(`turn_end.skipped_system_speaking_rate`)が大きくなり、応答なしの割合と遅延は残ったターンの終わりだけの値になります。
   割合が 0.3 以上のときは警告を出します(0.3 は目安で、検証した値ではありません)。
-- **基準プロファイル**(`--profile`)を渡すと、出力は 3 つの層になります(JSON の `layers` に、どの値がどの層に属するかが入ります)。
-  - (a) 記述統計: 上の表。プロファイルは要りません。
-  - (b) 人の規範からの外れ: 応答の遅延がプロファイルの許容範囲に入った割合と、許容範囲からの外れ(秒)。**応答なしは許容範囲の外として数えます**。
-    「人のふるまいに近いか」を表す値で、「聴取者が自然と判断するか」を表すとは限りません。
-  - (c) 人の判断と照合した指標: 休止に対する無反応と割り込みの割合の和(`pause_reaction_penalty`。`metrics/pause_response.py` のルールを、
-    ここで検出した休止に適用したもの)。探索的な指標です。構成は 1 回の聴取実験のデータで決めたもので、
-    `measure` の事象検出の上での聴取との対応は独立に検証していません。
+- **何に照らして測るか(`--target`)**。記述統計(層 a)に加えて、次の 2 つの対象のスコアを出せます。
+  2 つは別のキーで返ります。引数によって同じキーの意味が変わることはありません。選んだ対象は `signature` に入り、
+  JSON の `layers` にどの値がどの層に属するかが、`layers_reported` に出力した層が入ります。
+  - `listener-judgement`(聴取者の判断、層 c。`--profile` なしの既定): ポーズに対する無反応と割り込みの割合の和
+    (`pause_reaction_penalty`。0〜2、小さいほどよい。`metrics/pause_response.py` のルールを、ここで検出したポーズに適用したもの)。
+    プロファイルは要りません。このルールは、構成を決めた聴取実験とは別の、事前登録した聴取実験 1 回で、
+    第三者の聴取者が自然と判断した側との対応を確認しています(下の「提案指標」)。
+    確認したのはベンチマークの固定のポーズの事象の上でであり、`measure` が自分で検出したポーズの上では確認していません。
+    ターンの終わりについて、同じように確認した指標はまだありません。
+    また、聴取者が自然と判断することと、対話の当事者が好むことは同じとは限りません。
+  - `human-likeness`(人間らしさ、層 b。`--profile` が必要): 応答の遅延がプロファイルの許容範囲に入った割合と、許容範囲からの外れ(秒)。
+    **応答なしは許容範囲の外として数えます**。「人のふるまいに近いか」を表す値で、「聴取者が自然と判断するか」を表すとは限りません。
+  - `both`(`--profile` を渡したときの既定): 両方。
+
+  `--profile` なしで `human-likeness` / `both` を指定するとエラーになります(比べる規範が無いため)。綴りは `listener-judgment` も受け付けます。
+  Python では `measure("rec.wav", profile="profile.json", target="human-likeness")`。
 
   `make-profile` で作ったプロファイルは、基準にした録音自身を同じ設定で採点した値(`reference_score`)を持ち、`measure` は各スコアの横にその値を並べます。
   人どうしの録音でも許容範囲に入った割合は 1 に届かないので、スコアはこの値と比べて解釈してください(同じ録音での値なので、楽観的な目安です)。
@@ -240,17 +253,17 @@ print(m.stats["turn_end"]["latency_median"], m.signature)    # numpy 配列な�
 音量を一律に変える、のいずれかを施し、施す前と比べて `measure` の値(事象の件数、応答の遅延の中央値、各割合)が変わらない範囲を調べました。
 
 - チャネルの分離: 相手の声の漏れ込みが、片方向(システムの声がユーザ側に漏れる)なら −30 dB 以下、双方向なら −40 dB 以下の録音を想定しています。
-  それより大きいと、漏れた声がそのチャネルの発話として数えられ、重なりと休止が増え始めます。
+  それより大きいと、漏れた声がそのチャネルの発話として数えられ、重なりとポーズが増え始めます。
   −20 dB では重なり・ユーザの発話中の話し始め・`pause_reaction_penalty` が大きく増え、ターンの終わりが減ります。
   スピーカーの音をマイクが拾う収録では、エコー除去後の、話者ごとに分かれた録音を使ってください。
 - 片方がほぼ無音の録音: 片方のチャネルに声が無い、またはほとんど無い(何も話さないシステムなど)ときは、−40 dB の弱い漏れ込みでも、
   漏れた声がそのチャネルの発話として数えられます(発話判定の閾値がそのチャネルの音の大きさに合わせて下がるため)。
   声が少しだけあるチャネルも、声の多いチャネルより弱い漏れ込み(−30 dB)で値が動きやすくなります。
 - 雑音: 定常的な雑音は、発話のレベルとの差(SNR)が 25 dB 以上の録音を想定しています。20 dB 前後では沈黙が雑音で埋まり、
-  重なりがやや増え、休止とターンの終わりがやや減ります。15 dB 以下では弱い発話が落ち、ターンの終わりの件数・応答なしの割合・応答の遅延が大きく出ます。
+  重なりがやや増え、ポーズとターンの終わりがやや減ります。15 dB 以下では弱い発話が落ち、ターンの終わりの件数・応答なしの割合・応答の遅延が大きく出ます。
   笑い・息・咳のような定常でない音は、大きさにかかわらず発話と区別しません。
-- 録音レベル: クリップしていない録音を使ってください(クリップすると重なりがわずかに増え、休止とターンの終わりがわずかに減ります)。
-  発話のレベルが −40 dBFS より小さい録音では、発話判定の下限(`min_level_db`、既定 −60 dBFS)に掛かって弱い発話が落ち、休止とターンの終わりが増えます。
+- 録音レベル: クリップしていない録音を使ってください(クリップすると重なりがわずかに増え、ポーズとターンの終わりがわずかに減ります)。
+  発話のレベルが −40 dBFS より小さい録音では、発話判定の下限(`min_level_db`、既定 −60 dBFS)に掛かって弱い発話が落ち、ポーズとターンの終わりが増えます。
   その場合は `--set min_level_db=-84` のように下限を下げてください。
 - サンプリング周波数: 16 / 24 / 48 kHz で結果はほぼ変わりません。
 - 録音の長さ: 60 分の録音まで確かめています。メモリは wav ファイルのサイズの約 6 倍を使います。
@@ -264,10 +277,10 @@ print(m.stats["turn_end"]["latency_median"], m.signature)    # numpy 配列な�
 
 | 警告 | 出す条件 | 値のずれる向き |
 |---|---|---|
-| 雑音(`noise`) | 発話のレベルと、声の無いフレームのレベル(中央値)の差が 22 dB 未満(SNR 25 dB の録音には出ず、20 dB の録音には出る) | 休止とターンの終わりが減り、重なりが増える。雑音がさらに強いと、応答なしの割合と応答の遅延が大きく出る |
-| 音漏れの疑い(`leak`) | 相手が話している区間のチャネル間の相互相関(正規化した最大値が 0.05 以上)から推定した漏れの大きさが −27.5 dB 以上。声の少ないチャネルでは、それより弱くても、漏れた声がそのチャネルの発話判定の閾値まで 5 dB 以内に届くとき | 重なり・ユーザの発話中の話し始め・休止の中の発声が増え、ターンの終わりが減る |
-| クリップ(`clipping`) | そのチャネルの最大値に張り付いた標本が 0.1% 以上 | 重なりがわずかに増え、休止とターンの終わりがわずかに減る |
-| 録音が小さい(`low_level`) | 発話判定の閾値を決めたのが固定の下限(`min_level_db`)だった | 休止とターンの終わりが増え、重なりが減る。`--set min_level_db=-84` で下限を下げると戻る |
+| 雑音(`noise`) | 発話のレベルと、声の無いフレームのレベル(中央値)の差が 22 dB 未満(SNR 25 dB の録音には出ず、20 dB の録音には出る) | ポーズとターンの終わりが減り、重なりが増える。雑音がさらに強いと、応答なしの割合と応答の遅延が大きく出る |
+| 音漏れの疑い(`leak`) | 相手が話している区間のチャネル間の相互相関(正規化した最大値が 0.05 以上)から推定した漏れの大きさが −27.5 dB 以上。声の少ないチャネルでは、それより弱くても、漏れた声がそのチャネルの発話判定の閾値まで 5 dB 以内に届くとき | 重なり・ユーザの発話中の話し始め・ポーズの中の発声が増え、ターンの終わりが減る |
+| クリップ(`clipping`) | そのチャネルの最大値に張り付いた標本が 0.1% 以上 | 重なりがわずかに増え、ポーズとターンの終わりがわずかに減る |
+| 録音が小さい(`low_level`) | 発話判定の閾値を決めたのが固定の下限(`min_level_db`)だった | ポーズとターンの終わりが増え、重なりが減る。`--set min_level_db=-84` で下限を下げると戻る |
 
 - 片方のチャネルにほとんど声が無い録音(声のあるフレームが 2% 未満)には、警告ではなく注記(`notes`)を出します。
   値がずれているとは限りませんが、弱い音漏れでも値が変わる録音です。
@@ -283,7 +296,7 @@ print(m.stats["turn_end"]["latency_median"], m.signature)    # numpy 配列な�
 ### VAP-distance の準備(実験的指標を使う場合のみ)
 
 ```bash
-uv sync --extra vap                                   # ASR の extra と併用するなら --extra を並べる
+uv sync --extra vap                                   # ASR と併用するなら --group asr-... を並べる
 git clone https://github.com/inokoj/VAP-Realtime.git ../VAP-Realtime   # CPC エンコーダ(asset/cpc/)を同梱
 curl -L -o ../VAP-Realtime/asset/vap/vap_state_dict_jp_kyoto_20hz_2500msec.pt \
   https://huggingface.co/maai-kyoto/vap_jp_kyoto/resolve/fe24ac60d8fcc80463edde97ed90e3ceca5e5b88/vap_state_dict_jp_kyoto_20hz_2500msec.pt
@@ -308,7 +321,7 @@ uv run fdbja analyze-profile --results results/results.json --out results/profil
 uv run fdbja analyze-pause --eval-dir data/eval --out results/pause_gap   # Pause をギャップ長別に再集計(bootstrap CI 付き)
 uv run fdbja sample-human-eval --config configs/default.yaml --out ./human_eval   # 人手評価バンドル(Web UI 込み)
 uv run fdbja analyze-human-eval --responses <dir> --bundle ./human_eval --out <dir>   # 回収した回答の集計と自動指標との照合
-uv run fdbja measure rec.wav [--profile generic] [--condition key=value]   # 任意の 2 チャネル録音のタイミング統計(転写なし、リーダーボードとは比較不可)
+uv run fdbja measure rec.wav [--target listener-judgement|human-likeness|both] [--profile generic] [--condition key=value]   # 任意の 2 チャネル録音のタイミング統計(転写なし、リーダーボードとは比較不可)
 uv run fdbja make-profile <dir> --language ja --relationship R --situation S --medium M -o profile.json   # 人どうしの録音から measure 用の基準プロファイル
 ```
 
@@ -356,13 +369,16 @@ uv run fdbja make-profile <dir> --language ja --relationship R --situation S --m
 ### ASR バックエンド
 
 `transcribe` は `infer` が書いた `combined.wav` の ch1(モデル応答)を文字単位の時刻付き転写(jchat)にします。
-config の `asr.backend` で選び、それぞれ専用の extra を入れます(依存する torch / numpy の範囲が違うため 1 環境に 1 つ)。
+config の `asr.backend` で選び、それぞれ専用の dependency group を入れます(依存する torch / numpy の範囲が違うため 1 環境に 1 つ)。
+リポジトリを clone した場所で `uv sync --group asr-reazon-whisperx` のように入れてください。pip なら `pip install -e . --group asr-reazon-whisperx`(pip 25.1 以上)。
+extra ではなく dependency group にしているのは、ReazonSpeech が git リポジトリからだけ配布されており、
+PyPI が git の URL を直接指す依存を持つパッケージを受け付けないためです(0.1.0 では extra でした。`--extra asr-...` は `--group asr-...` に読み替えてください)。
 
-| バックエンド | 経路 | 文字の時刻 | 追加依存 |
+| バックエンド | 経路 | 文字の時刻 | dependency group |
 |------------|------|-----------|---------|
-| `reazonspeech_whisperx`(既定) | [ReazonSpeech-ESPnet v2](https://huggingface.co/reazon-research/reazonspeech-espnet-v2) の区間転写 → [WhisperX](https://github.com/m-bain/whisperX) で wav2vec2 CTC 整列 | 整列器が文字ごとに推定 | `.[asr-reazon-whisperx]`(espnet + whisperx、GPU で 20 秒クリップ約 2.5 秒、VRAM 約 3 GB) |
-| `reazonspeech_nemo` | [ReazonSpeech NeMo v2](https://huggingface.co/reazon-research/reazonspeech-nemo-v2)(FastConformer-RNNT、日本語) | トークンの発火時刻。**サブワード内は文字数で均等分割**し、0.5 秒以内の間は次トークンまで橋渡し(近似。`asr/_subword.py`) | `.[asr-nemo]`(NeMo、GPU 推奨。20 秒クリップ約 0.5 秒、VRAM 約 5 GB) |
-| `reazonspeech_k2` | [ReazonSpeech k2 v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2)(Zipformer、sherpa-onnx) | 同上 | `.[asr-k2]`(ONNX、CPU で 20 秒クリップ約 1 秒。最も軽い) |
+| `reazonspeech_whisperx`(既定) | [ReazonSpeech-ESPnet v2](https://huggingface.co/reazon-research/reazonspeech-espnet-v2) の区間転写 → [WhisperX](https://github.com/m-bain/whisperX) で wav2vec2 CTC 整列 | 整列器が文字ごとに推定 | `asr-reazon-whisperx`(espnet + whisperx、GPU で 20 秒クリップ約 2.5 秒、VRAM 約 3 GB) |
+| `reazonspeech_nemo` | [ReazonSpeech NeMo v2](https://huggingface.co/reazon-research/reazonspeech-nemo-v2)(FastConformer-RNNT、日本語) | トークンの発火時刻。**サブワード内は文字数で均等分割**し、0.5 秒以内の間は次トークンまで橋渡し(近似。`asr/_subword.py`) | `asr-nemo`(NeMo、GPU 推奨。20 秒クリップ約 0.5 秒、VRAM 約 5 GB) |
+| `reazonspeech_k2` | [ReazonSpeech k2 v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2)(Zipformer、sherpa-onnx) | 同上 | `asr-k2`(ONNX、CPU で 20 秒クリップ約 1 秒。最も軽い) |
 
 リーダーボードと論文の TOR は `reazonspeech_whisperx` の経路で計算しました。同じ音声に対して
 ESPnet の転写文は完全に再現され、文字の開始時刻の差は中央値 0.04 秒でした(6 クリップ)。
@@ -514,7 +530,13 @@ Pause では成り立たず(人の判断との検証で、間に短く声を出�
 人の判断との検証([リーダーボードの「人の判断との検証」](https://llm-jp.github.io/full-duplex-bench-ja/#validation-sec)、聴取実験 2026-11)で、
 TOR・元の VAP-distance より人の選好と合った 2 つの指標を実装しています。どちらも既定の採点(TOR、元の VAP-distance)は変えず、
 有効にしたときだけ `score-offline` の要約(`summary.json` / `summary.csv`)と事象単位の結果に列が加わります。
-既定で無効にしているのは、検証が 1 コーパス(LLM-jp-Zoom1)・9 システムの聴取実験 1 回だけで、別のデータでの確認が済んでいないためです。
+既定で無効にしているのは、検証が 1 コーパス(LLM-jp-Zoom1)の評価セットの上に限られ、別のコーパスでの確認が済んでいないためです。
+検証の状況は 2 つの指標で違います。
+
+- Pause 指標: 構成を決めた聴取実験(9 システム)のあと、**事前登録した 2 回目の聴取実験**で聴取者の判断との対応を確認しました。
+  2 回目は同じ評価セットの事象で、1 回目に提示していないシステムの組だけを使いました(実システム 7 つ)。
+  参加者の一部は 1 回目にも参加していました(その参加者を除いた分析でも向きは同じでした)。2 回目の数値はまだ掲載していません。
+- 境界重み付き VAP-distance: 検証は 1 回目の聴取実験だけで、構成もそのデータで選んだものです。
 
 - **境界重み付き VAP-distance**(Smooth TT 用、`metrics.vap_distance.weighting: boundary`、`vap_distance.enabled: true` が前提)—
   元の VAP-distance が判定窓の D_KL(P_t‖Q_t) を等重みで平均するのに対し、境界 t0(A の話し終わり)からの重み
@@ -609,9 +631,9 @@ LLM-jp-Zoom1 は公開準備中です。コーパスが手元に無い場合は�
 | CPC エンコーダ `60k_epoch4-d0f474de.pt` | MIT(facebookresearch/CPC_audio) | 同上 |
 | ReazonSpeech(コード、`reazonspeech-{nemo,k2,espnet}-asr`) | Apache-2.0 | [reazon-research/ReazonSpeech](https://github.com/reazon-research/ReazonSpeech) |
 | ReazonSpeech モデル(`reazonspeech-nemo-v2` / `reazonspeech-k2-v2` / `reazonspeech-espnet-v2`) | Apache-2.0(各モデルカード) | [Hugging Face: reazon-research](https://huggingface.co/reazon-research) |
-| NVIDIA NeMo(`nemo_toolkit`、`.[asr-nemo]` の依存) | Apache-2.0 | [NVIDIA/NeMo](https://github.com/NVIDIA/NeMo) |
-| sherpa-onnx(`.[asr-k2]` の依存) | Apache-2.0 | [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) |
-| ESPnet(`.[asr-reazon-whisperx]` の依存) | Apache-2.0 | [espnet/espnet](https://github.com/espnet/espnet) |
+| NVIDIA NeMo(`nemo_toolkit`、`asr-nemo` の依存) | Apache-2.0 | [NVIDIA/NeMo](https://github.com/NVIDIA/NeMo) |
+| sherpa-onnx(`asr-k2` の依存) | Apache-2.0 | [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) |
+| ESPnet(`asr-reazon-whisperx` の依存) | Apache-2.0 | [espnet/espnet](https://github.com/espnet/espnet) |
 | WhisperX(整列) | BSD-2-Clause | [m-bain/whisperX](https://github.com/m-bain/whisperX) |
 | WhisperX が日本語整列に使う wav2vec2 モデル(`jonatasgrosman/wav2vec2-large-xlsr-53-japanese`) | Apache-2.0(モデルカード) | [Hugging Face](https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-japanese) |
 | Full-Duplex-Bench(設計の出典) | CC BY-NC 4.0。本リポジトリはコードを流用せず、事象定義と TOR の定義を独立に再実装 | [DanielLin94144/Full-Duplex-Bench](https://github.com/DanielLin94144/Full-Duplex-Bench) |
@@ -640,14 +662,15 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 
 ## ロードマップ
 
-1. **次のバージョン(0.2.0)** — 人の判断で検証した 2 指標(境界重み付き VAP-distance、割り込みと無反応を罰する Pause 指標)は main に実装済みです(既定では無効)。下の「未リリース」の整備と合わせて 0.2.0 としてリリースします。
+1. **0.2.0 のリリース** — 人の判断で検証した 2 指標(境界重み付き VAP-distance、割り込みと無反応を罰する Pause 指標。既定では無効)と、
+   手元の録音を測る `measure` を、下の変更履歴「0.2.0」の整備と合わせてリリースします。PyPI での配布もこのバージョンからの予定です。
 2. 評価データの公開(LLM-jp-Zoom1 の公開に連動)。
 3. システムの相槌課題(Backchanneling)を採点対象に(聴取で確認したあと)。
 4. システムが先に話している場面の 2 課題(v1 の User Interruption と、v1.5 のユーザの相槌)。設計案は [docs/design/next-tasks.md](docs/design/next-tasks.md)。
 
 ## バージョン / 変更履歴
 
-- **未リリース(main)** — 外部の利用者が自前のデータ・モデルで評価するための整備。採点の定義と既定値は変えていない(既存の数値は同じ手順で再現する)。
+- **0.2.0(未リリース)** — 外部の利用者が自前のデータ・モデルで評価するための整備。採点の定義と既定値は変えていない(既存の数値は同じ手順で再現する)。
   - 自前の 2 チャネル対話から評価セットを作る経路: `transcribe --wav` に `--channel 0 1 --speaker A B`(2 チャンネルを話者ラベル付きで 1 つの jchat に)、
     `reconstruct` に任意のディレクトリ構成を読む `corpus.layout: generic`(`--layout generic`)、話者ラベルが A / B でない転写の警告。合成データの `--layout generic --audio-only`。
   - 自作モデルをつなぐ口: `fdbja.adapters.register_adapter`、config の `adapter: "モジュール:クラス"` と `adapter: offline`、例 `examples/adapters/`。
@@ -660,15 +683,22 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
     (`metrics.pause_response`、要約の `pause_response` / `pause_no_response_rate` / `pause_interrupt_rate`)。既定の採点は変わらない。
   - `leaderboard` コマンド: `summary.json` をリーダーボードと同じ順位で表示し、`--reference docs/results.json` で掲載値と並べる(採点条件が違えば警告)。
   - CI に Python 3.13 と extras(vap / analysis / always-talk)の import・解決の確認を追加。開発依存に pytest-cov。
+  - ASR バックエンドの依存(`asr-reazon-whisperx` / `asr-nemo` / `asr-k2`)を extra から dependency group に移した
+    (`uv sync --extra asr-...` は `uv sync --group asr-...` に)。ReazonSpeech は git リポジトリからだけ配布されており、
+    PyPI が git の URL を直接指す依存を持つパッケージを受け付けないため。ロックファイルの各パッケージのバージョンは変わらない。
+  - PyPI での配布の準備: tag(`v*`)を push すると、配布物を組み立てて検査し、PyPI に公開するワークフロー
+    (`.github/workflows/publish.yml`、Trusted Publishing)。バージョンの一致と、配布物のメタデータに直接 URL の依存が無いことのテストを追加。
   - extra `always-talk`(pyopenjtalk)を追加。古い GPU ドライバでの torch の入れ替えと `uv run --no-sync` の手順を追記。
   - 商用 API の記載を、掲載値を取得したときの条件に合わせた(掲載値は変わらない)。`configs/default.yaml` の Gemini のモデル ID を、リーダーボードの出力に使った
     `gemini-3.1-flash-live-preview` に(従来の `gemini-live-2.5-flash-preview` は掲載値の取得に使っていない)。リーダーボードの表示名「Grok Voice 3.0」を
     「Grok Voice」に(取得は 2026-07 の `grok-voice-latest` で、3.0 の公開より前)。README「モデルアダプタ」とリーダーボードの注記に、取得時期とモデル ID を記載。
   - リーダーボードのサンプル欄に境界の切り替え(音声の境界 / 文字の境界)を追加し、Smooth TT のサンプル事象を差し替え(掲載値は変わらない)。
   - `measure` / `make-profile` コマンドと `from fdbja import measure, load_profile, make_profile`: 任意の 2 チャネル録音から、
-    転写なしでタイミングの統計(応答の遅延、休止の中の発声、重なり、発話時間の割合)を出す入口。基本依存だけで動く。
+    転写なしでタイミングの統計(応答の遅延、ポーズの中の発声、重なり、発話時間の割合)を出す入口。基本依存だけで動く。
     差し替え可能な基準プロファイル(同梱は `generic` のみ。`make-profile` で作ったものは基準の録音自身の採点値を持つ)と、数値に添える `signature`。
-    出力は記述統計 / 人の規範からの外れ / 人の判断と照合した指標(探索的)の 3 つの層に分けて示す。リーダーボードの数値とは比較できない(README「自分の 2 チャネル音声を測る」)。
+    出力は記述統計 / 人の規範からの外れ / 聴取者の判断と照合した指標の 3 つの層に分けて示し、スコアの対象は `--target`
+    (`listener-judgement` / `human-likeness` / `both`)で選ぶ。聴取者の判断と照合した指標(ポーズに対する無反応と割り込み)はプロファイルなしでも出る。
+    2 つの対象は別のキーで返し、選んだ対象は `signature` に入る。リーダーボードの数値とは比較できない(README「自分の 2 チャネル音声を測る」)。
     録音ごと・チャネルごとに録音の品質(雑音、チャネル間の音漏れ、クリップ、録音レベル)を推定し、確かめた範囲の外と思われる録音には、
     値のずれる向きを添えた警告を出す(計測値は変えない)。範囲と警告の条件は README「対応する録音条件」。
   - `leaderboard --reference`: 参照側の採点条件に説明文が付いていても値の一致を判定するように修正(`docs/results.json` と並べると境界が同じでも警告が出ていた)。
@@ -712,9 +742,9 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 | 症状 | 対処 |
 |------|------|
 | `score-offline` が何も採点しない(`scored 0 clips`) | `corpus.eval_dir` 配下に `<task>/<clip>.json` と `<task>_<model>_asr/text/<clip>.json` の両方があるか確認。片方が無いクリップは黙ってスキップされます。後者は `fdbja transcribe` が書きます |
-| `ASR backend '...' is missing a dependency` | バックエンドの extra が入っていません。`uv sync --extra asr-reazon-whisperx`(NeMo は `asr-nemo`、k2 は `asr-k2`)。extra 同士は排他なので環境を分けてください |
-| `.[asr-reazon-whisperx]` の import で `numpy.core.multiarray failed to import` | `ctc-segmentation` の wheel が numpy 1.x 向けにビルドされています。`uv pip install cython setuptools` の後、`uv pip install --no-build-isolation --no-cache --reinstall --no-binary ctc-segmentation ctc-segmentation` で手元の numpy に対して再ビルド |
-| Blackwell 世代の GPU(sm_120)で torch が動かない / ASR が CPU に落ちる / CUDA エラー | cu128 以上の torch が必要。`uv pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128` を extra より先に入れる |
+| `ASR backend '...' is missing a dependency` | バックエンドの dependency group が入っていません。`uv sync --group asr-reazon-whisperx`(NeMo は `asr-nemo`、k2 は `asr-k2`)。グループ同士は排他なので環境を分けてください。0.1.0 の `--extra asr-...` は `--group asr-...` になりました |
+| `asr-reazon-whisperx` の import で `numpy.core.multiarray failed to import` | `ctc-segmentation` の wheel が numpy 1.x 向けにビルドされています。`uv pip install cython setuptools` の後、`uv pip install --no-build-isolation --no-cache --reinstall --no-binary ctc-segmentation ctc-segmentation` で手元の numpy に対して再ビルド |
+| Blackwell 世代の GPU(sm_120)で torch が動かない / ASR が CPU に落ちる / CUDA エラー | cu128 以上の torch が必要。`uv pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128` を ASR の依存より先に入れる |
 | `metrics.vap_distance.vap_realtime_root or $VAP_REALTIME_ROOT must be set` | VAP-Realtime を clone し、`VAP_REALTIME_ROOT=/path/to/VAP-Realtime` を設定。`asset/cpc/` は clone に含まれる。`asset/vap/` には「VAP-distance の準備」の手順で `vap_state_dict_jp_kyoto_20hz_2500msec.pt` を置く |
 | Hugging Face から `vap_state_dict_jp_kyoto_20hz_2500msec.pt` が見つからない(404) | 2026-10-01 に `main` から外されました。URL の `main` をリビジョン `fe24ac60d8fcc80463edde97ed90e3ceca5e5b88` に置き換える(「VAP-distance の準備」) |
 | VAP チェックポイントを替えたら D_KL の値が変わった | 仕様どおりです。VAP は凍結した計測器で、チェックポイントが違えば値は比較できません。比較する全モデルを同じチェックポイントで採点し直し、`results.json` の `vap_checkpoint` を確認してください |

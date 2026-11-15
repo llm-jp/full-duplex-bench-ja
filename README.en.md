@@ -34,7 +34,7 @@ restricted to genuine turn transitions, 197 → 72 events) and `detection.system
 **Quick start** (with LLM-jp-Zoom1 at hand; a one-minute smoke test on synthetic data is in [Quick start](#quick-start) below)
 
 ```bash
-uv sync --extra asr-reazon-whisperx                        # 1. install (pick one ASR backend)
+uv sync --group asr-reazon-whisperx                        # 1. install (pick one ASR backend)
 uv run fdbja reconstruct --config configs/default.yaml     # 2. build the eval clips (set corpus.zoom1_root)
 # responses: `fdbja infer` + `fdbja transcribe`, or place combined.wav ([Model adapters](#model-adapters))
 uv run fdbja score-offline --config configs/default.yaml   # 3. score -> results/summary.json
@@ -55,13 +55,17 @@ uv run fdbja leaderboard --reference docs/results.json     # 4. rank like the le
   branch of the Hugging Face repository on 2026-10-01, so fetch it from a pinned revision:
   `https://huggingface.co/maai-kyoto/vap_jp_kyoto/resolve/fe24ac60d8fcc80463edde97ed90e3ceca5e5b88/vap_state_dict_jp_kyoto_20hz_2500msec.pt`
   (SHA-256 `7ad0bf0b59e17a30ee55cee2aa6db89b84d64b670881ccd3f74b52ccede05d29`, the file the leaderboard was scored with).
-- One ASR extra for `fdbja transcribe`, which turns the recorded responses into character-level,
-  time-aligned "jchat" JSON: `.[asr-reazon-whisperx]` (default; ReazonSpeech-ESPnet segments +
-  WhisperX character alignment, the pipeline behind the published numbers), `.[asr-nemo]`
+- One ASR dependency group for `fdbja transcribe`, which turns the recorded responses into character-level,
+  time-aligned "jchat" JSON: `asr-reazon-whisperx` (default; ReazonSpeech-ESPnet segments +
+  WhisperX character alignment, the pipeline behind the published numbers), `asr-nemo`
   (ReazonSpeech NeMo v2, token timestamps split evenly over a subword's characters, ~5x faster) or
-  `.[asr-k2]` (ReazonSpeech k2 v2 via sherpa-onnx, CPU-friendly). The extras are mutually
-  exclusive; weights are fetched from the Hugging Face Hub on first use. The aligner-free backends
-  segment utterances differently, so their TOR is not directly comparable with the leaderboard.
+  `asr-k2` (ReazonSpeech k2 v2 via sherpa-onnx, CPU-friendly). Install one from a clone with
+  `uv sync --group <name>` (with pip 25.1 or newer: `pip install -e . --group <name>`). The groups are
+  mutually exclusive; weights are fetched from the Hugging Face Hub on first use. The aligner-free backends
+  segment utterances differently, so their TOR is not directly comparable with the leaderboard. They are
+  groups rather than extras because ReazonSpeech is distributed from its git repository only and PyPI does
+  not accept packages with direct-URL dependencies (in 0.1.0 they were extras: read `--extra asr-...` as
+  `--group asr-...`).
 - LLM-jp-Zoom1 to build the evaluation clips (see [DATASET.md](DATASET.md)), or your own two-channel
   dialogue recordings (see "Evaluation set from your own two-channel dialogues" below).
 - `.[always-talk]` (pyopenjtalk) for the `always_talk` baseline's default speech loop (`source: auto`),
@@ -72,11 +76,11 @@ uv run fdbja leaderboard --reference docs/results.json     # 4. rank like the le
 ### Older GPU drivers (replacing torch, `--no-sync`)
 
 If `nvidia-smi` reports `CUDA Version` 12.x (e.g. a 550-series driver = CUDA 12.4), the locked torch cannot
-use the GPU (it falls back to CPU or fails with `CUDA driver version is insufficient`). Install the extras,
+use the GPU (it falls back to CPU or fails with `CUDA driver version is insufficient`). Install the dependencies,
 then replace torch with a build for your driver:
 
 ```bash
-uv sync --extra asr-reazon-whisperx
+uv sync --group asr-reazon-whisperx
 uv pip install --reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu126   # CUDA 12.x drivers
 uv run --no-sync python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 uv run --no-sync fdbja transcribe --config configs/default.yaml
@@ -107,7 +111,7 @@ Expected: `silence_baseline` has TOR 0 on both tasks and `always_talk_baseline` 
 Real evaluation (point `corpus.zoom1_root` in `configs/default.yaml` at LLM-jp-Zoom1 and list your models):
 
 ```bash
-uv sync --extra asr-reazon-whisperx
+uv sync --group asr-reazon-whisperx
 uv run fdbja reconstruct --config configs/default.yaml
 uv run fdbja infer --config configs/default.yaml
 uv run fdbja transcribe --config configs/default.yaml
@@ -171,14 +175,16 @@ are not comparable with the leaderboard; report the data source, event counts an
 
 Timing statistics of any dialogue recording with the user and the system on separate channels, without the
 evaluation set. No transcript and no annotation; the base dependencies (numpy, soundfile, pyyaml) are enough
-(`uv sync`, no extra).
+(`uv sync`, no extra). From 0.2.0 the package is planned to be distributed on PyPI as well: `pip install fdbja`
+and then `fdbja measure rec.wav`, without cloning the repository (drop `uv run` from the commands below).
 
 ```bash
 uv run fdbja measure rec.wav --condition model=my-model      # ch0 = user, ch1 = system (--user-channel 1 to swap)
 uv run fdbja measure recordings/ --json out.json             # a directory: one row per recording and the total
 uv run fdbja make-profile human_dialogues/ --language ja --relationship strangers \
     --situation chat --medium "video call" -o profile.json   # reference profile from human-human recordings
-uv run fdbja measure rec.wav --profile profile.json          # adds scores against the profile
+uv run fdbja measure rec.wav --profile profile.json          # adds the deviation from the human norm (same as --target both)
+uv run fdbja measure rec.wav --profile profile.json --target human-likeness   # the deviation from the human norm only
 ```
 
 ```python
@@ -198,8 +204,9 @@ and the share of time both are voiced; and each speaker's share of speaking time
   events of the evaluation set) and no transcript is used; the keys are named differently from `results.json`.
 - Short / long speech in a pause is judged **by length only**; whether it is a backchannel or a take-over is
   not examined.
-- Report the numbers with the `signature` of the output (version, detection settings, profile and channel
-  assignment in one line, e.g. `fdbja:0.2.0.dev0|measure|vad:energy(p56)|events:default|profile:none|ch:user=0,sys=1`)
+- Report the numbers with the `signature` of the output (version, detection settings, profile, scored target
+  and channel assignment in one line, e.g.
+  `fdbja:0.2.0|measure|vad:energy(p56)|events:default|profile:none|target:listener-judgement|ch:user=0,sys=1`)
   and the recording conditions, which `--condition key=value` copies to the output (model, voice, prompt,
   network, ...; any key). `--condition-file prompt=prompt.txt` records only a hash of the file.
 - Thresholds are changed with `--set turn_min_seconds=4` (`config={"turn_min_seconds": 4}` in Python) and then
@@ -209,17 +216,26 @@ and the share of time both are voiced; and each speaker's share of speaking time
   defined). For a system that keeps talking this share (`turn_end.skipped_system_speaking_rate`) is large, and
   the no-response rate and the latency then describe the remaining turn ends only; a warning is printed from
   0.3 (a guide chosen by hand, not a validated value).
-- With a **reference profile** (`--profile`) the output has three layers (`layers` in the JSON says which
-  value belongs to which):
-  - (a) descriptive statistics: the list above; no profile needed.
-  - (b) deviation from the human norm: the share of turn ends whose response falls inside the profile's
-    tolerance range, and the distance from it. **A turn end without a response counts as outside the range.**
-    This says how close the timing is to the human behaviour in the profile, which is not necessarily what
-    listeners judge to be natural.
-  - (c) compared with human judgement: `pause_reaction_penalty`, the sum of the no-reaction and barge-in rates
-    of the pause rule of `metrics/pause_response.py` applied to the pauses detected here. Exploratory: its
-    composition was chosen on the data of a single listening test, and its agreement with listeners has not
-    been verified independently on the events that `measure` detects.
+- **What to score against (`--target`).** Besides the descriptive statistics (layer a), two targets can be
+  scored. They are returned under separate keys; no argument changes the meaning of a key. The chosen target
+  is part of the `signature`; `layers` in the JSON says which value belongs to which layer, and
+  `layers_reported` which layers were written.
+  - `listener-judgement` (layer c; the default without `--profile`): `pause_reaction_penalty`, the sum of the
+    no-reaction and barge-in rates (0 to 2, lower is better) of the pause rule of `metrics/pause_response.py`
+    applied to the pauses detected here. No profile needed. The rule agreed with what third-party listeners
+    judged natural in one pre-registered listening test, run separately from the test on which its
+    composition was chosen (see "Proposed metrics"). That was confirmed on the fixed pause events of the
+    benchmark, not on the pauses that `measure` detects itself, and no metric for turn ends has been confirmed
+    in this way. What listeners judge natural is not necessarily what the person in the conversation prefers.
+  - `human-likeness` (layer b; needs `--profile`): the share of turn ends whose response falls inside the
+    profile's tolerance range, and the distance from it. **A turn end without a response counts as outside
+    the range.** This says how close the timing is to the human behaviour in the profile, which is not
+    necessarily what listeners judge to be natural.
+  - `both` (the default with `--profile`): both.
+
+  `human-likeness` and `both` without `--profile` are an error (there is no norm to compare with). The
+  spelling `listener-judgment` is accepted too. In Python:
+  `measure("rec.wav", profile="profile.json", target="human-likeness")`.
 
   A profile made with `make-profile` carries the scores of its own recordings under the same settings
   (`reference_score`), and `measure` prints them next to each score. Human recordings do not reach 100 % in
@@ -344,8 +360,17 @@ Two metrics that agreed better with listeners than TOR and the original VAP-dist
 study ([leaderboard, "human-judgement validation"](https://llm-jp.github.io/full-duplex-bench-ja/#validation-sec),
 listening test, 2026-11) are implemented. Neither changes the default scoring (TOR, original VAP-distance); when
 switched on they add columns to the `score-offline` summary (`summary.json` / `summary.csv`) and to the per-event
-results. They are off by default because the validation covers one corpus (LLM-jp-Zoom1), nine systems and a
-single listening test, and has not been repeated on other data.
+results. They are off by default because the validation is limited to the evaluation set of one corpus
+(LLM-jp-Zoom1) and has not been repeated on another corpus. The two metrics differ in how far they have been
+checked:
+
+- The Pause metric: after the listening test on which its composition was chosen (nine systems), its
+  agreement with listeners was confirmed in **a second, pre-registered listening test** on the same events,
+  using only pairs of systems that had not been shown in the first test (seven real systems). Some of the
+  participants had also taken part in the first test (the analysis without them pointed the same way). The
+  numbers of the second test are not published yet.
+- Boundary-weighted VAP-distance: validated in the first listening test only, on whose data its composition
+  was chosen.
 
 - **Boundary-weighted VAP-distance** (Smooth TT; `metrics.vap_distance.weighting: boundary`, needs
   `vap_distance.enabled: true`). Instead of the equal-weight mean of D_KL(P_t‖Q_t) over the judgement window, d_t is
@@ -438,9 +463,9 @@ VAP-distance is computed from the waveform and is not affected by 1 and 3.
 
 ## Roadmap
 
-1. **Next release (0.2.0)** — the two metrics validated against human judgements (boundary-weighted
-   VAP-distance; a Pause metric that penalises both interrupting and not reacting) are implemented on `main`
-   (off by default) and will be released as 0.2.0.
+1. **Release of 0.2.0** — the two metrics validated against human judgements (boundary-weighted
+   VAP-distance; a Pause metric that penalises both interrupting and not reacting; off by default) and
+   `measure` for your own recordings. Distribution on PyPI is planned from this release.
 2. Release of the evaluation data (tied to the public release of LLM-jp-Zoom1).
 3. Score the system backchannel task (after confirming it with a listening test).
 4. The two tasks where the system is already speaking (User Interruption of v1 and the user backchannel
@@ -456,7 +481,7 @@ Code: Apache-2.0. Backends and data are **not** covered:
   (`vap_state_dict_jp_20hz_2500msec.pt`) is academic-only and loads through the same code path;
   its terms then apply to the results. The leaderboard no longer uses it.
 - ReazonSpeech code and models (nemo-v2 / k2-v2 / espnet-v2): Apache-2.0. NVIDIA NeMo: Apache-2.0.
-  ESPnet and sherpa-onnx (dependencies of the `asr-reazon-whisperx` and `asr-k2` extras): Apache-2.0.
+  ESPnet and sherpa-onnx (dependencies of the `asr-reazon-whisperx` and `asr-k2` groups): Apache-2.0.
   WhisperX: BSD-2-Clause; its Japanese alignment model `jonatasgrosman/wav2vec2-large-xlsr-53-japanese`
   is Apache-2.0.
 - Full-Duplex-Bench is CC BY-NC 4.0; this toolkit reimplements the event and TOR definitions

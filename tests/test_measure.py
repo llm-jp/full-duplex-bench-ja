@@ -109,9 +109,21 @@ class EventsAndStatsTest(_Files):
         self.assertAlmostEqual(sp["system_seconds"], 8.2, delta=0.15)
         self.assertAlmostEqual(sp["system_share_of_speech"], 8.2 / 26.7, delta=0.01)
 
-    def test_no_score_without_profile(self):
-        self.assertIsNone(self.m.score)
+    def test_without_profile_only_the_listener_judgement_layer_is_scored(self):
         self.assertIsNone(self.m.profile)
+        self.assertEqual(self.m.target, "listener-judgement")
+        sc = self.m.score
+        self.assertIsNone(sc["profile"])
+        self.assertIsNone(sc["reference"])
+        self.assertIsNone(sc["reference_score"])
+        # pause of turn 2: brief reaction; pause of turn 3: speech that keeps going
+        self.assertEqual((sc["pause_no_reaction_rate"], sc["pause_barge_in_rate"],
+                          sc["pause_reaction_penalty"], sc["n_pauses"]), (0.0, 0.5, 0.5, 2))
+        # nothing of the human norm: there is no norm to compare with
+        self.assertFalse(set(ms.LAYER_SCORE_KEYS["human_norm"]) & set(sc))
+        self.assertNotIn("latency_tolerance", sc)
+        self.assertNotIn("note", sc)
+        self.assertIn("|profile:none|target:listener-judgement|", self.m.signature)
 
     def test_thresholds_can_be_changed(self):
         # turns must last 4 s: turn 1 (3 s) and turn 4 (3 s) are no longer turn ends
@@ -203,7 +215,7 @@ class ProfileTest(_Files):
         self.assertEqual((sc["pause_no_reaction_rate"], sc["pause_barge_in_rate"],
                           sc["pause_reaction_penalty"]), (0.0, 0.5, 0.5))
         self.assertIn("no human reference", sc["note"])
-        self.assertIn("|profile:generic|", m.signature)
+        self.assertIn("|profile:generic|target:both|", m.signature)
         # names of the published benchmark columns are not reused
         published = {"TOR", "pause_response", "pause_no_response_rate",
                      "pause_interrupt_rate", "lat_median", "overlap_rate"}
@@ -395,12 +407,19 @@ class LayersAndSkippedTurnEndsTest(unittest.TestCase):
         m = measure(_stereo(USER, SYSTEM), sample_rate=SR, profile="generic")
         res = m.to_dict()
         layers = res["layers"]
-        self.assertEqual(list(layers), ["descriptive", "human_norm", "human_judgement"])
+        self.assertEqual(list(layers), ["descriptive", "human_norm", "listener_judgement"])
+        self.assertEqual(res["layers_reported"], list(layers))
         self.assertEqual(layers["descriptive"]["keys"], ["stats"])
-        # only the pause reaction penalty is compared with human judgement
-        self.assertEqual(layers["human_judgement"]["keys"], ["score.pause_reaction_penalty"])
-        self.assertIn("exploratory", layers["human_judgement"]["note"])
-        self.assertIn("single listening test", layers["human_judgement"]["note"])
+        # only the pause reaction penalty is compared with listeners' judgement
+        self.assertEqual(layers["listener_judgement"]["keys"], ["score.pause_reaction_penalty"])
+        note = layers["listener_judgement"]["note"]
+        self.assertNotIn("exploratory", note)
+        self.assertIn("one pre-registered listening test", note)
+        # what was and what was not confirmed
+        self.assertIn("fixed pause events of the benchmark", note)
+        self.assertIn("not been verified on the pauses that `measure` detects", note)
+        self.assertIn("no metric for turn ends", note)
+        self.assertIn("not necessarily what the person in the conversation prefers", note)
         self.assertIn("not necessarily what listeners judge", layers["human_norm"]["note"])
         self.assertIn("counts as outside the tolerance range", layers["human_norm"]["note"])
         listed = [k for layer in layers.values() for k in layer["keys"] + layer["components"]]
@@ -409,24 +428,71 @@ class LayersAndSkippedTurnEndsTest(unittest.TestCase):
                   if k not in ("profile", "latency_tolerance", "n_turn_ends", "n_pauses",
                                "reference", "reference_score", "note")}
         self.assertEqual(values, set(listed) - {"stats"})
+        # the same grouping as the keys each target reports
+        for name in ("human_norm", "listener_judgement"):
+            of_layer = {f"score.{k}" for k in ms.LAYER_SCORE_KEYS[name] if not k.startswith("n_")}
+            self.assertEqual(of_layer, set(layers[name]["keys"] + layers[name]["components"]))
         for layer in layers.values():
             self.assertTrue(layer["title"] and layer["note"])
-        # the layers are there without a profile too (the score is then null)
-        self.assertEqual(measure(_stereo(USER, SYSTEM), sample_rate=SR).to_dict()["layers"], layers)
+        # the description of the layers is the same whatever was scored
+        plain = measure(_stereo(USER, SYSTEM), sample_rate=SR).to_dict()
+        self.assertEqual(plain["layers"], layers)
+        self.assertEqual(plain["layers_reported"], ["descriptive", "listener_judgement"])
         # a copy: editing the output does not edit the module
         layers["descriptive"]["keys"].append("x")
         self.assertEqual(ms.LAYERS["descriptive"]["keys"], ["stats"])
         json.dumps(res)
 
+    def test_target_selects_the_layers_and_never_the_meaning_of_a_key(self):
+        audio = _stereo(USER, SYSTEM)
+        both = measure(audio, sample_rate=SR, profile="generic", target="both")
+        human = measure(audio, sample_rate=SR, profile="generic", target="human-likeness")
+        listener = measure(audio, sample_rate=SR, profile="generic", target="listener-judgement")
+        plain = measure(audio, sample_rate=SR)
+        norm, judged = (set(ms.LAYER_SCORE_KEYS[k]) for k in ("human_norm", "listener_judgement"))
+        self.assertEqual(measure(audio, sample_rate=SR, profile="generic").target, "both")
+        self.assertTrue(norm | judged <= set(both.score))
+        self.assertTrue(norm <= set(human.score) and not judged & set(human.score))
+        self.assertTrue(judged <= set(listener.score) and not norm & set(listener.score))
+        self.assertNotIn("latency_tolerance", listener.score)
+        # a value present under two targets is the same value
+        for m in (human, listener, plain):
+            for k in (norm | judged) & set(m.score):
+                self.assertEqual(m.score[k], both.score[k], k)
+        self.assertEqual(human.to_dict()["layers_reported"], ["descriptive", "human_norm"])
+        self.assertEqual(listener.to_dict()["target"], "listener-judgement")
+        self.assertIn("|profile:generic|target:human-likeness|", human.signature)
+        self.assertIn("|profile:generic|target:listener-judgement|", listener.signature)
+        # the remark on the rule constants belongs to the human norm
+        self.assertIn("no human reference", human.score["note"])
+        self.assertNotIn("note", listener.score)
+        # the American spelling is accepted and recorded in one way
+        alias = measure(audio, sample_rate=SR, target="listener-judgment")
+        self.assertEqual(alias.target, "listener-judgement")
+        self.assertEqual(alias.signature, plain.signature)
+        # the human norm needs a profile
+        for target in ("human-likeness", "both"):
+            with self.assertRaisesRegex(ValueError, "needs a profile"):
+                measure(audio, sample_rate=SR, target=target)
+        with self.assertRaisesRegex(ValueError, "unknown target"):
+            measure(audio, sample_rate=SR, target="preference")
+
     def test_report_has_one_block_per_layer(self):
         plain = str(measure(_stereo(USER, SYSTEM), sample_rate=SR))
         self.assertIn("[a] descriptive statistics", plain)
         self.assertNotIn("[b]", plain)
-        self.assertNotIn("[c]", plain)
+        self.assertIn("[c] compared with listeners' judgement", plain)
+        self.assertIn("pauses: reaction penalty", plain)
+        self.assertNotIn("profile's own recordings", plain)
+        human = str(measure(_stereo(USER, SYSTEM), sample_rate=SR, profile="generic",
+                            target="human-likeness"))
+        self.assertIn("[b] deviation from the human norm", human)
+        self.assertNotIn("[c]", human)
+        self.assertNotIn("reaction penalty", human)
         text = str(measure(_stereo(USER, SYSTEM), sample_rate=SR, profile="generic"))
         a, b, c = (text.index(h) for h in ("[a] descriptive statistics",
                                            "[b] deviation from the human norm",
-                                           "[c] compared with human judgement"))
+                                           "[c] compared with listeners' judgement"))
         self.assertTrue(a < b < c)
         between = text[b:c]
         self.assertIn("latency within", between)
@@ -434,7 +500,8 @@ class LayersAndSkippedTurnEndsTest(unittest.TestCase):
         self.assertIn("not necessarily", between)
         self.assertNotIn("reaction penalty", between)
         self.assertIn("pauses: reaction penalty", text[c:])
-        self.assertIn("exploratory", text[c:])
+        self.assertNotIn("exploratory", text)
+        self.assertIn("pre-registered", text[c:])
         self.assertNotIn("user turn ends", text[b:])
 
 
@@ -443,14 +510,20 @@ class SignatureTest(unittest.TestCase):
         v = fdbja.__version__
         self.assertEqual(
             ms.signature(),
-            f"fdbja:{v}|measure|vad:energy(p56)|events:default|profile:none|ch:user=0,sys=1")
+            f"fdbja:{v}|measure|vad:energy(p56)|events:default|profile:none"
+            "|target:listener-judgement|ch:user=0,sys=1")
         cfg = ms.MeasureConfig.from_dict({"vad": {"margin_db": 12.0}})
         self.assertIn("|vad:energy(p56;margin_db=12.0)|events:default|", ms.signature(cfg))
         cfg = ms.MeasureConfig.from_dict({"vad": {"mode": "fixed"}, "turn_min_seconds": 4.0,
                                           "response_window": [0.0, 3.0]})
         self.assertIn("|vad:energy(fixed)|events:custom(response_window=0,3;turn_min_seconds=4.0)|",
                       ms.signature(cfg))
-        self.assertIn("|profile:generic|", ms.signature(profile=load_profile("generic")))
+        self.assertIn("|profile:generic|target:both|",
+                      ms.signature(profile=load_profile("generic")))
+        self.assertIn("|profile:generic|target:human-likeness|",
+                      ms.signature(profile=load_profile("generic"), target="human-likeness"))
+        with self.assertRaises(ValueError):
+            ms.signature(target="both")
         edited = load_profile("generic")
         edited["norms"]["response_latency"]["high"] = 1.0
         self.assertRegex(ms.signature(profile=edited), r"\|profile:generic@[0-9a-f]{8}\|")
@@ -492,7 +565,26 @@ class CommandLineTest(_Files):
         self.assertIn("leaderboard", res["comparability"])
         self.assertEqual(res["stats"]["turn_end"]["n"], 3)
         self.assertEqual(res["profile"]["meta"]["language"], "ja")
+        self.assertEqual(res["target"], "both")
         self.assertEqual(cli.main(["measure", rec, "--condition", "novalue"]), 2)
+        # no profile: the listener-judgement layer alone
+        self.assertEqual(cli.main(["measure", rec, "--json", out]), 0)
+        with open(out, encoding="utf-8") as f:
+            res = json.load(f)
+        self.assertEqual(res["target"], "listener-judgement")
+        self.assertIn("pause_reaction_penalty", res["score"])
+        self.assertNotIn("latency_in_tolerance_rate", res["score"])
+        self.assertEqual(cli.main(["measure", rec, "--profile", prof, "--target",
+                                   "human-likeness", "--json", out]), 0)
+        with open(out, encoding="utf-8") as f:
+            res = json.load(f)
+        self.assertIn("|target:human-likeness|", res["signature"])
+        self.assertNotIn("pause_reaction_penalty", res["score"])
+        self.assertNotIn("pause_reaction_penalty", res["score"]["reference_score"])
+        self.assertIn("latency_in_tolerance_rate", res["score"]["reference_score"])
+        # the human norm cannot be scored without a profile
+        self.assertEqual(cli.main(["measure", rec, "--target", "human-likeness"]), 2)
+        self.assertEqual(cli.main(["measure", rec, "--target", "both"]), 2)
 
 
 class BaseDependenciesOnlyTest(unittest.TestCase):

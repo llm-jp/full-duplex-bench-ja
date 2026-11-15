@@ -39,11 +39,15 @@ events are found in the recording itself instead of being the fixed events of
 the evaluation corpus, and no transcript is used. The keys are named
 differently from those of ``results.json`` for that reason.
 
-A *profile* (:func:`load_profile`, :func:`make_profile`) adds a score: the
-share of turn ends whose response latency falls in the profile's tolerance
-range (a turn end without a response counts as outside it), the distance from
-that range, and the pause reaction rule of ``metrics/pause_response.py``
-applied to the detected pauses. The built-in ``generic`` profile is made of
+Two kinds of score can be added to the statistics, chosen with ``target``
+(:data:`TARGETS`). ``human-likeness`` needs a *profile*
+(:func:`load_profile`, :func:`make_profile`): the share of turn ends whose
+response latency falls in the profile's tolerance range (a turn end without a
+response counts as outside it) and the distance from that range.
+``listener-judgement`` needs none: the pause reaction rule of
+``metrics/pause_response.py`` applied to the detected pauses. The two answer
+different questions and are reported under different keys; ``both`` reports
+both. The built-in ``generic`` profile is made of
 the rule constants only and is **not a norm derived from human data**; a
 profile for a language, relationship, situation and medium is built from
 human-human recordings with ``fdbja make-profile``, which also stores how
@@ -52,11 +56,18 @@ be read next to the scores of a measured recording.
 
 The output has three layers (:data:`LAYERS`), which make different claims:
 
-  * ``descriptive``: the statistics, which need no profile;
-  * ``human_norm``: the deviation from the human behaviour in the profile.
-    Close to human behaviour is not necessarily what listeners judge natural;
-  * ``human_judgement``: metrics compared with listeners' judgements. Only
-    ``pause_reaction_penalty`` for now, and it is exploratory.
+  * ``descriptive``: the statistics, always reported;
+  * ``human_norm`` (target ``human-likeness``): the deviation from the human
+    behaviour in the profile. Close to human behaviour is not necessarily
+    what listeners judge natural;
+  * ``listener_judgement`` (target ``listener-judgement``): metrics compared
+    with the judgements of third-party listeners. Only
+    ``pause_reaction_penalty`` for now. Its rule was confirmed in one
+    pre-registered listening test on the fixed pause events of the
+    benchmark; the agreement was not verified on the pauses detected here,
+    and there is no confirmed counterpart for turn ends. What listeners
+    judge natural is not necessarily what the person in the conversation
+    prefers.
 """
 
 from __future__ import annotations
@@ -123,15 +134,56 @@ LAYERS: Dict[str, Dict[str, Any]] = {
                  "is not necessarily what listeners judge to be natural. A turn end "
                  "without a response counts as outside the tolerance range"),
     },
-    "human_judgement": {
-        "title": "compared with human judgement (exploratory)",
+    "listener_judgement": {
+        "title": "compared with listeners' judgement",
         "keys": ["score.pause_reaction_penalty"],
         "components": ["score.pause_no_reaction_rate", "score.pause_barge_in_rate"],
-        "note": ("exploratory: the composition of this metric was chosen on the data of "
-                 "a single listening test, and its agreement with listeners has not "
-                 "been verified independently on the events that `measure` detects"),
+        "note": ("the rule of this metric (no reaction + barge-in at a pause) agreed with "
+                 "third-party listeners' judgements of naturalness in one pre-registered "
+                 "listening test, on the fixed pause events of the benchmark. The agreement "
+                 "has not been verified on the pauses that `measure` detects itself, and no "
+                 "metric for turn ends has been confirmed in this way. What listeners judge "
+                 "natural is not necessarily what the person in the conversation prefers"),
     },
 }
+
+#: what ``measure`` scores besides the descriptive statistics: the layers of
+#: each ``target``. ``human-likeness`` = how close the timing is to the human
+#: behaviour in a profile; ``listener-judgement`` = the metric compared with
+#: what third-party listeners judged natural. These are different questions
+#: (a system close to the human norm is not necessarily the one listeners
+#: choose), so each has its own keys and a key never changes its meaning
+#: with the target: it is simply absent when its layer was not asked for.
+TARGETS: Dict[str, Tuple[str, ...]] = {
+    "listener-judgement": ("listener_judgement",),
+    "human-likeness": ("human_norm",),
+    "both": ("human_norm", "listener_judgement"),
+}
+TARGET_ALIASES = {"listener-judgment": "listener-judgement"}
+#: score values of each layer (``n_*`` = the number of events behind them)
+LAYER_SCORE_KEYS: Dict[str, Tuple[str, ...]] = {
+    "human_norm": ("latency_in_tolerance_rate", "latency_deviation_mean",
+                   "turn_end_no_response_rate", "n_turn_ends"),
+    "listener_judgement": ("pause_no_reaction_rate", "pause_barge_in_rate",
+                           "pause_reaction_penalty", "n_pauses"),
+}
+
+
+def resolve_target(target: Optional[str], has_profile: bool) -> str:
+    """The name in :data:`TARGETS` for ``target``. ``None`` is
+    ``listener-judgement`` without a profile and ``both`` with one;
+    ``human-likeness`` and ``both`` need a profile (the human norm)."""
+    if target is None:
+        return "both" if has_profile else "listener-judgement"
+    name = TARGET_ALIASES.get(target, target)
+    if name not in TARGETS:
+        raise ValueError(f"unknown target {target!r}; choose from {sorted(TARGETS)}")
+    if "human_norm" in TARGETS[name] and not has_profile:
+        raise ValueError(
+            f"target {name!r} needs a profile (the human norm to compare with): give "
+            "'generic' (rule constants, not a human norm) or a profile written by "
+            "`fdbja make-profile`")
+    return name
 
 #: fields of ``VADConfig`` that the voice activity detector reads (the others
 #: belong to the boundary search of ``detection.boundaries: audio``)
@@ -438,19 +490,31 @@ def summarise(analyses: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 
 def _score_values(analyses: Sequence[Dict[str, Any]], low: float, high: float
                   ) -> Dict[str, Any]:
-    """The score values of the detected events for the tolerance range
-    ``low`` to ``high`` (see :func:`score_against`)."""
+    """The score values of both layers for the detected events and the
+    tolerance range ``low`` to ``high`` (see :func:`score_against`)."""
+    return {**_latency_scores(analyses, low, high), **_pause_scores(analyses)}
+
+
+def _latency_scores(analyses: Sequence[Dict[str, Any]], low: float, high: float
+                    ) -> Dict[str, Any]:
+    """Layer ``human_norm``: the response latencies against ``low`` to ``high``."""
     ends = [e for a in analyses for e in a["turn_ends"]]
-    pauses = [e for a in analyses for e in a["pauses"]]
     lat = np.array([e["latency"] for e in ends if e["latency"] is not None], dtype=np.float64)
     dev = np.maximum(0.0, np.maximum(low - lat, lat - high))
-    no_reaction = [p["no_reaction"] for p in pauses]
-    barge_in = [p["barge_in"] for p in pauses]
     return {
         "latency_in_tolerance_rate": _ratio(float((dev <= TOL).sum()), len(ends)),
         "latency_deviation_mean": _r(dev.mean()) if len(dev) else None,
         "turn_end_no_response_rate": _ratio(len(ends) - len(lat), len(ends)),
         "n_turn_ends": len(ends),
+    }
+
+
+def _pause_scores(analyses: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """Layer ``listener_judgement``: the pause reaction rule on the detected pauses."""
+    pauses = [e for a in analyses for e in a["pauses"]]
+    no_reaction = [p["no_reaction"] for p in pauses]
+    barge_in = [p["barge_in"] for p in pauses]
+    return {
         "pause_no_reaction_rate": _r(np.mean(no_reaction)) if pauses else None,
         "pause_barge_in_rate": _r(np.mean(barge_in)) if pauses else None,
         "pause_reaction_penalty": (_r(np.mean(no_reaction) + np.mean(barge_in))
@@ -459,12 +523,15 @@ def _score_values(analyses: Sequence[Dict[str, Any]], low: float, high: float
     }
 
 
-def score_against(analyses: Sequence[Dict[str, Any]], profile: Dict[str, Any]
-                  ) -> Dict[str, Any]:
-    """Scores of the detected events under ``profile``.
+def score_against(analyses: Sequence[Dict[str, Any]],
+                  profile: Optional[Dict[str, Any]] = None,
+                  target: Optional[str] = None) -> Dict[str, Any]:
+    """Scores of the detected events for ``target`` (:data:`TARGETS`; ``None``
+    = ``both`` with a profile, ``listener-judgement`` without). Only the
+    values of the layers of the target are in the result.
 
     Layer ``human_norm`` (deviation from the human behaviour in the profile;
-    not necessarily what listeners judge to be natural):
+    not necessarily what listeners judge to be natural; needs ``profile``):
 
     * ``latency_in_tolerance_rate``: share of the turn ends whose response
       started inside the tolerance range. **A turn end without a response
@@ -473,34 +540,47 @@ def score_against(analyses: Sequence[Dict[str, Any]], profile: Dict[str, Any]
     * ``latency_deviation_mean``: mean distance in seconds of the response
       latency from the range (0 inside it), over the responses.
 
-    Layer ``human_judgement`` (exploratory):
+    Layer ``listener_judgement`` (no profile needed; with one, the thresholds
+    of the rule are those stored in it):
 
     * ``pause_reaction_penalty``: the rule of ``metrics/pause_response.py``
       on the pauses detected here, the sum of ``pause_no_reaction_rate`` and
       ``pause_barge_in_rate`` (0-2, lower is better). Not the published
       ``pause_response``: the events and the voice activity detector differ.
-      Its composition was chosen on a single listening test, and its
-      agreement with listeners was not verified independently on the events
-      detected here. The two rates are its components and carry no claim on
-      their own.
+      The rule agreed with third-party listeners in one pre-registered
+      listening test on the fixed pause events of the benchmark; the
+      agreement was not verified on the pauses detected here. The two rates
+      are its components and carry no claim on their own.
 
     ``reference_score`` holds the same values for the recordings the profile
-    was made from (``None`` for the built-in profile and for profiles written
-    before these values were stored); ``reference`` their descriptive
-    statistics.
+    was made from (``None`` without a profile, for the built-in profile and
+    for profiles written before these values were stored); ``reference``
+    their descriptive statistics.
     """
-    tol = profile["norms"]["response_latency"]
-    low, high = float(tol["low"]), float(tol["high"])
-    out = {
-        "profile": profile_id(profile),
-        "latency_tolerance": [low, high],
-        **_score_values(analyses, low, high),
-        "reference": profile.get("reference"),
-        "reference_score": profile.get("reference_score"),
-    }
+    target = resolve_target(target, profile is not None)
+    layers = TARGETS[target]
+    out: Dict[str, Any] = {"profile": profile_id(profile) if profile else None}
+    if "human_norm" in layers:
+        tol = profile["norms"]["response_latency"]
+        low, high = float(tol["low"]), float(tol["high"])
+        out["latency_tolerance"] = [low, high]
+        out.update(_latency_scores(analyses, low, high))
+    if "listener_judgement" in layers:
+        out.update(_pause_scores(analyses))
+    own = profile.get("reference_score") if profile else None
+    if isinstance(own, dict):
+        # the profile's own recordings: the values of the reported layers only
+        hidden = {k for layer, keys in LAYER_SCORE_KEYS.items() if layer not in layers
+                  for k in keys}
+        own = {k: v for k, v in own.items() if k not in hidden}
+    out["reference"] = profile.get("reference") if profile else None
+    out["reference_score"] = own
+    if not profile:
+        return out
     if not profile.get("reference"):
-        out["note"] = ("the profile carries no human reference: the tolerance range is "
-                       "a rule constant, not a norm measured on human dialogues")
+        if "human_norm" in layers:
+            out["note"] = ("the profile carries no human reference: the tolerance range "
+                           "is a rule constant, not a norm measured on human dialogues")
     elif not profile.get("reference_score"):
         out["note"] = ("the profile does not carry the scores of its own recordings "
                        "(written by an earlier version); rebuild it with `fdbja "
@@ -714,15 +794,19 @@ def _changed(cur: Dict[str, Any], default: Dict[str, Any]) -> str:
 
 def signature(cfg: MeasureConfig = DEFAULT_MEASURE,
               profile: Optional[Dict[str, Any]] = None,
-              channels: str = "user=0,sys=1") -> str:
+              channels: str = "user=0,sys=1",
+              target: Optional[str] = None) -> str:
     """One-line statement of how the numbers were made, to be quoted with
     them (in the manner of sacreBLEU signatures)::
 
-        fdbja:0.2.0.dev0|measure|vad:energy(p56)|events:default|profile:generic|ch:user=0,sys=1
+        fdbja:0.2.0|measure|vad:energy(p56)|events:default|profile:none|target:listener-judgement|ch:user=0,sys=1
 
     Settings that differ from the defaults are spelled out, e.g.
     ``vad:energy(p56;margin_db=12.0)`` or ``events:custom(turn_min_seconds=4.0)``.
+    ``target`` is what was scored (:data:`TARGETS`; ``None`` = the default
+    for the profile, see :func:`resolve_target`).
     """
+    target = resolve_target(target, profile is not None)
     cur, default = cfg.to_dict(), DEFAULT_MEASURE.to_dict()
     vad_diff = _changed({k: v for k, v in cur["vad"].items() if k != "mode"},
                         default["vad"])
@@ -731,7 +815,8 @@ def signature(cfg: MeasureConfig = DEFAULT_MEASURE,
     vad = f"vad:energy({cur['vad']['mode']}{';' + vad_diff if vad_diff else ''})"
     events = f"events:custom({ev_diff})" if ev_diff else "events:default"
     prof = f"profile:{profile_id(profile) if profile else 'none'}"
-    return "|".join([f"fdbja:{_version()}", "measure", vad, events, prof, f"ch:{channels}"])
+    return "|".join([f"fdbja:{_version()}", "measure", vad, events, prof,
+                     f"target:{target}", f"ch:{channels}"])
 
 
 def text_hash(text: Union[str, bytes]) -> str:
@@ -862,10 +947,13 @@ class Measurement:
     """Result of :func:`measure`.
 
     ``stats``: descriptive statistics pooled over the recordings;
-    ``score``: scores under the profile (``None`` without one), with the
-    scores of the profile's own recordings under ``reference_score``;
+    ``target``: what was scored (:data:`TARGETS`);
+    ``score``: the values of the layers of the target (a value is absent
+    when its layer was not asked for), with the scores of the profile's own
+    recordings under ``reference_score``;
     ``layers`` (in :meth:`to_dict`): which values belong to which of the
     three layers of :data:`LAYERS`, and what each layer claims;
+    ``layers_reported`` names the layers present in this result;
     ``recordings``: name, duration and statistics of each recording;
     ``events``: every detected event (``recording`` = its index);
     ``quality``: estimates of the recording conditions (noise, leak between
@@ -887,12 +975,15 @@ class Measurement:
     warnings: List[str] = field(default_factory=list)
     quality: Optional[Dict[str, Any]] = None
     notes: List[str] = field(default_factory=list)
+    target: str = "both"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "signature": self.signature,
             "conditions": self.conditions,
             "comparability": NOT_COMPARABLE,
+            "target": self.target,
+            "layers_reported": ["descriptive", *TARGETS[self.target]],
             "layers": copy.deepcopy(LAYERS),
             "stats": self.stats,
             "score": self.score,
@@ -913,7 +1004,8 @@ def measure(audio: Any, system: Any = None, *, sample_rate: Optional[int] = None
             user_channel: int = 0, system_channel: Optional[int] = None,
             profile: Union[str, PathLike, Dict[str, Any], None] = None,
             config: ConfigLike = None,
-            conditions: Optional[Dict[str, Any]] = None) -> Measurement:
+            conditions: Optional[Dict[str, Any]] = None,
+            target: Optional[str] = None) -> Measurement:
     """Timing statistics of a two-channel dialogue recording.
 
     Args:
@@ -922,16 +1014,24 @@ def measure(audio: Any, system: Any = None, *, sample_rate: Optional[int] = None
             or an array of shape ``(samples, 2)`` with ``sample_rate``. With
             ``system`` given, the user's mono wav or array.
         system: the system's mono wav or array (two mono inputs).
-        profile: ``"generic"``, a profile JSON path or mapping; adds
-            ``score``. ``None`` = descriptive statistics only.
+        profile: ``"generic"``, a profile JSON path or mapping: the human
+            norm for the target ``human-likeness``. ``None`` = no norm.
         config: :class:`MeasureConfig` or a mapping of its fields. ``None``
             uses the detection settings stored in the profile (the defaults
             without a profile), so that the recording is measured the way the
             profile was.
         conditions: free-form description of what was recorded (model, voice,
             prompt hash, network, ...), copied to the output.
+        target: what to score besides the descriptive statistics
+            (:data:`TARGETS`): ``"listener-judgement"`` (the pause reaction
+            penalty, the metric compared with third-party listeners; no
+            profile needed), ``"human-likeness"`` (deviation from the human
+            norm of ``profile``; needs one) or ``"both"``. ``None`` =
+            ``"listener-judgement"`` without a profile, ``"both"`` with one.
+            The two are reported under separate keys of ``score``.
     """
     prof = load_profile(profile) if profile is not None else None
+    target = resolve_target(target, prof is not None)
     warnings: List[str] = []
     if config is None:
         cfg = as_config(prof["meta"].get("detection") if prof else None)
@@ -979,10 +1079,10 @@ def measure(audio: Any, system: Any = None, *, sample_rate: Optional[int] = None
     channels = chans.pop() if len(chans) == 1 else "mixed"
     return Measurement(
         stats=stats,
-        score=score_against(analyses, prof) if prof else None,
+        score=score_against(analyses, prof, target),
         recordings=recordings,
         events=events,
-        signature=signature(cfg, prof, channels),
+        signature=signature(cfg, prof, channels, target),
         conditions=dict(conditions or {}),
         config=cfg.to_dict(),
         profile=({"id": profile_id(prof), "name": prof.get("name"),
@@ -991,6 +1091,7 @@ def measure(audio: Any, system: Any = None, *, sample_rate: Optional[int] = None
         warnings=warnings,
         quality=rq.pool(qualities),
         notes=notes,
+        target=target,
     )
 
 
@@ -1032,9 +1133,9 @@ def _note(text: str) -> List[str]:
 
 
 def format_report(m: Measurement) -> str:
-    """The table printed by ``fdbja measure``: one block per layer of
-    :data:`LAYERS` ([a] descriptive, [b] deviation from the human norm,
-    [c] compared with human judgement); [b] and [c] need a profile."""
+    """The table printed by ``fdbja measure``: one block per reported layer
+    of :data:`LAYERS` ([a] descriptive, [b] deviation from the human norm,
+    [c] compared with listeners' judgement); [b] needs a profile."""
     s, cfg = m.stats, m.config
     te, pa, st, ov, sp = (s["turn_end"], s["pause"], s["start_in_user_speech"],
                           s["overlap"], s["speaking"])
@@ -1072,23 +1173,17 @@ def format_report(m: Measurement) -> str:
         row("speaking time, user / system",
             f"{_pct(sp['user_share'])} / {_pct(sp['system_share'])}"),
     ]
-    if m.score:
-        sc = m.score
-        own = sc.get("reference_score")
+    sc = m.score or {}
+    own = sc.get("reference_score")
+
+    def of_own(value: str, n: Any = None) -> str:
+        # the same score for the recordings the profile was made from
+        return f"(profile's own recordings: {value}" + ("" if n is None else f", n = {n}") + ")"
+    if "latency_in_tolerance_rate" in sc:
         t0, t1 = sc["latency_tolerance"]
 
         def dist(x: Optional[float]) -> str:
             return "-" if x is None else f"{x:.3f} s"
-
-        def num(x: Optional[float]) -> str:
-            return "-" if x is None else f"{x:.3f}"
-
-        def both(d: Dict[str, Any]) -> str:
-            return f"{_pct(d.get('pause_no_reaction_rate'))} / {_pct(d.get('pause_barge_in_rate'))}"
-
-        def of_own(value: str, n: Any = None) -> str:
-            # the same score for the recordings the profile was made from
-            return f"(profile's own recordings: {value}" + ("" if n is None else f", n = {n}") + ")"
         out += [
             "", f"[b] {LAYERS['human_norm']['title']}: {sc['profile']}",
             row(f"latency within {t0:+.2f} to {t1:+.2f} s", _pct(sc["latency_in_tolerance_rate"]),
@@ -1110,8 +1205,14 @@ def format_report(m: Measurement) -> str:
         out += _note(LAYERS["human_norm"]["note"])
         if sc.get("note"):
             out += _note(sc["note"])
+    if "pause_reaction_penalty" in sc:
+        def num(x: Optional[float]) -> str:
+            return "-" if x is None else f"{x:.3f}"
+
+        def both(d: Dict[str, Any]) -> str:
+            return f"{_pct(d.get('pause_no_reaction_rate'))} / {_pct(d.get('pause_barge_in_rate'))}"
         out += [
-            "", f"[c] {LAYERS['human_judgement']['title']}",
+            "", f"[c] {LAYERS['listener_judgement']['title']}",
             row("pauses: reaction penalty (0-2, lower is better)",
                 num(sc["pause_reaction_penalty"]),
                 of_own(num(own.get("pause_reaction_penalty")), own.get("n_pauses"))
@@ -1119,10 +1220,10 @@ def format_report(m: Measurement) -> str:
             row("  no reaction / barge-in", both(sc),
                 of_own(both(own), own.get("n_pauses")) if own else ""),
         ]
-        out += _note(LAYERS["human_judgement"]["note"])
-        if own:
-            out += [""] + _note("profile's own recordings = " + REFERENCE_SCORE_BASIS
-                                + "; " + REFERENCE_SCORE_NOTE)
+        out += _note(LAYERS["listener_judgement"]["note"])
+    if own:
+        out += [""] + _note("profile's own recordings = " + REFERENCE_SCORE_BASIS
+                            + "; " + REFERENCE_SCORE_NOTE)
     if m.quality:
         out += [""] + rq.report_lines(m.quality)
     out += ["", f"signature: {m.signature}"]

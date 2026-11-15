@@ -8,7 +8,7 @@ Character times come from the same even split as the NeMo backend.
 The upstream ``transcribe`` pads the waveform with ``PAD_SECONDS`` of silence
 and reports token times on the padded axis; the offset is removed here.
 
-Install: ``uv sync --extra asr-k2``.
+Install: ``uv sync --group asr-k2``.
 """
 
 from __future__ import annotations

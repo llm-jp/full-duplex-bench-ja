@@ -1,6 +1,6 @@
 [project]
 name = "fdbja"
-version = "0.2.0.dev0"
+version = "0.2.0"
 description = "Full-Duplex-Bench-JA: evaluation toolkit for Japanese full-duplex spoken dialogue models (turn-taking)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,19 +28,6 @@ realtime = ["websockets", "librosa"]
 always-talk = ["pyopenjtalk"]
 # analysis / figures (also `analyze-profile`)
 analysis = ["matplotlib", "pandas"]
-# `transcribe` backends (mutually exclusive: pick one per environment)
-asr-nemo = [
-    "reazonspeech-nemo-asr @ git+https://github.com/reazon-research/ReazonSpeech@v3.0.0#subdirectory=pkg/nemo-asr",
-    "torch", "torchaudio",
-]
-asr-k2 = [
-    "reazonspeech-k2-asr @ git+https://github.com/reazon-research/ReazonSpeech@v3.0.0#subdirectory=pkg/k2-asr",
-    "sherpa-onnx-core",   # the sherpa-onnx wheel omits it from its metadata; macOS needs libonnxruntime from here
-]
-asr-reazon-whisperx = [
-    "reazonspeech-espnet-asr @ git+https://github.com/reazon-research/ReazonSpeech@v2.1.0#subdirectory=pkg/espnet-asr",
-    "whisperx>=3.3", "torch", "torchaudio",
-]
 
 [project.scripts]
 fdbja = "fdbja.cli:main"
@@ -54,17 +41,33 @@ where = ["src"]
 
 [dependency-groups]
 dev = ["pytest", "pytest-cov", "ruff"]
+# `transcribe` backends (mutually exclusive: pick one per environment), installed from a
+# clone with `uv sync --group asr-...`. They are groups and not extras because ReazonSpeech
+# is distributed from its git repository only, and PyPI does not accept a package whose
+# metadata has direct-URL dependencies.
+asr-nemo = [
+    "reazonspeech-nemo-asr @ git+https://github.com/reazon-research/ReazonSpeech@v3.0.0#subdirectory=pkg/nemo-asr",
+    "torch", "torchaudio",
+]
+asr-k2 = [
+    "reazonspeech-k2-asr @ git+https://github.com/reazon-research/ReazonSpeech@v3.0.0#subdirectory=pkg/k2-asr",
+    "sherpa-onnx-core",   # the sherpa-onnx wheel omits it from its metadata; macOS needs libonnxruntime from here
+]
+asr-reazon-whisperx = [
+    "reazonspeech-espnet-asr @ git+https://github.com/reazon-research/ReazonSpeech@v2.1.0#subdirectory=pkg/espnet-asr",
+    "whisperx>=3.3", "torch", "torchaudio",
+]
 
 [tool.uv]
 # Resolve the lock for the interpreters we support; without an upper bound the
 # resolver has to pick versions that also install on future Pythons, which drags
-# in very old numba/llvmlite for the ASR extras.
+# in very old numba/llvmlite for the ASR groups.
 environments = ["python_version < '3.14'"]
-# The ASR extras pin different torch / numpy ranges; resolve them separately.
+# The ASR groups pin different torch / numpy ranges; resolve them separately.
 conflicts = [
-    [{ extra = "asr-nemo" }, { extra = "asr-reazon-whisperx" }],
-    [{ extra = "asr-k2" }, { extra = "asr-reazon-whisperx" }],
-    [{ extra = "asr-nemo" }, { extra = "asr-k2" }],
+    [{ group = "asr-nemo" }, { group = "asr-reazon-whisperx" }],
+    [{ group = "asr-k2" }, { group = "asr-reazon-whisperx" }],
+    [{ group = "asr-nemo" }, { group = "asr-k2" }],
 ]
 # reazonspeech-espnet-asr declares espnet_model_zoo from git HEAD, which now
 # requires Python >= 3.12; take the PyPI release instead.

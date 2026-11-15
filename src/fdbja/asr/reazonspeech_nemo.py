@@ -5,7 +5,7 @@ Apache-2.0) returns subword tokens with emission timestamps, so no separate
 aligner is needed. Character times are derived by splitting each subword's
 span evenly (:func:`fdbja.asr._subword.subwords_to_chars`).
 
-Install: ``uv sync --extra asr-nemo`` (pulls ``nemo_toolkit[asr]``; the model
+Install: ``uv sync --group asr-nemo`` (pulls ``nemo_toolkit[asr]``; the model
 weights are downloaded from the Hugging Face Hub on first use).
 """
 

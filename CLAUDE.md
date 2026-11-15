@@ -15,10 +15,10 @@
 - `score-offline` は GT の jchat とモデル出力の ASR jchat が**両方**あるクリップだけを採点し、無いものは黙ってスキップする。
   「scored 0 clips」はデータ配置の問題であることが多い。
 - ASR は `fdbja transcribe`(`asr/`)。バックエンドは `reazonspeech_whisperx`(既定。論文・リーダーボードの経路)/
-  `reazonspeech_nemo` / `reazonspeech_k2` で、extra(`asr-reazon-whisperx` / `asr-nemo` / `asr-k2`)は排他。
+  `reazonspeech_nemo` / `reazonspeech_k2` で、dependency group(`asr-reazon-whisperx` / `asr-nemo` / `asr-k2`、`uv sync --group`)は排他。
   NeMo / k2 は整列器なしで速いが発話の切れ目が多く出るので TOR の絶対値はリーダーボードと比較不可。
   サブワード内の文字時刻は均等分割 + 0.5 秒以内の橋渡しの近似(`asr/_subword.py`)。
-- `.[asr-reazon-whisperx]` は ESPnet の重みを `huggingface_hub` で直接読む(`espnet_model_zoo` の Python 3.10 向け版は Hub の
+- `asr-reazon-whisperx` は ESPnet の重みを `huggingface_hub` で直接読む(`espnet_model_zoo` の Python 3.10 向け版は Hub の
   リダイレクトで落ちる)。`ctc-segmentation` は numpy 2 に対して `--no-build-isolation` で再ビルドが要ることがある。
 - α(`exp(-α·D_KL)`)はモデル集合から自動較正されるため、モデルを 1 つ足すと全モデルのスコアが変わる。
   `docs/results.json` を更新するときは全モデルを 1 回の実行で採点し直す。

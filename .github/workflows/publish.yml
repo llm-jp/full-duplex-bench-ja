@@ -1,0 +1,71 @@
+name: Publish
+
+# Pushing a tag `vX.Y.Z` builds the distributions, checks them and uploads them to PyPI
+# through Trusted Publishing (OIDC; no API token is stored in the repository).
+# A manual run (workflow_dispatch) stops after the checks and publishes nothing.
+#
+# One-time setup on pypi.org (Publishing -> add a trusted publisher):
+#   project `fdbja`, owner `llm-jp`, repository `full-duplex-bench-ja`,
+#   workflow `publish.yml`, environment `pypi`.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv lock --check
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run pytest
+      - run: uv build
+      - name: The tag is the package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          ls "dist/fdbja-${version}-py3-none-any.whl" "dist/fdbja-${version}.tar.gz"
+      - name: No direct-URL dependency in the metadata (PyPI rejects them)
+        run: |
+          unzip -p dist/*.whl '*.dist-info/METADATA' > "$RUNNER_TEMP/METADATA.txt"
+          if grep -n '^Requires-Dist:.* @ ' "$RUNNER_TEMP/METADATA.txt"; then
+            echo "direct-URL dependencies cannot be uploaded to PyPI" >&2
+            exit 1
+          fi
+      - run: uvx twine check --strict dist/*
+      - name: The wheel works outside the repository
+        run: |
+          uv venv "$RUNNER_TEMP/venv"
+          uv pip install --python "$RUNNER_TEMP/venv/bin/python" dist/*.whl
+          cp .github/scripts/smoke_wheel.py "$RUNNER_TEMP/"
+          cd "$RUNNER_TEMP"
+          venv/bin/python smoke_wheel.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'llm-jp/full-duplex-bench-ja'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/fdbja/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
