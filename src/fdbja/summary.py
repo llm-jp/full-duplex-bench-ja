@@ -208,8 +208,8 @@ def scoring_conditions(config, asr_backends: Dict[str, Any],
 
 
 def _proposed_conditions(config) -> Dict[str, Any]:
-    """Settings of the proposed metrics, only when they are switched on (so
-    the default output keeps the keys of ``docs/results.json``)."""
+    """Settings of the metrics that can be switched: the pause reaction metric
+    (on by default) and boundary weighting (only when it is switched on)."""
     out: Dict[str, Any] = {}
     vap_cfg = config.get("metrics", "vap_distance", default={}) or {}
     if vap_cfg.get("enabled") and (vap_cfg.get("weighting") or "uniform") == "boundary":
@@ -219,7 +219,7 @@ def _proposed_conditions(config) -> Dict[str, Any]:
     if vap_cfg.get("enabled") and vap_cfg.get("calibration_exclude_baselines", False):
         out["alpha_calibration"] = "desired events of non-baseline models"
     pr = config.get("metrics", "pause_response", default={}) or {}
-    if pr.get("enabled"):
+    if pr.get("enabled", True):
         from fdbja.metrics.pause_response import PauseResponseConfig
         c = PauseResponseConfig.from_config(pr)
         out["pause_response_settings"] = {k: getattr(c, k) for k in (

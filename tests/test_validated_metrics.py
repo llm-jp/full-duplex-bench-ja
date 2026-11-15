@@ -223,17 +223,33 @@ def _run(config):
     return score_offline(config, log=quiet)
 
 
-def test_default_output_has_no_proposed_columns(tmp_path):
+def test_default_output(tmp_path):
+    # the Pause ranking metric is scored by default; boundary weighting is not
     from fdbja.summary import write_summary
 
     res = _run(_dummy_config(tmp_path, {}))
-    keys = {k for r in res["summary"] for k in r}
-    assert not keys & {"vapd_boundary", "pause_response", "pause_no_response_rate"}
-    assert "pause_response_settings" not in res and "vapd_boundary_settings" not in res
+    for r in res["summary"]:
+        assert "vapd_boundary" not in r
+        assert ("pause_response" in r) == (r["task"] == "pause")
+    assert "pause_response_settings" in res and "vapd_boundary_settings" not in res
     _, cpath = write_summary(res, str(tmp_path / "out"))
     with open(cpath, encoding="utf-8") as f:
         header = next(csv.reader(f))
-    assert not any(c.startswith(("vapd_boundary", "pause_")) for c in header)
+    assert "pause_response" in header and "pause_no_response_rate" in header
+    assert not any(c.startswith("vapd_boundary") for c in header)
+
+
+def test_pause_response_can_be_switched_off(tmp_path):
+    from fdbja.summary import write_summary
+
+    res = _run(_dummy_config(tmp_path, {"pause_response": {"enabled": False}}))
+    keys = {k for r in res["summary"] for k in r}
+    assert not keys & {"pause_response", "pause_no_response_rate", "pause_interrupt_rate"}
+    assert "pause_response_settings" not in res
+    _, cpath = write_summary(res, str(tmp_path / "out"))
+    with open(cpath, encoding="utf-8") as f:
+        header = next(csv.reader(f))
+    assert not any(c.startswith("pause_") for c in header)
 
 
 # the stand-in VAP gives D_KL = 0 on most desired events, so the alpha calibration divides by 0
