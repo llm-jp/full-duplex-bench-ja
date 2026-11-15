@@ -21,7 +21,7 @@ Backchanneling(システムの相槌)は事象の定義だけを公開してお�
   **境界・書き起こし・チェックポイントが違う値は比較できません**(`docs/results.json` の `boundaries` / `asr` / `vap_checkpoint` に記録しています)。
   掲載は Pause Handling と Smooth Turn-Taking の 2 タスクです。bc(相槌)は転写の閾値に依存する実験的タスクとしてコードにだけ残し、既定では採点しません。
   人の判断との検証(2026-11、クラウドソーシング 150 人)の要点もリーダーボードに載せています。
-- 英語版 README: [README.en.md](README.en.md)
+- 英語版 README: [README.en.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/README.en.md)
 
 **Quick start**(LLM-jp-Zoom1 が手元にある場合。合成データでの 1 分の動作確認は下の「[クイックスタート](#クイックスタート)」1.)
 
@@ -44,7 +44,7 @@ uv run fdbja leaderboard --reference docs/results.json     # 4. リーダーボ�
 | 採点(二値 TOR) | Python 3.10 以上、[uv](https://docs.astral.sh/uv/) |
 | 採点(VAP-distance) | 上に加えて `.[vap]`(torch)、[VAP-Realtime](https://github.com/inokoj/VAP-Realtime) のローカル clone(CPC エンコーダ同梱)、日本語 VAP チェックポイント [`maai-kyoto/vap_jp_kyoto`](https://huggingface.co/maai-kyoto/vap_jp_kyoto) の `vap_state_dict_jp_kyoto_20hz_2500msec.pt`(MIT。リビジョン固定で取得)を `<VAP_REALTIME_ROOT>/asset/vap/` に置く。手順は下の「VAP-distance の準備」 |
 | モデル出力の ASR 転写(`transcribe`) | いずれか 1 つの dependency group(clone した場所で `uv sync --group <名前>`): `asr-reazon-whisperx`(既定。ReazonSpeech-ESPnet + WhisperX。論文の数値を出した経路)/ `asr-nemo`(ReazonSpeech NeMo v2、整列器なしで高速)/ `asr-k2`(ReazonSpeech k2 v2、CPU 可)。モデルの重みは初回実行時に Hugging Face Hub から取得 |
-| 評価クリップの生成 | LLM-jp-Zoom1 のローカルコピー([DATASET.md](DATASET.md))、または自前の 2 チャネル対話の録音(下の「3. 自前の 2 チャネル対話から評価セットを作る」) |
+| 評価クリップの生成 | LLM-jp-Zoom1 のローカルコピー([DATASET.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/DATASET.md))、または自前の 2 チャネル対話の録音(下の「3. 自前の 2 チャネル対話から評価セットを作る」) |
 | モデル推論(`infer`) | 評価対象に応じて Moshi 系 WebSocket サーバ、`GOOGLE_API_KEY`、`OPENAI_API_KEY`、`XAI_API_KEY`。自作モデルは `ModelAdapter` を実装する(「モデルアダプタ」) |
 | 常時発話のベースライン(`always_talk`、既定の `source: auto`) | `.[always-talk]`(pyopenjtalk。初回に Open JTalk で 60 秒の音声ループを合成)。入れない場合は `source_wav` に音声ファイルを指定 |
 | GPU | ロックファイルの torch は PyPI の Linux 版(CUDA 13.0 ビルド)で、NVIDIA ドライバ 580 以上が必要。古いドライバでは下の「GPU ドライバが古い場合」の手順で入れ替える |
@@ -121,7 +121,7 @@ config の `models` に `name` と `domain: in|out` を追加してください�
 
 ### 3. 自前の 2 チャネル対話から評価セットを作る
 
-LLM-jp-Zoom1 の評価データは公開準備中です([DATASET.md](DATASET.md))。それまでの間、または別の領域で評価したい場合は、
+LLM-jp-Zoom1 の評価データは公開準備中です([DATASET.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/DATASET.md))。それまでの間、または別の領域で評価したい場合は、
 手元の 2 人対話の録音から同じ手順で評価セットを作れます。必要なのは次の 2 つです。
 
 - **ステレオの音声**(wav / flac、サンプリング周波数は任意): ch0 = 話者 A(モデルに聞かせる側)、ch1 = 話者 B(正解の振る舞いをする人間)。
@@ -292,7 +292,7 @@ print(m.stats["turn_end"]["latency_median"], m.signature)    # numpy 配列な�
 - 警告の閾値は `fdbja/recording_quality.py` の 1 か所にまとめてあり、出力の `quality.thresholds` に記録されます。
   ディレクトリを渡したときの `quality` は録音間の中央値・最小・最大と、警告ごとの該当した録音の数(`quality.flags`)です。
 
-設計(どの変数をどこに記録するか)、実際の録音での検証で分かった制約、限界は [docs/design/measure-entry.md](docs/design/measure-entry.md) にあります。
+設計(どの変数をどこに記録するか)、実際の録音での検証で分かった制約、限界は [docs/design/measure-entry.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/docs/design/measure-entry.md) にあります。
 
 ### VAP-distance の準備(実験的指標を使う場合のみ)
 
@@ -327,8 +327,8 @@ uv run fdbja make-profile <dir> --language ja --relationship R --situation S --m
 ```
 
 各コマンドの引数は `uv run fdbja <command> --help` を参照。人手評価の設計と手順は
-[docs/human_eval.md](docs/human_eval.md)、Pause の層別分析は
-[docs/pause_gap_analysis.md](docs/pause_gap_analysis.md) にあります。
+[docs/human_eval.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/docs/human_eval.md)、Pause の層別分析は
+[docs/pause_gap_analysis.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/docs/pause_gap_analysis.md) にあります。
 
 ### 採点結果の出力(`score-offline` / `analyze-profile`)
 
@@ -448,7 +448,7 @@ detection:
 | `moshi_ws` | J-Moshi / J-Moshi-ext / LLM-jp-Moshi-v1 など Moshi 系の WebSocket サーバ | `.[infer]` |
 | `gemini_live` | Gemini Live API | `.[gemini]` |
 | `openai_realtime` | OpenAI Realtime プロトコル(GPT-Realtime、Grok Voice) | `.[realtime]` |
-| `silence` / `always_talk` | 自明なベースライン(常時沈黙 / 常時発話)。常時発話は初回に Open JTalk(声質 Mei、CC BY 3.0、帰属表示は [src/fdbja/assets/README.md](src/fdbja/assets/README.md))で 60 秒の音声ループを生成してキャッシュ | 常時発話のみ `pyopenjtalk`(無い場合は `source_wav` を指定) |
+| `silence` / `always_talk` | 自明なベースライン(常時沈黙 / 常時発話)。常時発話は初回に Open JTalk(声質 Mei、CC BY 3.0、帰属表示は [src/fdbja/assets/README.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/src/fdbja/assets/README.md))で 60 秒の音声ループを生成してキャッシュ | 常時発話のみ `pyopenjtalk`(無い場合は `source_wav` を指定) |
 
 #### 自作モデルをつなぐ
 
@@ -517,7 +517,7 @@ API 側の変更への追随は保証しません。動かなくなった場合�
 
 比較用に、同じ 256 クラス VAP 定式化を使う **TurnNat 系の尤度スコア**(`metrics/turnnat.py`)も
 実装しています。参照応答を必要としない絶対尺度で、位置づけは
-[docs/related_metrics.md](docs/related_metrics.md) を参照。
+[docs/related_metrics.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/docs/related_metrics.md) を参照。
 
 TOR には自明な解があるため(沈黙し続ければ Pause / BC は「正解」、喋り続ければ Smooth TT は
 「正解」)、`silence_baseline` と `always_talk_baseline` を全タスクで併記します。
@@ -630,11 +630,11 @@ config 駆動で、**データはコードと別レイヤ**として扱います
 評価クリップは LLM-jp-Zoom1 から `reconstruct` でローカル生成します。
 LLM-jp-Zoom1 は公開準備中です。コーパスが手元に無い場合は、合成データでの動作確認(クイックスタート 1.)と、
 自前の 2 チャネル対話からの評価セット作成(同 3.)が使えます。
-入手方法、in-domain / out-of-domain の報告義務、held-out の方針は [DATASET.md](DATASET.md) を参照。
+入手方法、in-domain / out-of-domain の報告義務、held-out の方針は [DATASET.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/DATASET.md) を参照。
 
 ## ライセンス
 
-- **コード**: Apache-2.0([LICENSE](LICENSE))。
+- **コード**: Apache-2.0([LICENSE](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/LICENSE))。
 - **バックエンドとデータは対象外**で、それぞれの条件に従ってください。
 
 | 構成要素 | 条件 | 出典 |
@@ -651,7 +651,7 @@ LLM-jp-Zoom1 は公開準備中です。コーパスが手元に無い場合は�
 | WhisperX(整列) | BSD-2-Clause | [m-bain/whisperX](https://github.com/m-bain/whisperX) |
 | WhisperX が日本語整列に使う wav2vec2 モデル(`jonatasgrosman/wav2vec2-large-xlsr-53-japanese`) | Apache-2.0(モデルカード) | [Hugging Face](https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-japanese) |
 | Full-Duplex-Bench(設計の出典) | CC BY-NC 4.0。本リポジトリはコードを流用せず、事象定義と TOR の定義を独立に再実装 | [DanielLin94144/Full-Duplex-Bench](https://github.com/DanielLin94144/Full-Duplex-Bench) |
-| LLM-jp-Zoom1(評価コーパス) | コーパスの利用条件に従う。`docs/samples/` の音声は同コーパスからの抜粋で、同じ条件が及ぶ | [DATASET.md](DATASET.md) |
+| LLM-jp-Zoom1(評価コーパス) | コーパスの利用条件に従う。`docs/samples/` の音声は同コーパスからの抜粋で、同じ条件が及ぶ | [DATASET.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/DATASET.md) |
 | 評価対象モデルの出力(`docs/samples/`) | LLM-jp-Moshi-v1(Apache-2.0)と J-Moshi-ext(CC BY-NC 4.0)の出力のみ収録。商用 API の出力は収録していない | 各モデルカード |
 
 既定の構成(コード Apache-2.0、VAP-Realtime MIT、VAP チェックポイント MIT、CPC MIT、ReazonSpeech / ESPnet Apache-2.0、
@@ -661,7 +661,7 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 ## 引用
 
 本ツールキットを使った場合は、日本音響学会 2026 年秋季研究発表会の講演(2-7-12)を引用してください
-([CITATION.cff](CITATION.cff) にも同じ書誌情報があります)。
+([CITATION.cff](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/CITATION.cff) にも同じ書誌情報があります)。
 
 ```bibtex
 @inproceedings{abe2026fdbja_asj,
@@ -680,7 +680,7 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
    手元の録音を測る `measure` を、下の変更履歴「0.2.0」の整備と合わせてリリースします。PyPI での配布もこのバージョンからの予定です。
 2. 評価データの公開(LLM-jp-Zoom1 の公開に連動)。
 3. システムの相槌課題(Backchanneling)を採点対象に(聴取で確認したあと)。
-4. システムが先に話している場面の 2 課題(v1 の User Interruption と、v1.5 のユーザの相槌)。設計案は [docs/design/next-tasks.md](docs/design/next-tasks.md)。
+4. システムが先に話している場面の 2 課題(v1 の User Interruption と、v1.5 のユーザの相槌)。設計案は [docs/design/next-tasks.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/docs/design/next-tasks.md)。
 
 ## バージョン / 変更履歴
 
