@@ -2,8 +2,12 @@
 
 Turn-taking evaluation toolkit for **Japanese full-duplex spoken dialogue models**.
 It brings the evaluation design of [Full-Duplex-Bench](https://github.com/DanielLin94144/Full-Duplex-Bench)
-(Lin et al., 2025, [arXiv:2503.04721](https://arxiv.org/abs/2503.04721)) to Japanese and **needs no manual annotation**: the behaviour of the human
-interlocutor (speaker B) in a real dialogue corpus (LLM-jp-Zoom1) is used as the reference.
+(Lin et al., 2025, [arXiv:2503.04721](https://arxiv.org/abs/2503.04721)) to Japanese and **needs no manual annotation**: one speaker's (A's)
+audio from a real dialogue corpus (LLM-jp-Zoom1) is played to the model, and the events (turn ends and mid-turn
+pauses) are taken automatically from the turn changes and pauses in the recordings. Smooth Turn-Taking measures
+whether the model takes the turn where the human interlocutor (speaker B) did. Pause Handling is scored with a
+metric that agreed with listeners' judgements in a listening test (whether the model reacted to the pause, and
+whether it avoided talking over the partner).
 
 **Scope**: of the four Full-Duplex-Bench v1 tasks (Pause Handling, Backchanneling, Smooth Turn-Taking,
 User Interruption), the two that can be measured with the partner's (speaker A's) audio held fixed — Pause
