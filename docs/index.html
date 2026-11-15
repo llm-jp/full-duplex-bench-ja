@@ -10,29 +10,22 @@
 <div id="app">
   <header>
     <h1>Full-Duplex-Bench-JA <span class="sub">Leaderboard</span></h1>
-    <p class="lead">日本語のフルデュプレックス音声対話モデルが、相手の話の<b>間で黙っていられるか</b>(Pause Handling)と、
+    <p class="lead">日本語のフルデュプレックス音声対話モデルが、相手の話の途中の<b>ポーズにどう反応するか</b>(Pause Handling)と、
       相手の<b>ターンの終わりで話し始められるか</b>(Smooth Turn-Taking)を、実際の人間どうしの対話(LLM-jp-Zoom1)で採点しました。
-      順位は<b>望ましい振る舞いの割合</b>(Pause は間でターンを取らなかった割合 = 1 − TOR、Smooth TT は話し終わりでターンを取った割合 = TOR)です。
-      ただし Pause のこの値は「黙るほど高い」定義で、<a href="#validation-sec">人の判断とは逆を向く</a>ことが分かっています。</p>
+      順位は課題ごとに付けます。Pause は<b>ポーズに反応しなかった割合と、相手に被せて話し続けた割合の和</b>(小さいほど良い)、
+      Smooth TT は<b>話し終わりでターンを取った割合</b>(TOR、大きいほど良い)です。
+      Pause の TOR(ポーズでターンを取った割合)は、<a href="#validation-sec">聴取実験で人の判断と逆を向いた</a>ため、順位には使わず参考値として残しています。</p>
     <p class="hint">範囲: Full-Duplex-Bench v1 の 4 課題(Pause Handling / Backchanneling / Smooth Turn-Taking / User Interruption)のうち、相手(話者 A)の音声を固定して測れる 2 課題(Pause Handling、Smooth Turn-Taking)を日本語の実対話で実装しています。
       Backchanneling(システムの相槌)は事象の定義だけを公開しており、採点していません。User Interruption(ユーザの割り込み)と、v1.5 が扱う重なりの場面(ユーザの相槌、第三者・背景の発話)には未対応です。</p>
     <p id="meta" class="meta"></p>
   </header>
 
   <section id="overall-sec">
-    <h2>総合</h2>
-    <div class="controls" role="group" aria-label="総合の指標">
-      <span class="ctl-label">指標</span>
-      <div class="seg" id="ov-metric">
-        <button data-v="acc">望ましい振る舞い ↑</button>
-        <button data-v="dkl">VAP-distance ↓<small>(実験的)</small></button>
-      </div>
-    </div>
-    <p class="hint" id="ov-hint"></p>
-    <div class="chart" id="overall-chart"></div>
-    <p class="legend-line"><span class="li"><span class="sw sys"></span>システム</span> <span class="li"><span class="sw base"></span>自明なベースライン(順位外)</span>
-      <span class="li"><span class="dom in">in-domain</span> = 評価データと同じ LLM-jp-Zoom1 を学習に含む(参考値)</span></p>
-    <details class="tbl"><summary>表で見る</summary><div class="table-wrap"><table id="overall"></table></div></details>
+    <h2>順位の一覧</h2>
+    <p class="hint">順位は課題ごとに付けます。2 課題は指標の向きも尺度も違うため、まとめた総合の順位は付けていません。
+      並びは Pause の順位です。自明なベースライン(常時沈黙、常時発話)は順位の対象外です。</p>
+    <div class="table-wrap"><table id="overall"></table></div>
+    <p class="legend-line"><span class="li"><span class="dom in">in-domain</span> = 評価データと同じ LLM-jp-Zoom1 を学習に含む(参考値)</span></p>
   </section>
 
   <section id="task-sec">
@@ -48,14 +41,15 @@
     <div class="controls" role="group" aria-label="課題別の指標">
       <span class="ctl-label">指標</span>
       <div class="seg" id="task-metric">
-        <button data-v="acc">望ましい振る舞い ↑</button>
+        <button data-v="acc" id="tm-main">無反応 + 割り込み ↓</button>
+        <button data-v="tor" id="tm-tor">TOR<small>(参考)</small></button>
         <button data-v="dkl">VAP-distance ↓<small>(実験的)</small></button>
       </div>
     </div>
     <p class="hint" id="task-hint"></p>
     <div class="chart" id="task-chart"></div>
-    <p class="hint">ひげ = 95% 区間(事象の再標本化 2,000 回)。</p>
-    <details class="tbl"><summary>表で見る(TOR・望ましい振る舞いの割合・VAP-distance・95% 区間)</summary><div id="task-table"></div></details>
+    <p class="hint">ひげ = 95% 区間(事象の再標本化 10,000 回)。</p>
+    <details class="tbl"><summary>表で見る(各指標の値と 95% 区間)</summary><div id="task-table"></div></details>
   </section>
 
   <section id="validation-sec">
@@ -83,15 +77,15 @@
     <h3>指標が人の多数派と一致した割合</h3>
     <p class="hint" id="agree-scope"></p>
     <div class="chart" id="agree-chart"></div>
-    <p class="legend-line"><span class="li"><span class="sw sys"></span>現行の指標</span> <span class="li"><span class="sw prop"></span>提案中</span>
-      <span class="tag">提案指標(実装済み、既定では無効)</span> <span class="li">縦の破線 = 0.5(偶然)</span></p>
+    <p class="legend-line"><span class="li"><span class="sw sys"></span>現行の指標</span> <span class="li"><span class="sw prop"></span>提案指標</span>
+      <span class="tag">割り込みと無反応を罰する Pause 指標は、Pause の順位に使っています</span> <span class="li">縦の破線 = 0.5(偶然)</span></p>
 
     <h3>人の順位との順位相関(Pause)</h3>
     <p class="hint" id="rho-scope"></p>
     <div class="chart" id="rho-chart"></div>
     <p class="hint" id="proposed-note"></p>
     <p class="hint">指標の位置づけ: ターンテイキングの指標は「人が自然と感じる範囲(許容範囲)の外に出ているか」を測るもので、許容範囲の中の個性(相槌の多寡、間の長短)は採点しません。
-      Smooth TT では「録音の人間 B に近い」が許容範囲の中心として成り立ちましたが、Pause では成り立たず、提案した Pause 指標は「間で短く反応したか(相槌の有無)と、相手に被せて続けなかったか」を測ります。
+      Smooth TT では「録音の人間 B に近い」が許容範囲の中心として成り立ちましたが、Pause では成り立たなかったため、Pause の順位は「ポーズで短く反応したか(相槌の有無)と、相手に被せて続けなかったか」を数える指標で付けています。
       相手の発話中の相槌(Backchanneling)は別の課題として定義のみ公開しています(未採点)。</p>
     <details class="tbl"><summary>注意</summary><ul id="caveats"></ul></details>
   </section>
@@ -130,8 +124,12 @@
   <section id="notes-sec">
     <h2>注記</h2>
     <details class="tbl"><summary>指標の定義</summary>
-      <p><b>TOR</b> = モデルがターンを取った割合。<b>望ましい振る舞いの割合</b> = 課題で望ましいとされる側(Pause はターンを取らない、Smooth TT は取る)に一致した割合
-        (Pause は 1 − TOR、Smooth TT は TOR。Full-Duplex-Bench と同じ二値の判定)。総合 = 2 課題の平均。
+      <p><b>TOR</b> = モデルがターンを取った割合(Full-Duplex-Bench と同じ二値の判定)。Smooth TT の順位は TOR(話し終わりでターンを取った割合 = <b>望ましい振る舞いの割合</b>)で付けます。
+        <b>無反応 + 割り込み</b>(Pause の順位)= ポーズごとに、無反応(ポーズの中に 0.2 秒以上の声が無い)と
+        割り込み(ポーズの中で話し始めて相手の再開後も 0.5 秒以上続ける、またはポーズの前 2 秒で相手と 0.5 秒を超えて重なる)をそれぞれ 0 / 1 で数え、和を事象で平均した値
+        (0〜2、小さいほど良い。応答音声のエネルギーから判定し、転写は使いません。相槌・息・雑音は区別しません)。何も出力しないと 1.0 になります。
+        Pause の TOR は Full-Duplex-Bench の定義(ポーズでターンを取らないほど良い)の値で、聴取実験で人の判断と逆を向いたため参考値です。
+        2 課題は指標の向きも尺度も違うため、まとめた総合の順位は付けていません。
         <b>VAP-distance</b>(実験的)= 人間の音声活動予測(VAP)分布とモデル応答の分布の距離(D<sub>KL</sub>、小さいほど人間の応答に近い)。
         相槌は事象の定義のみを公開しており、採点の対象外です。</p>
     </details>

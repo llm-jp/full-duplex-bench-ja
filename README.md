@@ -11,11 +11,12 @@ Backchanneling(システムの相槌)は事象の定義だけを公開してお�
 
 - リーダーボード: <https://llm-jp.github.io/full-duplex-bench-ja/>
   (`docs/` を GitHub Pages で配信。結果は `docs/results.json`、サンプル音声は `docs/samples/`)。
-  順位は **TOR で望ましい振る舞いをした割合**(Full-Duplex-Bench と同じ二値指標)で付けています。
-  ただし Pause のこの値は「黙るほど高い」定義で、聴取実験では人の判断と逆を向きました(リーダーボードの「人の判断との検証」)。
+  順位は課題ごとに付けています。Smooth Turn-Taking は **TOR**(Full-Duplex-Bench と同じ二値指標。話し終わりでターンを取った割合)、
+  Pause Handling は **ポーズに反応しなかった割合と、相手に被せて話し続けた割合の和**(0.2.0 から。小さいほど良い)です。
+  Pause の TOR は「黙るほど良い」定義で、聴取実験では人の判断と逆を向いたため(リーダーボードの「人の判断との検証」)、順位には使わず参考値として併記しています。
   **VAP-distance は実験的指標**です。人の判断との照合は聴取実験 1 回(2026-11)だけで、Pause では人の選好と合わなかったため参考値として併記し、
   既定の config では無効にしています(`metrics.vap_distance.enabled: true` で有効化)。
-  掲載中の値(2026-11-04、9 システム)は、人間側の発話境界を音声で付け直す設定(`detection.boundaries: audio`)、
+  掲載中の値(2026-11-15 に採点し直したもの、9 システム)は、人間側の発話境界を音声で付け直す設定(`detection.boundaries: audio`)、
   ASJ の講演論文(下の「引用」。以下「論文」)と同じ書き起こし(ReazonSpeech-ESPnet で書き起こし、WhisperX で文字の時刻を整列)、既定の MIT チェックポイント(`maai-kyoto/vap_jp_kyoto`、下記)で採点したもので、
   **境界・書き起こし・チェックポイントが違う値は比較できません**(`docs/results.json` の `boundaries` / `asr` / `vap_checkpoint` に記録しています)。
   掲載は Pause Handling と Smooth Turn-Taking の 2 タスクです。bc(相槌)は転写の閾値に依存する実験的タスクとしてコードにだけ残し、既定では採点しません。
@@ -315,8 +316,8 @@ export VAP_REALTIME_ROOT=$(cd ../VAP-Realtime && pwd)
 uv run fdbja reconstruct --config configs/default.yaml           # LLM-jp-Zoom1 → 事象検出 → 20 秒クリップ + manifest
 uv run fdbja infer --config configs/default.yaml [--limit N]     # 話者 A の音声をモデルに流し応答を録る
 uv run fdbja transcribe --config configs/default.yaml [--model NAME] [--task T] [--backend B]   # 応答を ASR して jchat を書く
-uv run fdbja score-offline --config configs/default.yaml [--limit N] [--model NAME]   # TOR(有効にした場合は VAP-distance も)を採点し results.json / summary.json / summary.csv を出力
-uv run fdbja leaderboard --results results/summary.json [--reference docs/results.json]   # リーダーボードと同じ順位(望ましい振る舞いの割合)で表示。採点条件が違えば警告
+uv run fdbja score-offline --config configs/default.yaml [--limit N] [--model NAME]   # TOR と Pause の無反応 + 割り込み(有効にした場合は VAP-distance も)を採点し results.json / summary.json / summary.csv を出力
+uv run fdbja leaderboard --results results/summary.json [--reference docs/results.json]   # リーダーボードと同じ課題ごとの順位(Pause は無反応 + 割り込み、Smooth TT は TOR)で表示。採点条件が違えば警告
 uv run fdbja analyze-profile --results results/results.json --out results/profile   # システムごとの傾向(黙る / 被せる / 遅い)と事象単位のレポート
 uv run fdbja analyze-pause --eval-dir data/eval --out results/pause_gap   # Pause をギャップ長別に再集計(bootstrap CI 付き)
 uv run fdbja sample-human-eval --config configs/default.yaml --out ./human_eval   # 人手評価バンドル(Web UI 込み)
@@ -344,7 +345,7 @@ uv run fdbja make-profile <dir> --language ja --relationship R --situation S --m
 | キー | 内容 |
 |-----|------|
 | `n` / `n_clips` | 採点した事象の数 / クリップの数 |
-| `TOR` / `TOR_ci` | 二値 TOR と 95% 区間(事象を単位とする bootstrap、10000 回、百分位。`output.bootstrap: {n, seed}` で変更可。リーダーボードに掲載した区間は 2,000 回で計算したもの) |
+| `TOR` / `TOR_ci` | 二値 TOR と 95% 区間(事象を単位とする bootstrap、10000 回、百分位。`output.bootstrap: {n, seed}` で変更可。リーダーボードに掲載した区間も同じ設定) |
 | `lat_median` / `lat_q1` / `lat_q3` / `lat_n` | Smooth TT でターンを取った事象の応答の遅れ(A の発話終了から応答の開始まで、秒)。リーダーボードと同じく負の値は 0 に丸めたもの |
 | `onset_median` / `onset_q1` / `onset_q3` / `overlap_rate` | 同じ遅れを丸めずに保持したもの(-0.5〜+2.0 秒)と、そのうち A が話し終える前に話し始めた(被せた)割合 |
 | `event_mean_dkl` / `dkl_ci` | VAP-distance(有効にした場合のみ)とその 95% 区間 |
@@ -498,10 +499,15 @@ API 側の変更への追随は保証しません。動かなくなった場合�
 | **Smooth Turn-Taking** | A(≥4 秒)→ 間(<0.4 秒)→ B(≥4 秒) | ターンを取る(TO=1) |
 | **Backchanneling** | A(≥3 秒)中に人間 B が相槌のみ | 相槌に留める(TO=0)。あわせて相槌の頻度(`bc_freq`、A の発話 1 秒あたり。人間は `human_freq`)と、相槌の開始時刻を 0.2 秒ビンにした人間との JS ダイバージェンス(`jsd`、0〜1、相槌なしは 1.0)、相槌を 1 回以上出した事象の割合(`bc_any_rate`)とその事象に限った JSD(`jsd_cond`)を出す (実験的。既定の `tasks` に含めない) |
 
-主指標は 1 つ、実験的指標が 1 つです。
+順位に使う指標は課題ごとに 1 つ、ほかに実験的指標が 1 つです。
 
-- **TOR**(二値 Takeover Rate、主指標)— Full-Duplex-Bench と同じ定義。モデルがターンを取ったか否か。
-  モデル応答の ASR 転写から判定します。リーダーボードの順位はこの指標で望ましい振る舞いをした割合で付けます。
+- **TOR**(二値 Takeover Rate)— Full-Duplex-Bench と同じ定義。モデルがターンを取ったか否か。
+  モデル応答の ASR 転写から判定します。Smooth TT の順位はこの値(話し終わりでターンを取った割合)で付けます。
+  Pause の TOR(ポーズでターンを取った割合。Full-Duplex-Bench の定義では小さいほど良い)は、聴取実験で人の判断と逆を向いたため、
+  順位には使わず参考値として出します。
+- **無反応 + 割り込み**(`pause_response`、Pause の順位)— ポーズごとに、反応しなかったか(無反応)と、相手に被せて話し続けたか(割り込み)を
+  それぞれ 0 / 1 で数え、和を事象で平均した値(0〜2、小さいほど良い)。応答音声から判定し、転写は使いません。
+  定義と検証の状況は下の「Pause の順位に使う指標と提案指標」。
 - **VAP-distance**(連続、**実験的**)— 同じ話者 A の音声に対し、**人間**の応答と**モデル**の応答をそれぞれ凍結
   [VAP](https://github.com/inokoj/VAP-Realtime) に通し、次話者予測分布間の KL 距離を測ります。
   二値が捨てる「タイミングの良し悪し」を連続値で捉える狙いですが、人の判断との照合は聴取実験 1 回(2026-11)だけで、
@@ -513,30 +519,38 @@ API 側の変更への追随は保証しません。動かなくなった場合�
 実装しています。参照応答を必要としない絶対尺度で、位置づけは
 [docs/related_metrics.md](docs/related_metrics.md) を参照。
 
-いずれの指標にも自明な解があるため(沈黙し続ければ Pause / BC は「正解」、喋り続ければ Smooth TT は
+TOR には自明な解があるため(沈黙し続ければ Pause / BC は「正解」、喋り続ければ Smooth TT は
 「正解」)、`silence_baseline` と `always_talk_baseline` を全タスクで併記します。
+Pause の無反応 + 割り込みでは、沈黙し続けると 1.0(すべて無反応)、喋り続けるとほぼすべてが割り込みになって 1.0 以上になり、どちらも良い値になりません。
 
 Backchannel はモデルの能力に依存する任意タスクとして扱います。サーバ側のターン検出により
 ユーザ発話中の出力が制約される API は、同時入出力可能なモデルと同一ランキングで比較しません。
 
 **指標の位置づけ**: ターンテイキングの指標は「人が自然と感じる範囲(許容範囲)の外に出ているか」を測るもので、
 許容範囲の中の個性(相槌の多寡、間の長短)は採点しません。Smooth TT では「録音の人間 B に近い」が許容範囲の中心として成り立ちましたが、
-Pause では成り立たず(人の判断との検証で、間に短く声を出したシステムが選ばれた)、検証中の Pause 指標は
-「間で短く反応したか(相槌の有無)と、相手に被せて続けなかったか」を測ります。
+Pause では成り立たなかったため(人の判断との検証で、ポーズに短く声を出したシステムが選ばれた)、Pause の順位に使う指標は
+「ポーズで短く反応したか(相槌の有無)と、相手に被せて続けなかったか」を測ります。
 相手の発話中の相槌(Backchanneling)は別の課題として定義のみ公開しています(未採点)。
 
-### 提案指標(既定では無効)
+### Pause の順位に使う指標と提案指標
 
 人の判断との検証([リーダーボードの「人の判断との検証」](https://llm-jp.github.io/full-duplex-bench-ja/#validation-sec)、聴取実験 2026-11)で、
-TOR・元の VAP-distance より人の選好と合った 2 つの指標を実装しています。どちらも既定の採点(TOR、元の VAP-distance)は変えず、
-有効にしたときだけ `score-offline` の要約(`summary.json` / `summary.csv`)と事象単位の結果に列が加わります。
-既定で無効にしているのは、検証が 1 コーパス(LLM-jp-Zoom1)の評価セットの上に限られ、別のコーパスでの確認が済んでいないためです。
-検証の状況は 2 つの指標で違います。
+TOR・元の VAP-distance より人の選好と合った 2 つの指標を実装しています。どちらも TOR と元の VAP-distance の値は変えず、
+`score-offline` の要約(`summary.json` / `summary.csv`)と事象単位の結果に列を加えます。扱いと検証の状況は 2 つの指標で違います。
 
-- Pause 指標: 構成を決めた聴取実験(9 システム)のあと、**事前登録した 2 回目の聴取実験**で聴取者の判断との対応を確認しました。
+- 割り込みと無反応を罰する Pause 指標(無反応 + 割り込み): 0.2.0 から**リーダーボードの Pause の順位**に使い、既定で採点します
+  (`metrics.pause_response.enabled: false` で止められます。応答音声が無いクリップでは計算しません)。
+  構成を決めた聴取実験(9 システム)のあと、**事前登録した 2 回目の聴取実験**で聴取者の判断との対応を確認しました。
   2 回目は同じ評価セットの事象で、1 回目に提示していないシステムの組だけを使いました(実システム 7 つ)。
   参加者の一部は 1 回目にも参加していました(その参加者を除いた分析でも向きは同じでした)。2 回目の数値はまだ掲載していません。
-- 境界重み付き VAP-distance: 検証は 1 回目の聴取実験だけで、構成もそのデータで選んだものです。
+- 境界重み付き VAP-distance: 提案指標のままで、既定では無効です。検証は 1 回目の聴取実験だけで、構成もそのデータで選んだものです。
+
+どちらも、検証は 1 コーパス(LLM-jp-Zoom1)の評価セットの上に限られ、別のコーパスでの確認は済んでいません。
+Pause の順位を解釈するときは、次の点に注意してください。
+
+- 値は「何も出力しないとき 1.0」を基準に見ます。1.0 を超えるのは、割り込んだ事象の割合が、反応した事象の割合を上回るときです。
+- 0.2 秒以上の声があれば反応と数え、相槌・息・雑音は区別しません。
+- 聴取者が選んだのは、ポーズで短く反応し、相手に被せないシステムでした。録音の人間 B の振る舞い(この評価セットのポーズではほとんど声を出していない)とは一致しません。
 
 - **境界重み付き VAP-distance**(Smooth TT 用、`metrics.vap_distance.weighting: boundary`、`vap_distance.enabled: true` が前提)—
   元の VAP-distance が判定窓の D_KL(P_t‖Q_t) を等重みで平均するのに対し、境界 t0(A の話し終わり)からの重み
@@ -544,13 +558,13 @@ TOR・元の VAP-distance より人の選好と合った 2 つの指標を実装
   (聴取者が聞いた範囲。`boundary_pre_seconds` / `boundary_post_seconds`)。要約の列は `vapd_boundary`(事象平均、小さいほど人間 B に近い)と
   `vapd_boundary_ci_*`。Pause にも `boundary_tasks: [pause, smooth_tt]` で適用できます(t0 = 間の始まり)が、検証で選ばれたのは Smooth TT だけです。
   検証時のチェックポイントは VAP-Realtime 配布版で、既定の MIT 版での値は検証していません。
-- **割り込みと無反応を罰する Pause 指標**(Pause 用、`metrics.pause_response.enabled: true`)— 間 [g_s, g_e] ごとに、
-  無反応 = 間の中の部分が 0.2 秒以上の有声区間が無ければ 1、割り込み = 間の中で始まり A の再開後 0.5 秒以上続く有声区間がある、
-  または間の前 2 秒で A と 0.5 秒を超えて重なっていれば 1 とし、指標 = 無反応 + 割り込み(0〜2、小さいほど良い)。
+- **割り込みと無反応を罰する Pause 指標**(Pause 用、`metrics.pause_response`、既定で有効)— ポーズ [g_s, g_e] ごとに、
+  無反応 = ポーズの中の部分が 0.2 秒以上の有声区間が無ければ 1、割り込み = ポーズの中で始まり A の再開後 0.5 秒以上続く有声区間がある、
+  またはポーズの前 2 秒で A と 0.5 秒を超えて重なっていれば 1 とし、指標 = 無反応 + 割り込み(0〜2、小さいほど良い)。
   システムの値は事象平均です。有声区間は応答音声(`combined.wav` の ch1)と A(GT の ch0)のエネルギー VAD
   (50 ms 枠、各チャネルの 99.5 パーセンタイルの 5 %)から取り、ASR も VAP も使いません。要約の列は `pause_response`
   (`pause_response_ci_*`)、`pause_no_response_rate`、`pause_interrupt_rate`。閾値 4 つは config で変えられます。
-  録音の人間 B はこの評価セットの間でほとんど声を出していない(聴取に使った 100 事象のうち 12)一方、聴取者は間で短く反応したシステムを選んだため、
+  録音の人間 B はこの評価セットのポーズでほとんど声を出していない(聴取に使った 100 事象のうち 12)一方、聴取者はポーズで短く反応したシステムを選んだため、
   人間 B との距離ではなく「反応したか」と「被せて続けなかったか」を直接数えます。相槌・息・雑音は区別しません。
 
 ### 既知の限界
@@ -662,7 +676,7 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 
 ## ロードマップ
 
-1. **0.2.0 のリリース** — 人の判断で検証した 2 指標(境界重み付き VAP-distance、割り込みと無反応を罰する Pause 指標。既定では無効)と、
+1. **0.2.0 のリリース** — 人の判断で検証した 2 指標(境界重み付き VAP-distance は既定では無効、割り込みと無反応を罰する Pause 指標はリーダーボードの Pause の順位に使う)と、
    手元の録音を測る `measure` を、下の変更履歴「0.2.0」の整備と合わせてリリースします。PyPI での配布もこのバージョンからの予定です。
 2. 評価データの公開(LLM-jp-Zoom1 の公開に連動)。
 3. システムの相槌課題(Backchanneling)を採点対象に(聴取で確認したあと)。
@@ -678,10 +692,14 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
   - `score-offline` の要約に `n_clips`、`TOR_ci` / `dkl_ci`(事象の bootstrap)、応答の遅れの分位点と丸めない遅れ(`onset_*`、被せの割合 `overlap_rate`)、
     採点条件(`boundaries` / `system_activity` / `asr` / `vap_checkpoint` / `ci`)を追加し、`summary.json` / `summary.csv` も出力。キー名は `docs/results.json` に合わせた。
   - `analyze-profile`: システムごとの傾向(黙る型 / 被せる型 / 遅い型)の表と散布図、事象単位の判定と理由の CSV。
-  - 人の判断で検証した 2 指標を追加(既定では無効、README「提案指標」): 境界重み付き VAP-distance
-    (`metrics.vap_distance.weighting: boundary`、`tau_seconds`、要約の `vapd_boundary`)と、割り込みと無反応を罰する Pause 指標
-    (`metrics.pause_response`、要約の `pause_response` / `pause_no_response_rate` / `pause_interrupt_rate`)。既定の採点は変わらない。
-  - `leaderboard` コマンド: `summary.json` をリーダーボードと同じ順位で表示し、`--reference docs/results.json` で掲載値と並べる(採点条件が違えば警告)。
+  - 人の判断で検証した 2 指標を追加(README「Pause の順位に使う指標と提案指標」): 境界重み付き VAP-distance
+    (`metrics.vap_distance.weighting: boundary`、`tau_seconds`、要約の `vapd_boundary`。既定では無効)と、割り込みと無反応を罰する Pause 指標
+    (`metrics.pause_response`、要約の `pause_response` / `pause_no_response_rate` / `pause_interrupt_rate`。既定で有効)。TOR と VAP-distance の値は変わらない。
+  - **リーダーボードの Pause の順位を、TOR(望ましい振る舞いの割合)から「無反応 + 割り込み」に変更**。Pause の TOR は参考値として残す。
+    Smooth TT の順位は TOR のまま。2 課題は指標の向きと尺度が違うため、総合の順位は付けない。
+    掲載値は 9 システムを 1 回の実行で採点し直した(2026-11-15。Pause に無反応 + 割り込みの列を追加、95% 区間の再標本化を 2,000 回から 10,000 回に)。
+    TOR・応答潜時・事象数は以前の掲載値と一致。VAP-distance は LLM-jp-Live の Pause だけ小数第 4 位が変わった(1.8482 → 1.8484。モデルの予測確率を別の計算機で計算し直したため)。95% 区間の端は最大 0.015 動いた。
+  - `leaderboard` コマンド: `summary.json` をリーダーボードと同じ課題ごとの順位で表示し、`--reference docs/results.json` で掲載値と並べる(採点条件が違えば警告)。
   - CI に Python 3.13 と extras(vap / analysis / always-talk)の import・解決の確認を追加。開発依存に pytest-cov。
   - ASR バックエンドの依存(`asr-reazon-whisperx` / `asr-nemo` / `asr-k2`)を extra から dependency group に移した
     (`uv sync --extra asr-...` は `uv sync --group asr-...` に)。ReazonSpeech は git リポジトリからだけ配布されており、
