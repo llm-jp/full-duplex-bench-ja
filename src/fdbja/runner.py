@@ -132,7 +132,9 @@ def score_offline(config: Config, limit: int = 0,
     boundary = _boundary_settings(vap_cfg) if use_vap else None
     pr_raw = config.get("metrics", "pause_response", default={}) or {}
     pr_cfg = None
-    if pr_raw.get("enabled", False):
+    # the Pause ranking metric: on unless switched off; it is computed from the
+    # output audio and skipped for clips without one
+    if pr_raw.get("enabled", True):
         from fdbja.metrics.pause_response import PauseResponseConfig
         pr_cfg = PauseResponseConfig.from_config(pr_raw)
     boundaries = config.get("detection", "boundaries", default="transcript")

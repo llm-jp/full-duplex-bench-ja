@@ -3,7 +3,6 @@
 // the audio samples. Plain JS + inline SVG, no libraries.
 "use strict";
 
-const TASK_ORDER = ["pause", "smooth_tt"];   // scored tasks
 // bc (相槌) is not scored: its sample is shown as a definition example only
 const SAMPLE_TASKS = ["pause", "smooth_tt", "bc"];
 const UNSCORED = new Set(["bc"]);
@@ -13,9 +12,9 @@ const SVGNS = "http://www.w3.org/2000/svg";
 
 const params = new URLSearchParams(location.search);
 const state = {
-  ov: pick(params.get("ov"), ["acc", "dkl"], "acc"),
   view: pick(params.get("view"), ["pause", "197", "72"], "pause"),
-  metric: pick(params.get("metric"), ["acc", "dkl"], "acc"),
+  // acc = the ranking metric of the task, tor = Pause TOR (reference only)
+  metric: pick(params.get("metric"), ["acc", "tor", "dkl"], "acc"),
   rank: pick(params.get("rank"), ["pause", "smooth_tt"], "pause"),
   sb: pick(params.get("sb"), ["audio", "transcript"], "audio"),
 };
@@ -51,22 +50,19 @@ function accCiOf(row) {
 }
 const isBaseline = (d) => d === "baseline";
 
-function aggregate(summary) {
-  const models = {};
-  for (const r of summary) {
-    const m = (models[r.model] ||= { name: r.model, domain: r.domain, tasks: {} });
-    m.tasks[r.task] = { acc: accOf(r), dkl: r.event_mean_dkl };
-  }
-  for (const m of Object.values(models)) {
-    const ts = TASK_ORDER.map((t) => m.tasks[t] || {});
-    m.acc = mean(ts.map((t) => t.acc));
-    m.dkl = mean(ts.map((t) => t.dkl));
-  }
-  return models;
-}
-function mean(xs) {
-  const v = xs.filter(isNum);
-  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+// Pause is ranked by the pause-reaction penalty: the share of pauses with no
+// reaction plus the share with a barge-in (0-2, smaller is better)
+function penOf(row) { return isNum(row.pause_response) ? row.pause_response : null; }
+// rank among the systems, best first; equal values share a rank and the
+// trivial baselines get none
+function ranksOf(rows, key, asc) {
+  const sys = rows.filter((r) => !isBaseline(r.domain) && isNum(key(r)))
+    .sort((a, b) => asc ? key(a) - key(b) : key(b) - key(a));
+  const out = {};
+  sys.forEach((r, i) => {
+    out[r.model] = i > 0 && key(r) === key(sys[i - 1]) ? out[sys[i - 1].model] : i + 1;
+  });
+  return out;
 }
 // systems first (best first), trivial baselines last and unranked
 function order(list, key, asc) {
@@ -80,13 +76,16 @@ function order(list, key, asc) {
 
 // ---- segmented toggles ----------------------------------------------------
 const redraws = [];
-function bindSeg(id, key, onChange) {
-  const host = document.getElementById(id);
-  const btns = [...host.querySelectorAll("button")];
-  const sync = () => btns.forEach((b) => {
+function syncSeg(id, key) {
+  document.getElementById(id).querySelectorAll("button").forEach((b) => {
     const on = b.dataset.v === state[key];
     b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on));
   });
+}
+function bindSeg(id, key, onChange) {
+  const host = document.getElementById(id);
+  const btns = [...host.querySelectorAll("button")];
+  const sync = () => syncSeg(id, key);
   btns.forEach((b) => b.addEventListener("click", () => {
     state[key] = b.dataset.v; sync(); onChange();
     const q = new URLSearchParams(location.search); q.set(key, state[key]);
@@ -215,77 +214,64 @@ function render(results, meta, human) {
   const tag = (d) => d === "in" ? "in-domain※" : "";
 
   const summary = results.summary || [];
-  const models = aggregate(summary);
 
-  // ---- overall: bar chart + table ----
-  bindSeg("ov-metric", "ov", () => {
-    const acc = state.ov === "acc";
-    document.getElementById("ov-hint").textContent = acc
-      ? "2 課題(Pause・Smooth TT)の望ましい振る舞いの割合の平均。長いほど良い。"
-      : "2 課題の VAP-distance の平均(実験的指標、参考値)。短いほど人間の応答に近い。";
-    const list = order(Object.values(models), (m) => acc ? m.acc : m.dkl, !acc);
-    const items = []; let rank = 0, sepDone = false;
-    for (const m of list) {
-      const base = isBaseline(m.domain);
-      if (base && !sepDone) { items.push({ sep: "自明なベースライン(順位外)" }); sepDone = true; }
-      const v = acc ? m.acc : m.dkl;
-      const p = m.tasks.pause || {}, s = m.tasks.smooth_tt || {};
-      items.push({
-        label: (base ? "" : `${++rank}. `) + shortL(m.name), tag: tag(m.domain),
-        tagCls: "in", kind: base ? "base" : "sys", v,
-        valText: acc ? pct(v) : fmt(v, 3),
-        tip: `<b>${label(m.name)}</b><br>` + (acc
-          ? `総合 ${pct(m.acc)}<br>Pause ${pct(p.acc)} / Smooth TT ${pct(s.acc)}`
-          : `総合 ${fmt(m.dkl, 3)}<br>Pause ${fmt(p.dkl, 3)} / Smooth TT ${fmt(s.dkl, 3)}`),
-      });
-    }
-    const max = acc ? 1 : Math.ceil(Math.max(...list.map((m) => m.dkl)) * 2) / 2;
-    hbar(document.getElementById("overall-chart"), items, acc
-      ? { min: 0, max: 1, ticks: [0, .25, .5, .75, 1], tickFmt: (t) => t * 100 + "%" }
-      : { min: 0, max, ticks: range(0, max, 0.5), tickFmt: (t) => t.toFixed(1) });
-  });
-  overallTable(models, meta, label);
+  // ---- ranks per task (no combined rank: the tasks differ in scale) ----
+  overallTable(summary, meta, label);
 
   // ---- per task: one chart, toggled ----
   const tt = (results.turn_transition_only || []).filter((r) => r.task === "smooth_tt");
   bindSeg("task-view", "view", drawTask);
   bindSeg("task-metric", "metric", drawTask);
   function drawTask() {
-    const rows = state.view === "pause" ? summary.filter((r) => r.task === "pause")
+    const isPause = state.view === "pause";
+    if (!isPause && state.metric === "tor") { state.metric = "acc"; syncSeg("task-metric", "metric"); }
+    document.getElementById("tm-main").textContent = isPause ? "無反応 + 割り込み ↓" : "望ましい振る舞い ↑";
+    document.getElementById("tm-tor").style.display = isPause ? "" : "none";
+    const rows = isPause ? summary.filter((r) => r.task === "pause")
       : state.view === "72" ? tt : summary.filter((r) => r.task === "smooth_tt");
-    const acc = state.metric === "acc";
     const n = rows[0] ? rows[0].n : "";
-    const hints = {
-      pause: "間でターンを取らなかった割合(= 1 − TOR)。黙るほど高くなる定義で、常時沈黙が 100% になります。人の評価とは逆を向きます(下の検証)。",
-      197: "話者 A のターンの終わりから 2 秒以内に話し始めた割合(= TOR)。",
-      72: "Smooth TT のうち本当の話者交替の 72 事象に限った値(A が相槌主体の発話、A の終わりの直前に B が話している、B の応答が相槌の連なり、のいずれかを除く)。",
+    const num = { text: (v) => fmt(v, 3), ciText: (lo, hi) => ci(lo, hi, 3), asc: true, extra: () => "" };
+    // what the chart shows: value, 95% interval, direction and wording
+    const M = state.metric === "dkl" ? { ...num, name: "VAP-distance", ranked: true,
+      val: (r) => r.event_mean_dkl, ci: (r) => r.dkl_ci || [],
+      hint: "VAP-distance(実験的指標、参考値)。人間の音声活動予測分布との距離で、小さいほど人間の応答に近い。",
+    } : isPause && state.metric === "tor" ? { ...num, name: "TOR", ranked: false,
+      val: (r) => r.TOR, ci: (r) => r.TOR_ci || [],
+      hint: "ポーズでターンを取った割合(TOR、参考値)。Full-Duplex-Bench の定義では小さいほど良いとされますが、聴取実験では人の判断と逆を向いたため、順位には使っていません(下の検証)。並びは TOR の小さい順。",
+    } : isPause ? { ...num, name: "無反応 + 割り込み", ranked: true, ref: 1,
+      val: penOf, ci: (r) => r.pause_response_ci || [],
+      extra: (r) => `<br>無反応 ${pct(r.pause_no_response_rate)} / 割り込み ${pct(r.pause_interrupt_rate)}` +
+        `<br>TOR(参考) ${fmt(r.TOR, 3)}`,
+      hint: "ポーズに反応しなかった割合と、相手に被せて話し続けた割合の和(0〜2)。小さいほど良い。ポーズで短く反応し、相手の再開に被せなければ 0 に近づきます。縦の破線 = 1.0(何も出力しないときの値)。",
+    } : { name: "望ましい振る舞い", ranked: true, asc: false, isPct: true,
+      val: accOf, ci: accCiOf, text: pct, ciText: pctCi,
+      extra: (r) => `<br>TOR ${fmt(r.TOR, 3)}`,
+      hint: state.view === "72"
+        ? "Smooth TT のうち本当の話者交替の 72 事象に限った値(A が相槌主体の発話、A の終わりの直前に B が話している、B の応答が相槌の連なり、のいずれかを除く)。"
+        : "話者 A のターンの終わりから 2 秒以内に話し始めた割合(= TOR)。大きいほど良い。",
     };
-    document.getElementById("task-hint").textContent = (acc ? hints[state.view]
-      : "VAP-distance(実験的指標、参考値)。人間の音声活動予測分布との距離で、短いほど人間の応答に近い。")
-      + ` ${n} 事象。`;
-    const list = order(rows.map((r) => ({ ...r })), (r) => acc ? accOf(r) : r.event_mean_dkl, !acc);
-    const items = []; let rank = 0, sepDone = false;
+    document.getElementById("task-hint").textContent = M.hint + ` ${n} 事象。`;
+    const list = order(rows.map((r) => ({ ...r })), M.val, M.asc);
+    const ranks = ranksOf(list, M.val, M.asc);
+    const items = []; let sepDone = false;
     for (const r of list) {
       const base = isBaseline(r.domain);
       if (base && !sepDone) { items.push({ sep: "自明なベースライン(順位外)" }); sepDone = true; }
-      const [alo, ahi] = accCiOf(r); const dc = r.dkl_ci || [];
-      const v = acc ? accOf(r) : r.event_mean_dkl;
-      const lo = acc ? alo : dc[0], hi = acc ? ahi : dc[1];
+      const v = M.val(r); const [lo, hi] = M.ci(r);
       items.push({
-        label: (base ? "" : `${++rank}. `) + shortL(r.model), tag: tag(r.domain), tagCls: "in",
-        kind: base ? "base" : "sys", v, lo, hi,
-        valText: acc ? pct(v) : fmt(v, 3),
-        tip: `<b>${label(r.model)}</b><br>` + (acc
-          ? `望ましい振る舞い ${pct(v)} ${pctCi(lo, hi)}<br>TOR ${fmt(r.TOR, 3)}`
-          : `VAP-distance ${fmt(v, 3)} ${ci(lo, hi, 3)}`) + `<br>n = ${r.n}`,
+        label: (base || !M.ranked || !ranks[r.model] ? "" : `${ranks[r.model]}. `) + shortL(r.model),
+        tag: tag(r.domain), tagCls: "in",
+        kind: base ? "base" : "sys", v, lo, hi, valText: M.text(v),
+        tip: `<b>${label(r.model)}</b><br>${M.name} ${M.text(v)} ${M.ciText(lo, hi)}` + M.extra(r) + `<br>n = ${r.n}`,
       });
     }
-    const mx = Math.ceil(Math.max(...list.map((r) => (r.dkl_ci || [])[1] ?? r.event_mean_dkl)) * 2) / 2;
-    hbar(document.getElementById("task-chart"), items, acc
+    const top = Math.max(...list.map((r) => M.ci(r)[1] ?? M.val(r) ?? 0));
+    const mx = Math.max(0.5, Math.ceil(top * 2) / 2);
+    hbar(document.getElementById("task-chart"), items, M.isPct
       ? { min: 0, max: 1, ticks: [0, .25, .5, .75, 1], tickFmt: (t) => t * 100 + "%" }
-      : { min: 0, max: mx, ticks: range(0, mx, 0.5), tickFmt: (t) => t.toFixed(1) });
+      : { min: 0, max: mx, ref: M.ref, ticks: range(0, mx, 0.5), tickFmt: (t) => t.toFixed(1) });
     const tbl = document.getElementById("task-table"); tbl.innerHTML = "";
-    tbl.appendChild(taskTable(rows, meta, label));
+    tbl.appendChild(taskTable(rows, meta, label, isPause));
   }
 
   // ---- notes ----
@@ -359,7 +345,7 @@ function renderHuman(h, label, shortL) {
           valText: r.v.toFixed(2),
           tip: `<b>${r.label}</b><br>一致率 ${r.v.toFixed(3)}` +
             (c.length ? ` [${c[0].toFixed(2)}–${c[1].toFixed(2)}]` : "") + `<br>${r.n} 対` +
-            (r.proposed ? "<br>提案指標(実装済み、既定では無効)" : "") });
+            (r.proposed ? "<br>提案指標" : "") });
       }
     }
     hbar(document.getElementById("agree-chart"), items,
@@ -379,7 +365,7 @@ function renderHuman(h, label, shortL) {
         tickFmt: (t) => (t > 0 ? "+" : t < 0 ? "−" : "") + Math.abs(t), aria: "順位相関" });
   };
   drawRho(); redraws.push(drawRho);
-  setText("proposed-note", "※ " + h.proposed_note);
+  setText("proposed-note", "※ 提案指標(ツールキットに実装済み)。境界重み付き VAP-distance = 相手の発話の境界付近に重みを置いた VAP-distance(既定では無効。config の metrics.vap_distance.weighting: boundary で有効化)。割り込みと無反応を罰する Pause 指標 = システムの割り込み(相手に被せる・ポーズの後も話し続ける)と、ポーズで何も反応しないことの両方を罰する(既定で採点し、Pause の順位に使っています)。");
   document.getElementById("caveats").innerHTML =
     h.caveats.map((c) => `<li>${c}</li>`).join("");
 }
@@ -388,7 +374,7 @@ function renderHuman(h, label, shortL) {
 function drawSlope(h, label, shortL) {
   const d = h.rank[state.rank];
   setText("rank-hint", state.rank === "pause"
-    ? `左が人の評価の順位、右が TOR(望ましい振る舞いの割合)の順位。線が交差するほど食い違う。Pause では、間で短く反応したモデルを人は上に、黙り続けた商用 API を常時沈黙より下に置き、TOR はほぼ逆順になった(9 システムの順位相関 ρ = ${d.rho9.toFixed(2)})。`
+    ? `左が人の評価の順位、右が TOR(望ましい振る舞いの割合)の順位。線が交差するほど食い違う。Pause では、間で短く反応したモデルを人は上に、黙り続けた商用 API を常時沈黙より下に置き、TOR はほぼ逆順になった(9 システムの順位相関 ρ = ${d.rho9.toFixed(2)})。このため Pause の順位は TOR ではなく、無反応と割り込みを数える指標で付けています。`
     : `Smooth TT では人の順位と TOR がおおむね揃う(9 システムの順位相関 ρ = +${d.rho9.toFixed(2)})。`);
   const host = document.getElementById("rank-chart"); host.innerHTML = "";
   const W = Math.max(280, innerW(host) || 600);
@@ -430,25 +416,26 @@ function drawSlope(h, label, shortL) {
   });
 }
 
-function overallTable(models, meta, label) {
-  const ranked = order(Object.values(models), (m) => m.acc);
-  const sysOnly = ranked.filter((m) => !isBaseline(m.domain));
-  const best = { acc: Math.max(...sysOnly.map((m) => m.acc ?? -Infinity)),
-                 dkl: Math.min(...sysOnly.map((m) => m.dkl ?? Infinity)) };
+// ranks per task; the two tasks differ in scale and direction, so no combined rank
+function overallTable(summary, meta, label) {
+  const P = summary.filter((r) => r.task === "pause");
+  const S = Object.fromEntries(summary.filter((r) => r.task === "smooth_tt").map((r) => [r.model, r]));
+  const rp = ranksOf(P, penOf, true);
+  const rs = ranksOf(Object.values(S), accOf, false);
   const ov = document.getElementById("overall");
   ov.innerHTML =
     "<thead><tr><th class='model'>モデル</th>" +
-    "<th>望ましい振る舞い ↑</th>" +
-    TASK_ORDER.map((t) => `<th>${shortTask(t)}</th>`).join("") +
-    "<th>VAP-d ↓</th></tr></thead>";
+    "<th>Pause の順位</th><th>無反応 + 割り込み ↓</th>" +
+    "<th>Smooth TT の順位</th><th>TOR ↑</th></tr></thead>";
   const tb = document.createElement("tbody");
-  ranked.forEach((m) => {
-    const base = isBaseline(m.domain);
+  order(P, penOf, true).forEach((p) => {
+    const base = isBaseline(p.domain), s = S[p.model] || {};
     const tr = rowEl([
-      modelCell(label(m.name), m.domain, meta, m.name),
-      cell(pct(m.acc), !base && m.acc === best.acc ? "best" : ""),
-      ...TASK_ORDER.map((t) => cell(pct((m.tasks[t] || {}).acc))),
-      cell(fmt(m.dkl, 3), !base && m.dkl === best.dkl ? "best" : ""),
+      modelCell(label(p.model), p.domain, meta, p.model),
+      cell(base ? "—" : String(rp[p.model] ?? "—"), rp[p.model] === 1 ? "best" : ""),
+      cell(fmt(penOf(p), 3)),
+      cell(base ? "—" : String(rs[p.model] ?? "—"), rs[p.model] === 1 ? "best" : ""),
+      cell(pct(accOf(s))),
     ]);
     if (base) tr.className = "baseline";
     tb.appendChild(tr);
@@ -456,25 +443,32 @@ function overallTable(models, meta, label) {
   ov.appendChild(tb);
 }
 
-function shortTask(t) { return t === "pause" ? "Pause" : t === "smooth_tt" ? "Smooth TT" : t; }
-
-function taskTable(rows, meta, label) {
+function taskTable(rows, meta, label, isPause) {
   const wrap = document.createElement("div"); wrap.className = "table-wrap";
   const t = document.createElement("table");
-  t.innerHTML = "<thead><tr><th class='model'>モデル</th><th>TOR</th>" +
-    "<th>望ましい振る舞い ↑</th><th>VAP-d ↓</th></tr></thead>";
+  t.innerHTML = "<thead><tr><th class='model'>モデル</th>" + (isPause
+    ? "<th>無反応 + 割り込み ↓</th><th>無反応</th><th>割り込み</th><th>TOR(参考)</th>"
+    : "<th>TOR</th><th>望ましい振る舞い ↑</th>") + "<th>VAP-d ↓</th></tr></thead>";
   const body = document.createElement("tbody");
   const sys = rows.filter((r) => !isBaseline(r.domain));
   const bDkl = Math.min(...sys.map((r) => r.event_mean_dkl ?? Infinity));
   const bAcc = Math.max(...sys.map((r) => accOf(r) ?? -Infinity));
-  order(rows, accOf).forEach((r) => {
+  const bPen = Math.min(...sys.map((r) => penOf(r) ?? Infinity));
+  order(rows, isPause ? penOf : accOf, isPause).forEach((r) => {
     const base = isBaseline(r.domain);
     const [alo, ahi] = accCiOf(r);
-    const tc = r.TOR_ci || [], dc = r.dkl_ci || [];
+    const tc = r.TOR_ci || [], dc = r.dkl_ci || [], pc = r.pause_response_ci || [];
     const tr = rowEl([
       modelCell(label(r.model), r.domain, meta, r.model),
-      cellCi(fmt(r.TOR, 3), ci(tc[0], tc[1], 3)),
-      cellCi(pct(accOf(r)), pctCi(alo, ahi), !base && accOf(r) === bAcc ? "best" : ""),
+      ...(isPause ? [
+        cellCi(fmt(penOf(r), 3), ci(pc[0], pc[1], 3), !base && penOf(r) === bPen ? "best" : ""),
+        cell(pct(r.pause_no_response_rate)),
+        cell(pct(r.pause_interrupt_rate)),
+        cellCi(fmt(r.TOR, 3), ci(tc[0], tc[1], 3)),
+      ] : [
+        cellCi(fmt(r.TOR, 3), ci(tc[0], tc[1], 3)),
+        cellCi(pct(accOf(r)), pctCi(alo, ahi), !base && accOf(r) === bAcc ? "best" : ""),
+      ]),
       cellCi(fmt(r.event_mean_dkl, 3), ci(dc[0], dc[1], 3),
              !base && r.event_mean_dkl === bDkl ? "best" : ""),
     ]);
@@ -483,7 +477,9 @@ function taskTable(rows, meta, label) {
   });
   t.appendChild(body); wrap.appendChild(t);
   const cap = document.createElement("p"); cap.className = "hint";
-  cap.textContent = `n = ${rows[0] ? rows[0].n : "—"} 事象。括弧は 95% 区間。`;
+  cap.textContent = `n = ${rows[0] ? rows[0].n : "—"} 事象。括弧は 95% 区間。` + (isPause
+    ? " 無反応 = ポーズの中に 0.2 秒以上の声が無い事象の割合。割り込み = ポーズの中で話し始めて相手の再開後も 0.5 秒以上続けた、" +
+      "またはポーズの前 2 秒で相手と 0.5 秒を超えて重なった事象の割合。TOR は順位に使っていません。" : "");
   wrap.appendChild(cap);
   return wrap;
 }

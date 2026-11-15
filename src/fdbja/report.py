@@ -46,15 +46,16 @@ def format_table(results: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-#: tasks averaged into the overall agreement (as on the leaderboard page)
+#: tasks ranked on the leaderboard page, each by its own metric
 LEADERBOARD_TASKS = ("pause", "smooth_tt")
 #: scoring conditions that must match for two results to be comparable
 COMPARABLE_KEYS = ("boundaries", "asr", "system_activity", "smooth_tt_roles")
 
 
 def desired_rate(row: Dict[str, Any]) -> Optional[float]:
-    """Share of events with the desired behaviour: TOR when the desired TO is
-    1 (Smooth TT), 1 - TOR when it is 0 (Pause); the leaderboard's ranking."""
+    """Share of events with the desired behaviour of Full-Duplex-Bench: TOR
+    when the desired TO is 1 (Smooth TT, its ranking), 1 - TOR when it is 0
+    (Pause, where it is a reference value and not the ranking)."""
     tor = row.get("TOR")
     if tor is None:
         return None
@@ -66,17 +67,37 @@ def _is_baseline(name: str, domain: Optional[str]) -> bool:
 
 
 def leaderboard_rows(results: Dict[str, Any], source: str = "") -> List[Dict[str, Any]]:
-    """One row per model: per-task desired-behaviour rate and their mean."""
+    """One row per model with the ranking metric of each task: ``pause`` is
+    the pause reaction penalty (no-reaction rate + barge-in rate, 0-2, smaller
+    is better; ``None`` when ``metrics.pause_response`` was not scored) with
+    its two parts and the Pause TOR as a reference, ``smooth_tt`` is TOR."""
     models: Dict[str, Dict[str, Any]] = {}
     for r in results.get("summary", []):
         m = models.setdefault(r["model"], {"model": r["model"], "domain": r.get("domain"),
                                            "source": source})
-        m[r["task"]] = desired_rate(r)
+        if r["task"] == "pause":
+            m["pause"] = r.get("pause_response")
+            m["pause_no_response"] = r.get("pause_no_response_rate")
+            m["pause_interrupt"] = r.get("pause_interrupt_rate")
+            m["pause_tor"] = r.get("TOR")
+        elif r["task"] == "smooth_tt":
+            m["smooth_tt"] = desired_rate(r)
     for m in models.values():
-        vals = [m[t] for t in LEADERBOARD_TASKS if m.get(t) is not None]
-        m["overall"] = sum(vals) / len(vals) if vals else None
         m["baseline"] = _is_baseline(m["model"], m["domain"])
     return list(models.values())
+
+
+def _ranks(rows: List[Dict[str, Any]], key: str, smaller_is_better: bool) -> Dict[int, int]:
+    """Rank among the systems (baselines get none), best first; equal values
+    share a rank. Keyed by ``id(row)`` since a model can appear twice (own
+    result and reference)."""
+    sys_rows = sorted((m for m in rows if not m["baseline"] and m.get(key) is not None),
+                      key=lambda m: m[key] if smaller_is_better else -m[key])
+    out: Dict[int, int] = {}
+    for i, m in enumerate(sys_rows):
+        prev = sys_rows[i - 1] if i else None
+        out[id(m)] = out[id(prev)] if prev is not None and prev[key] == m[key] else i + 1
+    return out
 
 
 def _condition_value(v: Any) -> Any:
@@ -99,35 +120,50 @@ def condition_mismatches(a: Dict[str, Any], b: Dict[str, Any]) -> List[str]:
 
 def format_leaderboard(results: Dict[str, Any],
                        reference: Optional[Dict[str, Any]] = None) -> str:
-    """Ranking by the desired-behaviour rate (mean over Pause and Smooth TT);
-    trivial baselines are listed last without a rank. With ``reference``
-    (e.g. ``docs/results.json``) its rows are merged in, marked ``[ref]``,
-    and differing scoring conditions are reported."""
+    """The ranks of the leaderboard page: Pause by the pause reaction penalty
+    (smaller is better), Smooth TT by TOR (larger is better). The two tasks
+    differ in scale and direction, so no combined rank is given; rows are
+    listed in the Pause order and trivial baselines last without a rank. With
+    ``reference`` (e.g. ``docs/results.json``) its rows are merged in, marked
+    ``[ref]``, and differing scoring conditions are reported."""
     rows = leaderboard_rows(results, "")
     notes: List[str] = []
+    if any(m.get("pause") is None and m.get("pause_tor") is not None for m in rows):
+        notes += ["NOTE: the summary has no pause reaction penalty, so no Pause rank is given. "
+                  "Score with metrics.pause_response enabled (it needs the output audio)."]
     if reference is not None:
         rows += leaderboard_rows(reference, "ref")
         diff = condition_mismatches(results, reference)
         if diff:
-            notes = ["WARNING: scoring conditions differ from the reference; "
-                     "the values are not comparable:"] + [f"  {d}" for d in diff]
+            notes += ["WARNING: scoring conditions differ from the reference; "
+                      "the values are not comparable:"] + [f"  {d}" for d in diff]
+    rank_p = _ranks(rows, "pause", True)
+    rank_s = _ranks(rows, "smooth_tt", False)
 
     def key(m):
-        return -(m["overall"] if m["overall"] is not None else -1.0)
+        p, s = m.get("pause"), m.get("smooth_tt")
+        return (m["baseline"], p is None, p if p is not None else 0.0,
+                -(s if s is not None else -1.0))
 
-    systems = sorted([m for m in rows if not m["baseline"]], key=key)
-    bases = sorted([m for m in rows if m["baseline"]], key=key)
+    def num(v):
+        return "" if v is None else f"{v:.3f}"
 
     def pct(v):
-        return "" if v is None else f"{100 * v:5.1f}"
+        return "" if v is None else f"{100 * v:.1f}"
 
-    header = f"{'rank':>4}  {'model':<28} {'overall':>7} {'pause':>7} {'smooth_tt':>9}"
+    header = (f"{'P':>3}  {'model':<28} {'penalty':>7} {'no-react':>8} {'barge-in':>8} "
+              f"{'TOR(ref)':>8}  {'S':>3} {'smooth_tt':>9}")
     lines = [header, "-" * len(header)]
-    for i, m in enumerate(systems + bases, 1):
-        rank = "" if m["baseline"] else str(i)
+    for m in sorted(rows, key=key):
         name = m["model"] + (" [ref]" if m["source"] == "ref" else "")
-        lines.append(f"{rank:>4}  {name:<28} {pct(m['overall']):>7} "
-                     f"{pct(m.get('pause')):>7} {pct(m.get('smooth_tt')):>9}")
-    lines += ["", "desired-behaviour rate (%): Pause = 1 - TOR, Smooth TT = TOR; "
-              "baselines are not ranked"]
+        lines.append(f"{str(rank_p.get(id(m), '-')):>3}  {name:<28} {num(m.get('pause')):>7} "
+                     f"{pct(m.get('pause_no_response')):>8} {pct(m.get('pause_interrupt')):>8} "
+                     f"{num(m.get('pause_tor')):>8}  {str(rank_s.get(id(m), '-')):>3} "
+                     f"{pct(m.get('smooth_tt')):>9}")
+    lines += ["",
+              "P = Pause rank by the reaction penalty (no-reaction rate + barge-in rate, 0-2, "
+              "smaller is better);",
+              "    no-react / barge-in in %, TOR(ref) = Pause TOR, a reference value that is not ranked",
+              "S = Smooth TT rank by TOR (%), larger is better",
+              "baselines are not ranked; no combined rank is given"]
     return "\n".join(lines + ([""] + notes if notes else []))

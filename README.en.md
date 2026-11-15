@@ -13,14 +13,16 @@ scenarios of v1.5 (user backchannels, third-party and background speech) are not
 
 The full README is in Japanese: [README.md](README.md). Leaderboard: <https://llm-jp.github.io/full-duplex-bench-ja/>
 
-- **Ranking**: the share of events with the desired behaviour under TOR, the binary metric of
-  Full-Duplex-Bench (Pause: 1 − TOR; Smooth TT: TOR). For Pause this value rises the more a system stays
-  silent, and in the listening test it pointed the opposite way to the listeners' preference (see the
-  human-judgement validation section of the leaderboard, 2026-11).
+- **Ranking**: per task. Smooth Turn-Taking is ranked by TOR, the binary metric of Full-Duplex-Bench (the
+  share of turn ends at which the system took the turn). Pause Handling is ranked, from 0.2.0, by the pause
+  reaction penalty: the share of pauses with no reaction plus the share with a barge-in (0-2, lower is
+  better). The Pause TOR improves the more a system stays silent, and in the listening test it pointed the
+  opposite way to the listeners' preference (see the human-judgement validation section of the leaderboard,
+  2026-11), so it is kept as a reference value and not used for the ranking. No combined rank is given.
 - **VAP-distance is an experimental metric**: it has been compared with human judgements in one listening
   test (2026-11) and did not agree with the listeners on Pause, so it is shown for reference only and is
   disabled in the default config (`metrics.vap_distance.enabled: true` to opt in).
-- **Scoring conditions of the current table** (2026-11-04, nine systems): human-side boundaries re-placed on
+- **Scoring conditions of the current table** (rescored on 2026-11-15, nine systems): human-side boundaries re-placed on
   the audio (`detection.boundaries: audio`; the default stays `transcript`), the transcripts used for the ASJ
   talk paper (see [Citation](#citation); "the paper" below) made with ReazonSpeech-ESPnet + WhisperX, and the
   MIT default checkpoint `maai-kyoto/vap_jp_kyoto`. Values from different boundaries, transcripts or
@@ -315,7 +317,7 @@ Design, constraints found when validating on real recordings, and limits:
 times `t_start` / `t_end` and the system utterances near the judgement window, `sys_segments`), `summary.json`
 (the same without the events; the shape of `docs/results.json`) and `summary.csv` (one row per task x system,
 intervals split into `*_low` / `*_high`). The summary uses the keys of `docs/results.json`: `n` (events),
-`n_clips`, `TOR`, `TOR_ci` (95% percentile bootstrap over events, 10000 replicates; `output.bootstrap: {n, seed}`; the intervals on the leaderboard were computed with 2,000 replicates),
+`n_clips`, `TOR`, `TOR_ci` (95% percentile bootstrap over events, 10000 replicates; `output.bootstrap: {n, seed}`; the intervals on the leaderboard use the same setting),
 `lat_median` / `lat_q1` / `lat_q3` (Smooth TT response latency of the taken turns, negative values clipped to 0
 as on the leaderboard), `onset_median` / `onset_q1` / `onset_q3` (the same latency without clipping, -0.5 to
 +2.0 s) and `overlap_rate` (share of taken turns that started before A finished), `event_mean_dkl` / `dkl_ci`
@@ -339,7 +341,10 @@ Smooth TT no-response share (`profile.png` / `profile.svg`, needs matplotlib fro
 | Smooth Turn-Taking | A (>=4 s) -> gap (<0.4 s) -> B (>=4 s) | take the turn (TO=1) |
 | Backchanneling | human B only backchannels during A (>=3 s) | backchannel only (TO=0); also backchannel frequency (`bc_freq`, per second of A; human: `human_freq`) and the timing JSD against the human onsets in 0.2 s bins (`jsd`, 0-1, 1.0 when the model never backchannels; `bc_any_rate` = share of events with at least one model backchannel and `jsd_cond` = JSD over those events), as in the original Backchannel task (experimental; not in the default `tasks`) |
 
-Primary metric: **TOR** (binary takeover rate, ASR-based, same definition as Full-Duplex-Bench).
+Ranking metrics, one per task: **TOR** (binary takeover rate, ASR-based, same definition as Full-Duplex-Bench)
+for Smooth TT, and the **pause reaction penalty** (`pause_response`: the share of pauses with no reaction plus
+the share with a barge-in, 0-2, lower is better, judged from the response audio) for Pause. The Pause TOR is
+reported as a reference value only, because it pointed the opposite way to the listeners in the listening test.
 Experimental metric (off by default): **VAP-distance** (KL divergence between next-speaker
 distributions of a frozen VAP model given the human response vs. the model response); it has been
 compared with human judgements in one listening test (2026-11) and did not agree with the listeners on
@@ -350,27 +355,40 @@ task. A TurnNat-style likelihood score is included for comparison. The `always_t
 that people perceive as natural; individual style inside that range (how often it backchannels,
 how long its pauses are) is not scored. For Smooth TT, "close to the recorded human B" held as the
 centre of the range; for Pause it did not (in the human-judgement study, systems that produced a short
-vocalisation in the pause were preferred), so the proposed Pause metric measures whether the
+vocalisation in the pause were preferred), so the metric used for the Pause ranking measures whether the
 system reacted briefly in the pause (a backchannel or not) and did not keep talking over the partner.
 Backchannelling during the partner's speech is a separate task whose definition is published but not scored.
 
-### Proposed metrics (off by default)
+### The Pause ranking metric and the proposed metric
 
 Two metrics that agreed better with listeners than TOR and the original VAP-distance in the human-judgement
 study ([leaderboard, "human-judgement validation"](https://llm-jp.github.io/full-duplex-bench-ja/#validation-sec),
-listening test, 2026-11) are implemented. Neither changes the default scoring (TOR, original VAP-distance); when
-switched on they add columns to the `score-offline` summary (`summary.json` / `summary.csv`) and to the per-event
-results. They are off by default because the validation is limited to the evaluation set of one corpus
-(LLM-jp-Zoom1) and has not been repeated on another corpus. The two metrics differ in how far they have been
-checked:
+listening test, 2026-11) are implemented. Neither changes the values of TOR or the original VAP-distance; they
+add columns to the `score-offline` summary (`summary.json` / `summary.csv`) and to the per-event results. The
+two differ in how they are used and in how far they have been checked:
 
-- The Pause metric: after the listening test on which its composition was chosen (nine systems), its
-  agreement with listeners was confirmed in **a second, pre-registered listening test** on the same events,
-  using only pairs of systems that had not been shown in the first test (seven real systems). Some of the
-  participants had also taken part in the first test (the analysis without them pointed the same way). The
-  numbers of the second test are not published yet.
-- Boundary-weighted VAP-distance: validated in the first listening test only, on whose data its composition
-  was chosen.
+- The Pause metric (pause reaction penalty): from 0.2.0 it is **the ranking of the Pause task on the
+  leaderboard** and is scored by default (`metrics.pause_response.enabled: false` switches it off; clips
+  without response audio are skipped). After the listening test on which its composition was chosen (nine
+  systems), its agreement with listeners was confirmed in **a second, pre-registered listening test** on the
+  same events, using only pairs of systems that had not been shown in the first test (seven real systems).
+  Some of the participants had also taken part in the first test (the analysis without them pointed the same
+  way). The numbers of the second test are not published yet.
+- Boundary-weighted VAP-distance: still a proposed metric, off by default. It was validated in the first
+  listening test only, on whose data its composition was chosen.
+
+For both, the validation is limited to the evaluation set of one corpus (LLM-jp-Zoom1) and has not been
+repeated on another corpus. When reading the Pause ranking, note that:
+
+- the reference point is 1.0, the value of a system that outputs nothing. A value above 1.0 means that the
+  share of pauses with a barge-in is larger than the share of pauses with a reaction;
+- any voice of at least 0.2 s counts as a reaction; backchannels, breaths and noise are not told apart;
+- listeners preferred systems that reacted briefly in the pause and did not talk over the partner. This is
+  not the behaviour of the recorded human B, who rarely speaks in the pauses of this evaluation set;
+- the three commercial-API rows can be affected by two unfixed points of the adapters (items 4 and 5 of the
+  known limitations below): interruption notices are ignored, so a response that the API would have cut
+  short can be counted as a barge-in, and responses are placed by arrival time, so a reaction in the pause
+  appears later by the network delay.
 
 - **Boundary-weighted VAP-distance** (Smooth TT; `metrics.vap_distance.weighting: boundary`, needs
   `vap_distance.enabled: true`). Instead of the equal-weight mean of D_KL(P_t‖Q_t) over the judgement window, d_t is
@@ -380,7 +398,7 @@ checked:
   the human B) and `vapd_boundary_ci_*`. `boundary_tasks: [pause, smooth_tt]` also applies it to Pause (t0 = start
   of the gap), but only Smooth TT was selected in the study. The study used the VAP-Realtime checkpoint; values with
   the default MIT checkpoint have not been validated.
-- **Pause response** (Pause; `metrics.pause_response.enabled: true`). For each gap [g_s, g_e]: no response = 1 when
+- **Pause response** (Pause; `metrics.pause_response`, on by default). For each gap [g_s, g_e]: no response = 1 when
   no voiced run has at least 0.2 s inside the gap; interrupt = 1 when a voiced run starts inside the gap and lasts at
   least 0.5 s after A resumes, or when the system overlaps A for more than 0.5 s in the 2 s before the gap; the metric
   is no response + interrupt (0-2, lower is better), averaged over events. Voice activity comes from the response
@@ -464,7 +482,8 @@ VAP-distance is computed from the waveform and is not affected by 1 and 3.
 ## Roadmap
 
 1. **Release of 0.2.0** — the two metrics validated against human judgements (boundary-weighted
-   VAP-distance; a Pause metric that penalises both interrupting and not reacting; off by default) and
+   VAP-distance, off by default; a Pause metric that penalises both interrupting and not reacting, used
+   for the Pause ranking of the leaderboard) and
    `measure` for your own recordings. Distribution on PyPI is planned from this release.
 2. Release of the evaluation data (tied to the public release of LLM-jp-Zoom1).
 3. Score the system backchannel task (after confirming it with a listening test).

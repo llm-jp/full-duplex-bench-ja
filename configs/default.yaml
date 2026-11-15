@@ -142,9 +142,9 @@ metrics:
     boundary_pre_seconds: 5.0
     boundary_post_seconds: 1.5
   pause_response:
-    # 割り込みと無反応を罰する Pause 指標(提案指標、既定では無効)。間ごとに 無反応(0/1)+ 割り込み(0/1)、
+    # 割り込みと無反応を罰する Pause 指標。リーダーボードの Pause の順位に使う(既定で有効、応答音声が無いクリップでは計算しない)。間ごとに 無反応(0/1)+ 割り込み(0/1)、
     # システムの値は事象平均(0〜2、小さいほど良い)。VAP も ASR も使わない(応答音声のエネルギー VAD)。
-    enabled: false
+    enabled: true
     min_response_seconds: 0.2          # 無反応: 間の中の部分がこの長さ以上の有声区間が無い
     persist_after_resume_seconds: 0.5  # 割り込み: 間の中で始まり A の再開後この長さ以上続く
     pre_window_seconds: 2.0            # 割り込み: 間の前のこの窓で

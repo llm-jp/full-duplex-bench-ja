@@ -1,19 +1,39 @@
-"""``fdbja leaderboard``: the ranking of the leaderboard page from a summary."""
+"""``fdbja leaderboard``: the ranks of the leaderboard page from a summary."""
 
 import json
+
+import pytest
 
 from fdbja import report
 from fdbja.cli import main
 
 
 def _res(rows, **cond):
-    return {"summary": [{"task": t, "model": m, "desired_TO": 1 if t == "smooth_tt" else 0,
-                         "TOR": tor, "domain": d} for t, m, tor, d in rows], **cond}
+    """Rows are (task, model, TOR, domain) plus, for Pause rows scored with the
+    reaction penalty, (no-reaction rate, barge-in rate)."""
+    out = []
+    for t, m, tor, d, *pen in rows:
+        r = {"task": t, "model": m, "desired_TO": 1 if t == "smooth_tt" else 0,
+             "TOR": tor, "domain": d}
+        if pen:
+            r.update(pause_response=sum(pen), pause_no_response_rate=pen[0],
+                     pause_interrupt_rate=pen[1])
+        out.append(r)
+    return {"summary": out, **cond}
 
 
-ROWS = [("pause", "a", 0.2, "out"), ("smooth_tt", "a", 0.6, "out"),
-        ("pause", "b", 0.5, "out"), ("smooth_tt", "b", 0.9, "out"),
-        ("pause", "baseline_silence", 0.0, "baseline"), ("smooth_tt", "baseline_silence", 0.0, "baseline")]
+# a: reacts less in pauses (worse on Pause) but takes more turns (better on Smooth TT)
+ROWS = [("pause", "a", 0.2, "out", 0.5, 0.1), ("smooth_tt", "a", 0.9, "out"),
+        ("pause", "b", 0.5, "out", 0.2, 0.1), ("smooth_tt", "b", 0.6, "out"),
+        ("pause", "baseline_silence", 0.0, "baseline", 1.0, 0.0),
+        ("smooth_tt", "baseline_silence", 0.0, "baseline")]
+NO_PENALTY = [r[:4] for r in ROWS]
+
+
+def _ranked(text):
+    """(Pause rank, model, Smooth TT rank) of the table rows, in print order."""
+    body = text.split("\n\n")[0].splitlines()[2:]
+    return [(ln.split()[0], ln.split()[1], ln.split()[-2]) for ln in body]
 
 
 def test_desired_rate():
@@ -22,21 +42,39 @@ def test_desired_rate():
     assert report.desired_rate({"TOR": None, "desired_TO": 1}) is None
 
 
-def test_ranking_and_baselines_last():
+def test_rows_use_each_tasks_metric():
     rows = {m["model"]: m for m in report.leaderboard_rows(_res(ROWS))}
-    assert rows["a"]["overall"] == 0.7 and rows["b"]["overall"] == 0.7
+    assert rows["a"]["pause"] == pytest.approx(0.6) and rows["a"]["smooth_tt"] == 0.9
+    assert rows["a"]["pause_no_response"] == 0.5 and rows["a"]["pause_interrupt"] == 0.1
+    assert rows["a"]["pause_tor"] == 0.2          # kept as a reference, not ranked
+    assert "overall" not in rows["a"]             # no combined score
     assert rows["baseline_silence"]["baseline"]
+
+
+def test_ranks_per_task_and_baselines_last():
     text = report.format_leaderboard(_res(ROWS))
-    lines = [ln for ln in text.splitlines() if ln.strip() and ln.split()[0].isdigit()]
-    assert [ln.split()[1] for ln in lines] == ["a", "b"]
-    assert "baseline_silence" in text.splitlines()[4]
+    # Pause: smaller penalty first; Smooth TT: larger TOR first; baseline unranked
+    assert _ranked(text) == [("1", "b", "2"), ("2", "a", "1"), ("-", "baseline_silence", "-")]
+    assert "NOTE" not in text and "no combined rank" in text
+
+
+def test_equal_values_share_a_rank():
+    rows = ROWS[:2] + [("pause", "b", 0.5, "out", 0.1, 0.5), ("smooth_tt", "b", 0.9, "out")]
+    assert [(p, s) for p, _, s in _ranked(report.format_leaderboard(_res(rows)))] == [("1", "1")] * 2
+
+
+def test_summary_without_penalty():
+    # scored with metrics.pause_response disabled (or without the output audio)
+    text = report.format_leaderboard(_res(NO_PENALTY))
+    assert _ranked(text)[:2] == [("-", "a", "1"), ("-", "b", "2")]
+    assert "NOTE: the summary has no pause reaction penalty" in text
 
 
 def test_reference_rows_and_condition_warning():
-    ref = _res([("pause", "c", 0.1, "out"), ("smooth_tt", "c", 0.9, "out")],
+    ref = _res([("pause", "c", 0.1, "out", 0.1, 0.0), ("smooth_tt", "c", 0.95, "out")],
                boundaries="audio", asr="x")
     text = report.format_leaderboard(_res(ROWS, boundaries="transcript", asr="x"), ref)
-    assert "c [ref]" in text
+    assert _ranked(text)[0] == ("1", "c", "1") and "c [ref]" in text
     assert "boundaries: 'transcript' vs 'audio'" in text and "asr:" not in text
     same = report.format_leaderboard(_res(ROWS, boundaries="audio"), ref)
     assert "WARNING" not in same
