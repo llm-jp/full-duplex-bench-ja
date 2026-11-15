@@ -180,11 +180,19 @@ def main(argv=None) -> int:
                    help="channel of the user (default 0; the other is the system)")
     p.add_argument("--system-channel", type=int, default=None,
                    help="channel of the system (needed with more than two channels)")
+    p.add_argument("--target", default=None,
+                   choices=["listener-judgement", "listener-judgment",
+                            "human-likeness", "both"],
+                   help="what to score besides the descriptive statistics. "
+                        "'listener-judgement': the pause reaction penalty, the metric "
+                        "compared with what third-party listeners judged natural (no "
+                        "profile needed). 'human-likeness': the deviation from the human "
+                        "norm of --profile. 'both': both, under separate keys. Default: "
+                        "'listener-judgement' without --profile, 'both' with it")
     p.add_argument("--profile", default=None,
-                   help="'generic' (rule constants, not a human norm) or a profile "
-                        "JSON written by make-profile; adds the deviation from the "
-                        "profile and the pause reaction penalty, next to the values "
-                        "of the profile's own recordings")
+                   help="the human norm for 'human-likeness': 'generic' (rule constants, "
+                        "not a human norm) or a profile JSON written by make-profile; the "
+                        "scores are shown next to those of the profile's own recordings")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                    help="detection setting, e.g. turn_min_seconds=4 or vad.margin_db=12 "
                         "(repeatable; default: the profile's settings)")
@@ -343,10 +351,15 @@ def _cmd_measure(args) -> int:
         key, path = item.split("=", 1)
         with open(path, "rb") as f:
             conditions[key] = ms.text_hash(f.read())
+    try:
+        target = ms.resolve_target(args.target, args.profile is not None)
+    except ValueError as e:
+        print(f"fdbja measure: {e} (--profile)", file=sys.stderr)
+        return 2
     result = ms.measure(args.audio, args.system, user_channel=args.user_channel,
                         system_channel=args.system_channel, profile=args.profile,
                         config=ms.parse_settings(args.set) if args.set else None,
-                        conditions=conditions)
+                        conditions=conditions, target=target)
     print(ms.format_report(result))
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
