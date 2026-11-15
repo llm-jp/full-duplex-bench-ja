@@ -3,8 +3,10 @@
 **日本語フルデュプレックス音声対話モデル**のターンテイキング評価ツールキット。
 [Full-Duplex-Bench](https://github.com/DanielLin94144/Full-Duplex-Bench)(Lin et al., 2025、[arXiv:2503.04721](https://arxiv.org/abs/2503.04721))の
 評価設計を日本語に持ち込んだもので、**人手注釈を必要としない**のが特徴です。
-実対話コーパス(LLM-jp-Zoom1)における対話相手(人間 B)の振る舞いを正解として用い、
-モデルの応答が「人間らしいタイミング」かどうかを採点します。
+実対話コーパス(LLM-jp-Zoom1)の一方の話者(A)の音声をモデルに聞かせ、応答のタイミングを採点します。
+評価する場面(話し終わりと、発話の途中のポーズ)は、録音の中の実際の話者交替とポーズから自動で取り出します。
+Smooth Turn-Taking は、対話相手(人間 B)がターンを取った場面でモデルもターンを取るかを測ります。
+Pause Handling は、聴取実験で人の判断と合った指標(ポーズに反応したか、相手に被せなかったか)で測ります。
 
 **範囲**: Full-Duplex-Bench v1 の 4 課題(Pause Handling / Backchanneling / Smooth Turn-Taking / User Interruption)のうち、相手(話者 A)の音声を固定して測れる 2 課題(Pause Handling、Smooth Turn-Taking)を日本語の実対話で実装しています。
 Backchanneling(システムの相槌)は事象の定義だけを公開しており、採点していません。User Interruption(ユーザの割り込み)と、v1.5 が扱う重なりの場面(ユーザの相槌、第三者・背景の発話)には未対応です(下の「ロードマップ」)。
