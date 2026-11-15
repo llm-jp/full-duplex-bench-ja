@@ -34,7 +34,7 @@ restricted to genuine turn transitions, 197 → 72 events) and `detection.system
 **Quick start** (with LLM-jp-Zoom1 at hand; a one-minute smoke test on synthetic data is in [Quick start](#quick-start) below)
 
 ```bash
-uv sync --extra asr-reazon-whisperx                        # 1. install (pick one ASR backend)
+uv sync --group asr-reazon-whisperx                        # 1. install (pick one ASR backend)
 uv run fdbja reconstruct --config configs/default.yaml     # 2. build the eval clips (set corpus.zoom1_root)
 # responses: `fdbja infer` + `fdbja transcribe`, or place combined.wav ([Model adapters](#model-adapters))
 uv run fdbja score-offline --config configs/default.yaml   # 3. score -> results/summary.json
@@ -55,13 +55,17 @@ uv run fdbja leaderboard --reference docs/results.json     # 4. rank like the le
   branch of the Hugging Face repository on 2026-10-01, so fetch it from a pinned revision:
   `https://huggingface.co/maai-kyoto/vap_jp_kyoto/resolve/fe24ac60d8fcc80463edde97ed90e3ceca5e5b88/vap_state_dict_jp_kyoto_20hz_2500msec.pt`
   (SHA-256 `7ad0bf0b59e17a30ee55cee2aa6db89b84d64b670881ccd3f74b52ccede05d29`, the file the leaderboard was scored with).
-- One ASR extra for `fdbja transcribe`, which turns the recorded responses into character-level,
-  time-aligned "jchat" JSON: `.[asr-reazon-whisperx]` (default; ReazonSpeech-ESPnet segments +
-  WhisperX character alignment, the pipeline behind the published numbers), `.[asr-nemo]`
+- One ASR dependency group for `fdbja transcribe`, which turns the recorded responses into character-level,
+  time-aligned "jchat" JSON: `asr-reazon-whisperx` (default; ReazonSpeech-ESPnet segments +
+  WhisperX character alignment, the pipeline behind the published numbers), `asr-nemo`
   (ReazonSpeech NeMo v2, token timestamps split evenly over a subword's characters, ~5x faster) or
-  `.[asr-k2]` (ReazonSpeech k2 v2 via sherpa-onnx, CPU-friendly). The extras are mutually
-  exclusive; weights are fetched from the Hugging Face Hub on first use. The aligner-free backends
-  segment utterances differently, so their TOR is not directly comparable with the leaderboard.
+  `asr-k2` (ReazonSpeech k2 v2 via sherpa-onnx, CPU-friendly). Install one from a clone with
+  `uv sync --group <name>` (with pip 25.1 or newer: `pip install -e . --group <name>`). The groups are
+  mutually exclusive; weights are fetched from the Hugging Face Hub on first use. The aligner-free backends
+  segment utterances differently, so their TOR is not directly comparable with the leaderboard. They are
+  groups rather than extras because ReazonSpeech is distributed from its git repository only and PyPI does
+  not accept packages with direct-URL dependencies (in 0.1.0 they were extras: read `--extra asr-...` as
+  `--group asr-...`).
 - LLM-jp-Zoom1 to build the evaluation clips (see [DATASET.md](DATASET.md)), or your own two-channel
   dialogue recordings (see "Evaluation set from your own two-channel dialogues" below).
 - `.[always-talk]` (pyopenjtalk) for the `always_talk` baseline's default speech loop (`source: auto`),
@@ -72,11 +76,11 @@ uv run fdbja leaderboard --reference docs/results.json     # 4. rank like the le
 ### Older GPU drivers (replacing torch, `--no-sync`)
 
 If `nvidia-smi` reports `CUDA Version` 12.x (e.g. a 550-series driver = CUDA 12.4), the locked torch cannot
-use the GPU (it falls back to CPU or fails with `CUDA driver version is insufficient`). Install the extras,
+use the GPU (it falls back to CPU or fails with `CUDA driver version is insufficient`). Install the dependencies,
 then replace torch with a build for your driver:
 
 ```bash
-uv sync --extra asr-reazon-whisperx
+uv sync --group asr-reazon-whisperx
 uv pip install --reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu126   # CUDA 12.x drivers
 uv run --no-sync python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 uv run --no-sync fdbja transcribe --config configs/default.yaml
@@ -107,7 +111,7 @@ Expected: `silence_baseline` has TOR 0 on both tasks and `always_talk_baseline` 
 Real evaluation (point `corpus.zoom1_root` in `configs/default.yaml` at LLM-jp-Zoom1 and list your models):
 
 ```bash
-uv sync --extra asr-reazon-whisperx
+uv sync --group asr-reazon-whisperx
 uv run fdbja reconstruct --config configs/default.yaml
 uv run fdbja infer --config configs/default.yaml
 uv run fdbja transcribe --config configs/default.yaml
@@ -171,7 +175,8 @@ are not comparable with the leaderboard; report the data source, event counts an
 
 Timing statistics of any dialogue recording with the user and the system on separate channels, without the
 evaluation set. No transcript and no annotation; the base dependencies (numpy, soundfile, pyyaml) are enough
-(`uv sync`, no extra).
+(`uv sync`, no extra). From 0.2.0 the package is planned to be distributed on PyPI as well: `pip install fdbja`
+and then `fdbja measure rec.wav`, without cloning the repository (drop `uv run` from the commands below).
 
 ```bash
 uv run fdbja measure rec.wav --condition model=my-model      # ch0 = user, ch1 = system (--user-channel 1 to swap)
@@ -476,7 +481,7 @@ Code: Apache-2.0. Backends and data are **not** covered:
   (`vap_state_dict_jp_20hz_2500msec.pt`) is academic-only and loads through the same code path;
   its terms then apply to the results. The leaderboard no longer uses it.
 - ReazonSpeech code and models (nemo-v2 / k2-v2 / espnet-v2): Apache-2.0. NVIDIA NeMo: Apache-2.0.
-  ESPnet and sherpa-onnx (dependencies of the `asr-reazon-whisperx` and `asr-k2` extras): Apache-2.0.
+  ESPnet and sherpa-onnx (dependencies of the `asr-reazon-whisperx` and `asr-k2` groups): Apache-2.0.
   WhisperX: BSD-2-Clause; its Japanese alignment model `jonatasgrosman/wav2vec2-large-xlsr-53-japanese`
   is Apache-2.0.
 - Full-Duplex-Bench is CC BY-NC 4.0; this toolkit reimplements the event and TOR definitions

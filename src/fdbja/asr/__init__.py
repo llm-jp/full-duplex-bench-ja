@@ -10,8 +10,9 @@ Select one in ``configs/default.yaml``::
 times faster, but segment utterances differently, so TOR values are not
 directly comparable with the leaderboard.
 
-and run ``fdbja transcribe``. Every backend needs its own extra
-(``uv sync --extra asr-nemo`` etc.); the core package stays dependency-light.
+and run ``fdbja transcribe``. Every backend needs its own dependency group,
+installed from a clone of the repository (``uv sync --group asr-nemo`` etc.);
+the core package stays dependency-light.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ BACKENDS: Dict[str, Union[Tuple[str, str], Callable[..., ASRModel]]] = {
 }
 DEFAULT_BACKEND = "reazonspeech_whisperx"
 
-_EXTRA_FOR = {
+_GROUP_FOR = {
     "reazonspeech_nemo": "asr-nemo",
     "reazonspeech_k2": "asr-k2",
     "reazonspeech_whisperx": "asr-reazon-whisperx",
@@ -63,6 +64,7 @@ def load_asr(name: str, **kwargs) -> ASRModel:
         cls = getattr(module, cls_name)
         return cls(**kwargs)
     except ImportError as e:
-        extra = _EXTRA_FOR.get(name)
-        hint = f" (install with `uv sync --extra {extra}`)" if extra else ""
+        group = _GROUP_FOR.get(name)
+        hint = (f" (install with `uv sync --group {group}` in a clone of the repository)"
+                if group else "")
         raise ImportError(f"ASR backend {name!r} is missing a dependency{hint}: {e}") from e

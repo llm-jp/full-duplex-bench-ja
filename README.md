@@ -25,7 +25,7 @@ Backchanneling(システムの相槌)は事象の定義だけを公開してお�
 **Quick start**(LLM-jp-Zoom1 が手元にある場合。合成データでの 1 分の動作確認は下の「[クイックスタート](#クイックスタート)」1.)
 
 ```bash
-uv sync --extra asr-reazon-whisperx                        # 1. インストール(ASR バックエンドを 1 つ)
+uv sync --group asr-reazon-whisperx                        # 1. インストール(ASR バックエンドを 1 つ)
 uv run fdbja reconstruct --config configs/default.yaml     # 2. 評価クリップを作る(config の corpus.zoom1_root を設定)
 # 応答を用意: `fdbja infer` + `fdbja transcribe`、または combined.wav を置く(「[モデルアダプタ](#モデルアダプタ)」)
 uv run fdbja score-offline --config configs/default.yaml   # 3. 採点 → results/summary.json
@@ -42,7 +42,7 @@ uv run fdbja leaderboard --reference docs/results.json     # 4. リーダーボ�
 |------|-----------|
 | 採点(二値 TOR) | Python 3.10 以上、[uv](https://docs.astral.sh/uv/) |
 | 採点(VAP-distance) | 上に加えて `.[vap]`(torch)、[VAP-Realtime](https://github.com/inokoj/VAP-Realtime) のローカル clone(CPC エンコーダ同梱)、日本語 VAP チェックポイント [`maai-kyoto/vap_jp_kyoto`](https://huggingface.co/maai-kyoto/vap_jp_kyoto) の `vap_state_dict_jp_kyoto_20hz_2500msec.pt`(MIT。リビジョン固定で取得)を `<VAP_REALTIME_ROOT>/asset/vap/` に置く。手順は下の「VAP-distance の準備」 |
-| モデル出力の ASR 転写(`transcribe`) | いずれか 1 つの extra: `.[asr-reazon-whisperx]`(既定。ReazonSpeech-ESPnet + WhisperX。論文の数値を出した経路)/ `.[asr-nemo]`(ReazonSpeech NeMo v2、整列器なしで高速)/ `.[asr-k2]`(ReazonSpeech k2 v2、CPU 可)。モデルの重みは初回実行時に Hugging Face Hub から取得 |
+| モデル出力の ASR 転写(`transcribe`) | いずれか 1 つの dependency group(clone した場所で `uv sync --group <名前>`): `asr-reazon-whisperx`(既定。ReazonSpeech-ESPnet + WhisperX。論文の数値を出した経路)/ `asr-nemo`(ReazonSpeech NeMo v2、整列器なしで高速)/ `asr-k2`(ReazonSpeech k2 v2、CPU 可)。モデルの重みは初回実行時に Hugging Face Hub から取得 |
 | 評価クリップの生成 | LLM-jp-Zoom1 のローカルコピー([DATASET.md](DATASET.md))、または自前の 2 チャネル対話の録音(下の「3. 自前の 2 チャネル対話から評価セットを作る」) |
 | モデル推論(`infer`) | 評価対象に応じて Moshi 系 WebSocket サーバ、`GOOGLE_API_KEY`、`OPENAI_API_KEY`、`XAI_API_KEY`。自作モデルは `ModelAdapter` を実装する(「モデルアダプタ」) |
 | 常時発話のベースライン(`always_talk`、既定の `source: auto`) | `.[always-talk]`(pyopenjtalk。初回に Open JTalk で 60 秒の音声ループを合成)。入れない場合は `source_wav` に音声ファイルを指定 |
@@ -51,11 +51,11 @@ uv run fdbja leaderboard --reference docs/results.json     # 4. リーダーボ�
 ### GPU ドライバが古い場合(torch の入れ替えと `--no-sync`)
 
 `nvidia-smi` の右上の `CUDA Version` が 12.x(例: ドライバ 550 系 = CUDA 12.4)の環境では、ロックされた torch は GPU を使えません
-(CPU に落ちる、または `CUDA driver version is insufficient` などのエラー)。extra を入れたあと、ドライバに合う CUDA の版の torch に入れ替えます。
+(CPU に落ちる、または `CUDA driver version is insufficient` などのエラー)。依存を入れたあと、ドライバに合う CUDA の版の torch に入れ替えます。
 
 ```bash
 nvidia-smi | head -4                                        # 右上の CUDA Version を確認
-uv sync --extra asr-reazon-whisperx                         # まず通常どおり入れる
+uv sync --group asr-reazon-whisperx                         # まず通常どおり入れる
 uv pip install --reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu126   # CUDA 12.x のドライバ向け
 uv run --no-sync python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 uv run --no-sync fdbja transcribe --config configs/default.yaml
@@ -93,7 +93,7 @@ VAP-distance も確かめる場合は、下の「VAP-distance の準備」を済
 ### 2. 実データで評価する
 
 ```bash
-uv sync --extra asr-reazon-whisperx                         # ASR バックエンド(1 つ選ぶ。下の表を参照)
+uv sync --group asr-reazon-whisperx                         # ASR バックエンド(1 つ選ぶ。下の表を参照)
 # configs/default.yaml の corpus.zoom1_root を LLM-jp-Zoom1 の場所に、models を評価対象に合わせて書き換える
 uv run fdbja reconstruct --config configs/default.yaml      # LLM-jp-Zoom1 → 事象検出 → 20 秒クリップ + manifest
 uv run fdbja infer --config configs/default.yaml            # 話者 A の音声をモデルに流し応答を録る
@@ -180,6 +180,8 @@ uv run fdbja score-offline --config examples/dummy/config_own_dialogues.yaml
 
 評価セットを使わずに、手元の対話の録音(ユーザとシステムが別々のチャネルに入った wav)からタイミングの統計を出します。
 転写も注釈も要らず、基本依存(numpy / soundfile / pyyaml)だけで動きます(`uv sync` のみ、extra は不要)。
+0.2.0 からは PyPI でも配布する予定で、リポジトリを clone せずに `pip install fdbja` で入れて `fdbja measure rec.wav` と呼べるようになります
+(その場合は下のコマンドの `uv run` を外してください)。
 
 ```bash
 uv run fdbja measure rec.wav --condition model=my-model      # ch0 = ユーザ、ch1 = システム(逆なら --user-channel 1)
@@ -294,7 +296,7 @@ print(m.stats["turn_end"]["latency_median"], m.signature)    # numpy 配列な�
 ### VAP-distance の準備(実験的指標を使う場合のみ)
 
 ```bash
-uv sync --extra vap                                   # ASR の extra と併用するなら --extra を並べる
+uv sync --extra vap                                   # ASR と併用するなら --group asr-... を並べる
 git clone https://github.com/inokoj/VAP-Realtime.git ../VAP-Realtime   # CPC エンコーダ(asset/cpc/)を同梱
 curl -L -o ../VAP-Realtime/asset/vap/vap_state_dict_jp_kyoto_20hz_2500msec.pt \
   https://huggingface.co/maai-kyoto/vap_jp_kyoto/resolve/fe24ac60d8fcc80463edde97ed90e3ceca5e5b88/vap_state_dict_jp_kyoto_20hz_2500msec.pt
@@ -367,13 +369,16 @@ uv run fdbja make-profile <dir> --language ja --relationship R --situation S --m
 ### ASR バックエンド
 
 `transcribe` は `infer` が書いた `combined.wav` の ch1(モデル応答)を文字単位の時刻付き転写(jchat)にします。
-config の `asr.backend` で選び、それぞれ専用の extra を入れます(依存する torch / numpy の範囲が違うため 1 環境に 1 つ)。
+config の `asr.backend` で選び、それぞれ専用の dependency group を入れます(依存する torch / numpy の範囲が違うため 1 環境に 1 つ)。
+リポジトリを clone した場所で `uv sync --group asr-reazon-whisperx` のように入れてください。pip なら `pip install -e . --group asr-reazon-whisperx`(pip 25.1 以上)。
+extra ではなく dependency group にしているのは、ReazonSpeech が git リポジトリからだけ配布されており、
+PyPI が git の URL を直接指す依存を持つパッケージを受け付けないためです(0.1.0 では extra でした。`--extra asr-...` は `--group asr-...` に読み替えてください)。
 
-| バックエンド | 経路 | 文字の時刻 | 追加依存 |
+| バックエンド | 経路 | 文字の時刻 | dependency group |
 |------------|------|-----------|---------|
-| `reazonspeech_whisperx`(既定) | [ReazonSpeech-ESPnet v2](https://huggingface.co/reazon-research/reazonspeech-espnet-v2) の区間転写 → [WhisperX](https://github.com/m-bain/whisperX) で wav2vec2 CTC 整列 | 整列器が文字ごとに推定 | `.[asr-reazon-whisperx]`(espnet + whisperx、GPU で 20 秒クリップ約 2.5 秒、VRAM 約 3 GB) |
-| `reazonspeech_nemo` | [ReazonSpeech NeMo v2](https://huggingface.co/reazon-research/reazonspeech-nemo-v2)(FastConformer-RNNT、日本語) | トークンの発火時刻。**サブワード内は文字数で均等分割**し、0.5 秒以内の間は次トークンまで橋渡し(近似。`asr/_subword.py`) | `.[asr-nemo]`(NeMo、GPU 推奨。20 秒クリップ約 0.5 秒、VRAM 約 5 GB) |
-| `reazonspeech_k2` | [ReazonSpeech k2 v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2)(Zipformer、sherpa-onnx) | 同上 | `.[asr-k2]`(ONNX、CPU で 20 秒クリップ約 1 秒。最も軽い) |
+| `reazonspeech_whisperx`(既定) | [ReazonSpeech-ESPnet v2](https://huggingface.co/reazon-research/reazonspeech-espnet-v2) の区間転写 → [WhisperX](https://github.com/m-bain/whisperX) で wav2vec2 CTC 整列 | 整列器が文字ごとに推定 | `asr-reazon-whisperx`(espnet + whisperx、GPU で 20 秒クリップ約 2.5 秒、VRAM 約 3 GB) |
+| `reazonspeech_nemo` | [ReazonSpeech NeMo v2](https://huggingface.co/reazon-research/reazonspeech-nemo-v2)(FastConformer-RNNT、日本語) | トークンの発火時刻。**サブワード内は文字数で均等分割**し、0.5 秒以内の間は次トークンまで橋渡し(近似。`asr/_subword.py`) | `asr-nemo`(NeMo、GPU 推奨。20 秒クリップ約 0.5 秒、VRAM 約 5 GB) |
+| `reazonspeech_k2` | [ReazonSpeech k2 v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2)(Zipformer、sherpa-onnx) | 同上 | `asr-k2`(ONNX、CPU で 20 秒クリップ約 1 秒。最も軽い) |
 
 リーダーボードと論文の TOR は `reazonspeech_whisperx` の経路で計算しました。同じ音声に対して
 ESPnet の転写文は完全に再現され、文字の開始時刻の差は中央値 0.04 秒でした(6 クリップ)。
@@ -626,9 +631,9 @@ LLM-jp-Zoom1 は公開準備中です。コーパスが手元に無い場合は�
 | CPC エンコーダ `60k_epoch4-d0f474de.pt` | MIT(facebookresearch/CPC_audio) | 同上 |
 | ReazonSpeech(コード、`reazonspeech-{nemo,k2,espnet}-asr`) | Apache-2.0 | [reazon-research/ReazonSpeech](https://github.com/reazon-research/ReazonSpeech) |
 | ReazonSpeech モデル(`reazonspeech-nemo-v2` / `reazonspeech-k2-v2` / `reazonspeech-espnet-v2`) | Apache-2.0(各モデルカード) | [Hugging Face: reazon-research](https://huggingface.co/reazon-research) |
-| NVIDIA NeMo(`nemo_toolkit`、`.[asr-nemo]` の依存) | Apache-2.0 | [NVIDIA/NeMo](https://github.com/NVIDIA/NeMo) |
-| sherpa-onnx(`.[asr-k2]` の依存) | Apache-2.0 | [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) |
-| ESPnet(`.[asr-reazon-whisperx]` の依存) | Apache-2.0 | [espnet/espnet](https://github.com/espnet/espnet) |
+| NVIDIA NeMo(`nemo_toolkit`、`asr-nemo` の依存) | Apache-2.0 | [NVIDIA/NeMo](https://github.com/NVIDIA/NeMo) |
+| sherpa-onnx(`asr-k2` の依存) | Apache-2.0 | [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) |
+| ESPnet(`asr-reazon-whisperx` の依存) | Apache-2.0 | [espnet/espnet](https://github.com/espnet/espnet) |
 | WhisperX(整列) | BSD-2-Clause | [m-bain/whisperX](https://github.com/m-bain/whisperX) |
 | WhisperX が日本語整列に使う wav2vec2 モデル(`jonatasgrosman/wav2vec2-large-xlsr-53-japanese`) | Apache-2.0(モデルカード) | [Hugging Face](https://huggingface.co/jonatasgrosman/wav2vec2-large-xlsr-53-japanese) |
 | Full-Duplex-Bench(設計の出典) | CC BY-NC 4.0。本リポジトリはコードを流用せず、事象定義と TOR の定義を独立に再実装 | [DanielLin94144/Full-Duplex-Bench](https://github.com/DanielLin94144/Full-Duplex-Bench) |
@@ -678,6 +683,9 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
     (`metrics.pause_response`、要約の `pause_response` / `pause_no_response_rate` / `pause_interrupt_rate`)。既定の採点は変わらない。
   - `leaderboard` コマンド: `summary.json` をリーダーボードと同じ順位で表示し、`--reference docs/results.json` で掲載値と並べる(採点条件が違えば警告)。
   - CI に Python 3.13 と extras(vap / analysis / always-talk)の import・解決の確認を追加。開発依存に pytest-cov。
+  - ASR バックエンドの依存(`asr-reazon-whisperx` / `asr-nemo` / `asr-k2`)を extra から dependency group に移した
+    (`uv sync --extra asr-...` は `uv sync --group asr-...` に)。ReazonSpeech は git リポジトリからだけ配布されており、
+    PyPI が git の URL を直接指す依存を持つパッケージを受け付けないため。ロックファイルの各パッケージのバージョンは変わらない。
   - extra `always-talk`(pyopenjtalk)を追加。古い GPU ドライバでの torch の入れ替えと `uv run --no-sync` の手順を追記。
   - 商用 API の記載を、掲載値を取得したときの条件に合わせた(掲載値は変わらない)。`configs/default.yaml` の Gemini のモデル ID を、リーダーボードの出力に使った
     `gemini-3.1-flash-live-preview` に(従来の `gemini-live-2.5-flash-preview` は掲載値の取得に使っていない)。リーダーボードの表示名「Grok Voice 3.0」を
@@ -732,9 +740,9 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 | 症状 | 対処 |
 |------|------|
 | `score-offline` が何も採点しない(`scored 0 clips`) | `corpus.eval_dir` 配下に `<task>/<clip>.json` と `<task>_<model>_asr/text/<clip>.json` の両方があるか確認。片方が無いクリップは黙ってスキップされます。後者は `fdbja transcribe` が書きます |
-| `ASR backend '...' is missing a dependency` | バックエンドの extra が入っていません。`uv sync --extra asr-reazon-whisperx`(NeMo は `asr-nemo`、k2 は `asr-k2`)。extra 同士は排他なので環境を分けてください |
-| `.[asr-reazon-whisperx]` の import で `numpy.core.multiarray failed to import` | `ctc-segmentation` の wheel が numpy 1.x 向けにビルドされています。`uv pip install cython setuptools` の後、`uv pip install --no-build-isolation --no-cache --reinstall --no-binary ctc-segmentation ctc-segmentation` で手元の numpy に対して再ビルド |
-| Blackwell 世代の GPU(sm_120)で torch が動かない / ASR が CPU に落ちる / CUDA エラー | cu128 以上の torch が必要。`uv pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128` を extra より先に入れる |
+| `ASR backend '...' is missing a dependency` | バックエンドの dependency group が入っていません。`uv sync --group asr-reazon-whisperx`(NeMo は `asr-nemo`、k2 は `asr-k2`)。グループ同士は排他なので環境を分けてください。0.1.0 の `--extra asr-...` は `--group asr-...` になりました |
+| `asr-reazon-whisperx` の import で `numpy.core.multiarray failed to import` | `ctc-segmentation` の wheel が numpy 1.x 向けにビルドされています。`uv pip install cython setuptools` の後、`uv pip install --no-build-isolation --no-cache --reinstall --no-binary ctc-segmentation ctc-segmentation` で手元の numpy に対して再ビルド |
+| Blackwell 世代の GPU(sm_120)で torch が動かない / ASR が CPU に落ちる / CUDA エラー | cu128 以上の torch が必要。`uv pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128` を ASR の依存より先に入れる |
 | `metrics.vap_distance.vap_realtime_root or $VAP_REALTIME_ROOT must be set` | VAP-Realtime を clone し、`VAP_REALTIME_ROOT=/path/to/VAP-Realtime` を設定。`asset/cpc/` は clone に含まれる。`asset/vap/` には「VAP-distance の準備」の手順で `vap_state_dict_jp_kyoto_20hz_2500msec.pt` を置く |
 | Hugging Face から `vap_state_dict_jp_kyoto_20hz_2500msec.pt` が見つからない(404) | 2026-10-01 に `main` から外されました。URL の `main` をリビジョン `fe24ac60d8fcc80463edde97ed90e3ceca5e5b88` に置き換える(「VAP-distance の準備」) |
 | VAP チェックポイントを替えたら D_KL の値が変わった | 仕様どおりです。VAP は凍結した計測器で、チェックポイントが違えば値は比較できません。比較する全モデルを同じチェックポイントで採点し直し、`results.json` の `vap_checkpoint` を確認してください |
