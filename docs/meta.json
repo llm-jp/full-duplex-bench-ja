@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-04",
+ "generated": "2026-11-15",
  "dataset": "LLM-jp-Zoom1 評価セット(Pause 240 事象 / 200 クリップ、Smooth TT 197 事象 / 196 クリップ)",
  "repo_url": "https://github.com/llm-jp/full-duplex-bench-ja",
  "task_labels": {
@@ -153,13 +153,14 @@
   "boundaries": "音声の境界(人間側 A・B の発話境界を音声の VAD で付け直す。ツールキットでは detection.boundaries: audio、既定は transcript)",
   "asr": "ReazonSpeech-ESPnet で書き起こし、WhisperX で文字の時刻を整列(論文と同じ転写)",
   "vap": "maai-kyoto/vap_jp_kyoto(MIT、20 Hz / 2.5 s、リビジョン fe24ac6)",
-  "ci": "95% 区間 = 事象の再標本化(2,000 回、percentile)",
+  "ci": "95% 区間 = 事象の再標本化(10,000 回、percentile)",
+  "pause_ranking": "Pause の順位 = 無反応 + 割り込み(ポーズに反応しなかった割合と、相手に被せて話し続けた割合の和。0〜2、小さいほど良い。応答音声から判定)。Pause の TOR は参考値",
   "events": {
    "pause": 240,
    "smooth_tt": 197,
    "smooth_tt_turn_transition_only": 72
   },
-  "rescored": "2026-11-04"
+  "rescored": "2026-11-15"
  },
  "transcript_boundaries_note": "文字の境界(ASR の文字の時刻だけで人間側の境界を置く、2026-09-28 時点の掲載値の定義)では、Pause の TOR が商用システムで高めに出ていた(Gemini 3.1 Flash Live 0.300 → 0.175、Grok Voice 0.313 → 0.133、GPT-Realtime 0.208 → 0.154)。Smooth TT の TOR の差は ±0.05 以内。値は results.json の transcript_boundaries にある。",
  "turn_transition_note": "Smooth TT を本当の話者交替の 72 事象に限る(A が相槌主体の発話、A の終わりの直前に B が話している、B の応答が相槌の連なり、のいずれかの事象を除く。ツールキットでは detection.smooth_tt_roles、既定は無効)と次のとおり。",
