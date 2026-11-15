@@ -177,7 +177,7 @@ are not comparable with the leaderboard; report the data source, event counts an
 
 Timing statistics of any dialogue recording with the user and the system on separate channels, without the
 evaluation set. No transcript and no annotation; the base dependencies (numpy, soundfile, pyyaml) are enough
-(`uv sync`, no extra). From 0.2.0 the package is planned to be distributed on PyPI as well: `pip install fdbja`
+(`uv sync`, no extra). From 0.2.0 the package is distributed on PyPI as well: `pip install fdbja`
 and then `fdbja measure rec.wav`, without cloning the repository (drop `uv run` from the commands below).
 
 ```bash
@@ -481,13 +481,9 @@ VAP-distance is computed from the waveform and is not affected by 1 and 3.
 
 ## Roadmap
 
-1. **Release of 0.2.0** — the two metrics validated against human judgements (boundary-weighted
-   VAP-distance, off by default; a Pause metric that penalises both interrupting and not reacting, used
-   for the Pause ranking of the leaderboard) and
-   `measure` for your own recordings. Distribution on PyPI is planned from this release.
-2. Release of the evaluation data (tied to the public release of LLM-jp-Zoom1).
-3. Score the system backchannel task (after confirming it with a listening test).
-4. The two tasks where the system is already speaking (User Interruption of v1 and the user backchannel
+1. Release of the evaluation data (tied to the public release of LLM-jp-Zoom1).
+2. Score the system backchannel task (after confirming it with a listening test).
+3. The two tasks where the system is already speaking (User Interruption of v1 and the user backchannel
    scenario of v1.5).
 
 ## License

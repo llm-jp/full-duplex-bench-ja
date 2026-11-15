@@ -11,8 +11,8 @@ authors:
 repository-code: "https://github.com/llm-jp/full-duplex-bench-ja"
 url: "https://llm-jp.github.io/full-duplex-bench-ja/"
 license: Apache-2.0
-version: 0.1.0
-date-released: "2026-11-05"
+version: 0.2.0
+date-released: "2026-11-15"
 preferred-citation:
   type: conference-paper
   languages: [ja]

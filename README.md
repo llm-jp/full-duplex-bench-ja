@@ -181,7 +181,7 @@ uv run fdbja score-offline --config examples/dummy/config_own_dialogues.yaml
 
 評価セットを使わずに、手元の対話の録音(ユーザとシステムが別々のチャネルに入った wav)からタイミングの統計を出します。
 転写も注釈も要らず、基本依存(numpy / soundfile / pyyaml)だけで動きます(`uv sync` のみ、extra は不要)。
-0.2.0 からは PyPI でも配布する予定で、リポジトリを clone せずに `pip install fdbja` で入れて `fdbja measure rec.wav` と呼べるようになります
+0.2.0 からは PyPI でも配布しており、リポジトリを clone せずに `pip install fdbja` で入れて `fdbja measure rec.wav` と呼べます
 (その場合は下のコマンドの `uv run` を外してください)。
 
 ```bash
@@ -677,15 +677,13 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 
 ## ロードマップ
 
-1. **0.2.0 のリリース** — 人の判断で検証した 2 指標(境界重み付き VAP-distance は既定では無効、割り込みと無反応を罰する Pause 指標はリーダーボードの Pause の順位に使う)と、
-   手元の録音を測る `measure` を、下の変更履歴「0.2.0」の整備と合わせてリリースします。PyPI での配布もこのバージョンからの予定です。
-2. 評価データの公開(LLM-jp-Zoom1 の公開に連動)。
-3. システムの相槌課題(Backchanneling)を採点対象に(聴取で確認したあと)。
-4. システムが先に話している場面の 2 課題(v1 の User Interruption と、v1.5 のユーザの相槌)。設計案は [docs/design/next-tasks.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/docs/design/next-tasks.md)。
+1. 評価データの公開(LLM-jp-Zoom1 の公開に連動)。
+2. システムの相槌課題(Backchanneling)を採点対象に(聴取で確認したあと)。
+3. システムが先に話している場面の 2 課題(v1 の User Interruption と、v1.5 のユーザの相槌)。設計案は [docs/design/next-tasks.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/docs/design/next-tasks.md)。
 
 ## バージョン / 変更履歴
 
-- **0.2.0(未リリース)** — 外部の利用者が自前のデータ・モデルで評価するための整備。採点の定義と既定値は変えていない(既存の数値は同じ手順で再現する)。
+- **0.2.0(2026-11-15)** — 外部の利用者が自前のデータ・モデルで評価するための整備と、PyPI での配布(`pip install fdbja`)。TOR・VAP-distance・応答潜時の定義は変えていない(既存の数値は同じ手順で再現する)。既定の変更は、Pause の無反応 + 割り込みを採点するようにした 1 点。
   - 自前の 2 チャネル対話から評価セットを作る経路: `transcribe --wav` に `--channel 0 1 --speaker A B`(2 チャンネルを話者ラベル付きで 1 つの jchat に)、
     `reconstruct` に任意のディレクトリ構成を読む `corpus.layout: generic`(`--layout generic`)、話者ラベルが A / B でない転写の警告。合成データの `--layout generic --audio-only`。
   - 自作モデルをつなぐ口: `fdbja.adapters.register_adapter`、config の `adapter: "モジュール:クラス"` と `adapter: offline`、例 `examples/adapters/`。
