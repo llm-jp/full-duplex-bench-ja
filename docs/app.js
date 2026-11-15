@@ -234,7 +234,7 @@ function render(results, meta, human) {
     // what the chart shows: value, 95% interval, direction and wording
     const M = state.metric === "dkl" ? { ...num, name: "VAP-distance", ranked: true,
       val: (r) => r.event_mean_dkl, ci: (r) => r.dkl_ci || [],
-      hint: "VAP-distance(実験的指標、参考値)。人間の音声活動予測分布との距離で、短いほど人間の応答に近い。",
+      hint: "VAP-distance(実験的指標、参考値)。人間の音声活動予測分布との距離で、小さいほど人間の応答に近い。",
     } : isPause && state.metric === "tor" ? { ...num, name: "TOR", ranked: false,
       val: (r) => r.TOR, ci: (r) => r.TOR_ci || [],
       hint: "ポーズでターンを取った割合(TOR、参考値)。Full-Duplex-Bench の定義では小さいほど良いとされますが、聴取実験では人の判断と逆を向いたため、順位には使っていません(下の検証)。並びは TOR の小さい順。",
@@ -248,7 +248,7 @@ function render(results, meta, human) {
       extra: (r) => `<br>TOR ${fmt(r.TOR, 3)}`,
       hint: state.view === "72"
         ? "Smooth TT のうち本当の話者交替の 72 事象に限った値(A が相槌主体の発話、A の終わりの直前に B が話している、B の応答が相槌の連なり、のいずれかを除く)。"
-        : "話者 A のターンの終わりから 2 秒以内に話し始めた割合(= TOR)。長いほど良い。",
+        : "話者 A のターンの終わりから 2 秒以内に話し始めた割合(= TOR)。大きいほど良い。",
     };
     document.getElementById("task-hint").textContent = M.hint + ` ${n} 事象。`;
     const list = order(rows.map((r) => ({ ...r })), M.val, M.asc);
