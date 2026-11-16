@@ -96,7 +96,7 @@
     ]
   },
   "confirmation": {
-    "title": "事前登録した 2 回目の聴取実験(Pause)",
+    "title": "基準を先に決めた 2 回目の聴取実験(Pause)",
     "panel": {
       "submitted": 42,
       "analyzed": 39,

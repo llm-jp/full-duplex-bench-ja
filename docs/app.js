@@ -371,7 +371,7 @@ function renderHuman(h, label, shortL) {
   renderConfirmation(h.confirmation);
 }
 
-// Second, preregistered listening experiment (Pause only). Numbers come from
+// Second listening experiment, criteria fixed before collection (Pause only). Numbers come from
 // human_eval.json; nothing is computed here.
 function renderConfirmation(c) {
   const box = document.getElementById("confirm-block");
