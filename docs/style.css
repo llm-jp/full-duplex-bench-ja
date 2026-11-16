@@ -26,6 +26,9 @@ td.model a { color:var(--accent); text-decoration:none; }
 td.model a:hover { text-decoration:underline; }
 tbody tr:last-child td { border-bottom:0; }
 tbody tr:nth-child(even) { background:#fafbfc; }
+table.txt { min-width:600px; font-size:.84rem; }
+table.txt th, table.txt td { text-align:left; white-space:normal; vertical-align:top; }
+#confirm-block { margin-top:1.6rem; }
 .rank { color:var(--muted); width:2.2em; }
 .dom { font-size:.72rem; padding:1px 7px; border-radius:20px; margin-left:6px;
   vertical-align:middle; }

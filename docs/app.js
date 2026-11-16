@@ -368,6 +368,33 @@ function renderHuman(h, label, shortL) {
   setText("proposed-note", "※ 提案指標(ツールキットに実装済み)。境界重み付き VAP-distance = 相手の発話の境界付近に重みを置いた VAP-distance(既定では無効。config の metrics.vap_distance.weighting: boundary で有効化)。割り込みと無反応を罰する Pause 指標 = システムの割り込み(相手に被せる・ポーズの後も話し続ける)と、ポーズで何も反応しないことの両方を罰する(既定で採点し、Pause の順位に使っています)。");
   document.getElementById("caveats").innerHTML =
     h.caveats.map((c) => `<li>${c}</li>`).join("");
+  renderConfirmation(h.confirmation);
+}
+
+// Second, preregistered listening experiment (Pause only). Numbers come from
+// human_eval.json; nothing is computed here.
+function renderConfirmation(c) {
+  const box = document.getElementById("confirm-block");
+  if (!box) return;
+  if (!c) { box.style.display = "none"; return; }
+  const p = c.panel, v = c.values, o = c.overlap;
+  setText("confirm-title", c.title);
+  setText("confirm-line", `上の検証で構成を決めた「無反応 + 割り込み」を、別の聴取実験で確かめました。判定の基準と分析の手順は回収の前に固定しています。` +
+    `Pause の ${p.events} 事象から作った ${p.pairs} 対(実システム ${p.systems} つ、1 回目に提示していない組だけ)を、` +
+    `クラウドソーシングの ${p.submitted} 人が聞き比べました(1 対 5 票、品質確認を通った ${p.analyzed} 人・${p.votes} 票で解析。` +
+    `人どうしの一致 ${p.agreement_one_vs_rest.toFixed(2)}、Fleiss κ ${p.fleiss_kappa.toFixed(2)})。`);
+  document.getElementById("confirm-stats").innerHTML = [
+    [`+${v.rho.toFixed(2)}`, "人の順位との順位相関", `基準 ρ ≥ 0.6、95% 区間 ${v.rho_ci[0].toFixed(2)}〜${v.rho_ci[1].toFixed(2)}`],
+    [`${v.decided_agree}<small> / ${v.decided_pairs} 対</small>`, "多数派が指標の良い側", "指標が差をつけた対"],
+    [`${v.agree_metric.toFixed(2)}<small> 対 ${v.agree_tor.toFixed(2)}</small>`, "多数派との一致率", "この指標 対 TOR"],
+  ].map(([val, a, b]) => `<div class="stat"><div class="stat-v">${val}</div>` +
+    `<div class="stat-a">${a}</div><div class="stat-b">${b}</div></div>`).join("");
+  document.getElementById("confirm-table").innerHTML =
+    `<thead><tr><th>確認したこと</th><th>事前に決めた基準</th><th>結果(${p.analyzed} 人)</th>` +
+    `<th>1 回目の参加者を除く(${o.rest} 人)</th></tr></thead><tbody>` +
+    c.rows.map((r) => `<tr><td>${r.check}</td><td>${r.criterion}</td><td>${r.result}</td><td>${r.rest}</td></tr>`).join("") +
+    `</tbody>`;
+  document.getElementById("confirm-notes").innerHTML = c.notes.map((n) => `<li>${n}</li>`).join("");
 }
 
 // two rank columns joined by lines: same system, left = people, right = TOR
