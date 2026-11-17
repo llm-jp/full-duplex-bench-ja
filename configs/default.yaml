@@ -50,6 +50,10 @@ detection:
   clips_per_task: 200
   clip_seconds: 20
 
+# Streaming adapters (moshi_ws / gemini_live / openai_realtime) take
+#   timeline: playout   (default) audio placed by arrival time and playback queue;
+#                       unplayed audio is dropped at an interruption notice
+#   timeline: legacy    the construction up to 0.2.0 (to reproduce values published with 0.2.0)
 models:
   - name: jmoshi
     adapter: moshi_ws

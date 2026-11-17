@@ -8,10 +8,23 @@ Works with J-Moshi and LLM-jp-Moshi-v1. Ported from the research client
 Requires ``opuslib`` and ``websockets`` (install extra ``[infer]``). Needs a
 running server; not exercised in CI without one.
 
-Timeline: the received frames are concatenated in the order they arrive, not
-placed by wall-clock arrival time as in the commercial-API adapters
-(``gemini_live``, ``openai_realtime``), so response latencies are not measured
-on exactly the same footing across adapters (README "既知の限界").
+Timeline (``timeline`` option, see ``fdbja.adapters._timeline``):
+
+``playout`` (default)
+    The response channel is what a real client plays: each decoded frame is
+    placed at the time it arrived, or after the frames queued before it,
+    whichever is later. This is the same rule as in the commercial-API
+    adapters (``gemini_live``, ``openai_realtime``), so response latencies are
+    measured on the same footing. The protocol has no interruption notice, so
+    nothing is discarded.
+``legacy``
+    The construction up to 0.2.0: the received frames are joined in the order
+    they arrive, starting at time 0, without using arrival times. Use it to
+    reproduce values published with 0.2.0.
+
+Each clip also returns an event record (arrival time and sample count of every
+frame) and the received audio, which ``fdbja infer`` saves as ``events.json`` /
+``received.wav`` next to ``combined.wav``.
 """
 
 from __future__ import annotations
@@ -22,6 +35,11 @@ import time
 import numpy as np
 
 from fdbja.adapters._oggopus import OggDemuxer, OggOpusMuxer
+from fdbja.adapters._timeline import (
+    DEFAULT_TIMELINE,
+    ResponseTimeline,
+    resolve_rule,
+)
 from fdbja.adapters.base import DialogueResponse, ModelAdapter
 
 MOSHI_SR = 24000
@@ -45,21 +63,26 @@ class MoshiWebSocketAdapter(ModelAdapter):
     name = "moshi_ws"
 
     def __init__(self, url: str = "ws://localhost:8998/api/chat",
-                 trailing_silence_s: float = 3.0, **_):
+                 trailing_silence_s: float = 3.0,
+                 timeline: str = DEFAULT_TIMELINE, **_):
         self.url = url
+        self.timeline = timeline
+        self.rule = resolve_rule(timeline, legacy_rule="concat")
         self.trailing_silence_s = trailing_silence_s
         self.sample_rate = MOSHI_SR
 
     def infer(self, input_audio: np.ndarray, sample_rate: int) -> DialogueResponse:
         input_pcm = _to_24k_i16(input_audio, sample_rate)
-        output_pcm = asyncio.run(self._stream(input_pcm))
+        output_pcm, tl, events = asyncio.run(self._stream(input_pcm))
         return DialogueResponse(
             input_audio=input_pcm.astype(np.float32) / 32768.0,
             response_audio=output_pcm.astype(np.float32) / 32768.0,
             sample_rate=MOSHI_SR,
+            events=events,
+            received_audio=tl.received_audio().astype(np.float32) / 32768.0,
         )
 
-    async def _stream(self, input_pcm: np.ndarray) -> np.ndarray:
+    async def _stream(self, input_pcm: np.ndarray):
         import opuslib
         import websockets
 
@@ -68,7 +91,7 @@ class MoshiWebSocketAdapter(ModelAdapter):
         encoder = opuslib.Encoder(MOSHI_SR, 1, opuslib.APPLICATION_AUDIO)
         decoder = opuslib.Decoder(MOSHI_SR, 1)
         muxer, demuxer = OggOpusMuxer(MOSHI_SR, 1), OggDemuxer()
-        out_chunks = []
+        tl = ResponseTimeline(MOSHI_SR, adapter=self.name)
 
         async with websockets.connect(self.url, max_size=10 * 1024 * 1024) as ws:
             await ws.recv()  # handshake
@@ -112,13 +135,14 @@ class MoshiWebSocketAdapter(ModelAdapter):
                         if not (isinstance(msg, bytes) and msg):
                             continue
                         if msg[0] == 1:
+                            at = time.monotonic() - t0
                             demuxer.push(msg[1:])
                             for pkt in demuxer.get_packets():
                                 for fsize in decode_sizes:
                                     try:
                                         dec = decoder.decode(pkt, fsize)
-                                        out_chunks.append(
-                                            np.frombuffer(dec, dtype=np.int16))
+                                        tl.add_audio(at, np.frombuffer(
+                                            dec, dtype=np.int16))
                                         break
                                     except Exception:
                                         continue
@@ -128,6 +152,11 @@ class MoshiWebSocketAdapter(ModelAdapter):
 
             await asyncio.gather(send_audio(), recv_audio())
 
-        if out_chunks:
-            return np.concatenate(out_chunks)
-        return np.zeros(total, dtype=np.int16)
+        if self.rule == "playout":
+            n = int((total_dur + self.trailing_silence_s) * MOSHI_SR)
+        else:
+            n = 0       # up to 0.2.0: exactly the received frames
+        out = tl.render(self.rule, min_samples=n)
+        if len(out) == 0:
+            out = np.zeros(total, dtype=np.int16)
+        return out, tl, tl.record(self.timeline, self.rule, min_samples=n)
