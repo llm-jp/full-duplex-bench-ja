@@ -153,6 +153,9 @@ metrics:
     persist_after_resume_seconds: 0.5  # 割り込み: 間の中で始まり A の再開後この長さ以上続く
     pre_window_seconds: 2.0            # 割り込み: 間の前のこの窓で
     pre_overlap_max_seconds: 0.5       #           A との重なりがこの長さを超える
+    # 参考値(順位には使わない): 反応の区間の前後この秒数までに始まる書き起こしの文字を、反応の文字として数える。
+    # analyze-profile が「短い反応のうち相槌語だけだった割合」を出すのに使う。
+    reaction_text_margin_seconds: 0.2
 
 output:
   dir: ./results

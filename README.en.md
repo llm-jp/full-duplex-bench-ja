@@ -333,9 +333,29 @@ as on the leaderboard), `onset_median` / `onset_q1` / `onset_q3` (the same laten
 one table (`profile.md` / `profile.csv`): on Pause, the share of pauses it talked through (= TOR), filled with
 backchannel-sized speech only, or left silent; on Smooth TT, the share of turn ends it took (= TOR), of which it
 started before A finished, and left unanswered, with the quartiles of the signed onset; and a rough tendency
-(talks over / stays silent / slow; thresholds are arguments). It also plots Pause talked-through share against
-Smooth TT no-response share (`profile.png` / `profile.svg`, needs matplotlib from `.[analysis]`) and writes
-`events.csv`: per event, its time, the judgement window, the system's utterances, the outcome and the reason.
+(talks over / does not react in pauses / stays silent / slow; thresholds are arguments). It also plots the Pause
+barge-in rate against the Smooth TT no-response share (`profile.png` / `profile.svg`, needs matplotlib from
+`.[analysis]`) and writes `events.csv`: per event, its time, the judgement window, the system's utterances, the
+outcome and the reason.
+
+On Pause the profile also reports the audio-based rule that ranks the leaderboard: `pause_no_reaction` and
+`pause_barge_in` (the leaderboard rates), and `pause_brief`, the share of pauses with a reaction and no barge-in.
+The tendency and the figure follow this rule, the one that was checked against listeners. The transcript-based
+talked-through share (= TOR) also counts short reactions slightly over the backchannel limit, so it is larger
+than the barge-in rate for systems that react briefly and stop; up to 0.2.0 such a system could be shown as
+talking over. Results scored without the rule keep the transcript-based tendency; results scored by 0.2.0 follow
+the rule and leave the split below empty.
+
+The brief reactions are split by the transcript characters that start within 0.2 s of the reaction
+(`metrics.pause_response.reaction_text_margin_seconds`): backchannel words or laughter only
+(`brief_backchannel`), other words (`brief_other`), or no characters at all (`brief_no_text`: a breath, noise, or
+speech the ASR missed). This split is a reference. It is not used for the ranking and was not checked against
+listeners, and the ranking metric itself still does not tell backchannels, breaths and noise apart. It depends on
+the ASR and on its character times: in our check, moving the margin between 0 and 0.3 s changed the split by more
+than 10 points for some systems. With few brief reactions the shares are unstable (`profile.md` prints the
+count). It covers reactions inside pauses only, not backchannels while the other speaker is talking.
+`score-offline` stores the two character counts per Pause event (`reaction_chars`, `reaction_residual_chars`),
+not the transcript text.
 
 ## What is evaluated
 
