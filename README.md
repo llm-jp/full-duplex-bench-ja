@@ -335,19 +335,26 @@ c.shifts[0]["features"]["latency_median"]["verdict"]    # "followed" など
 ```text
 context: chat   system: 6 recording(s)   human: ja-strangers-chat-video_call@48a934d5 (6 recording(s))
                                          system                  human                   system - human
-  response latency, median               0.40 s [0.35, 0.45]     0.30 s [0.25, 0.35]     +0.10 s [+0.03, +0.17] *
+  response latency, median               0.50 s [0.42, 0.58]     0.30 s [0.22, 0.38]     +0.20 s [+0.10, +0.30] *
   turn ends without a response           0.0 % [0.0, 0.0]        0.0 % [0.0, 0.0]        +0.0 pt [+0.0, +0.0]
 
 shift: chat -> task
                                          human                      system                     verdict
-  response latency, median               +0.60 s [+0.52, +0.68] *   +0.40 s [+0.32, +0.47] *   followed (ratio +0.67)
+  response latency, median               +0.60 s [+0.50, +0.70] *   +0.30 s [+0.20, +0.40] *   followed (ratio +0.50)
   turn ends without a response           +0.0 pt [+0.0, +0.0]       +0.0 pt [+0.0, +0.0]       no clear human shift
 ```
 
 - **分析の単位は録音です**。値はすべて、録音ごとに出した値の、録音にわたる平均です。`[low, high]` は録音を単位にした
-  95 % の bootstrap 区間(既定 2,000 回、`--bootstrap` と `--seed` で変更)で、1 つの対話の中の事象を独立な観測として扱いません。
-  その量の値がある録音が、比べる片方で 5 本に満たないときは区間を出さず、変化の判定もしません(5 は目安で、確かめた値ではありません)。
+  95 % の t 区間(平均は Student の t 区間、2 組の録音の差は Welch の t 区間)で、1 つの対話の中の事象を独立な観測として扱いません。
+  乱数を使わないので、同じ入力なら同じ値になります。
+  その量の値がある録音が、比べる片方で 5 本に満たないときは区間を出さず、変化の判定もしません。
   `*` は、差の区間が 0 を含まないことを示します。
+- **区間をどこまで確かめたか**: このベンチマークの評価セットの人どうしの録音(数十秒の短い録音)を、同じ条件の中で無作為に 2 組に分け、
+  差が無いはずの比較で「変化がある」とされる割合を見ました。1 組 5〜100 本の範囲で、この割合は名目の 5 % 前後か、それより低い値でした。
+  録音を単位にした percentile bootstrap の区間では、録音が少ないほどこの割合が 5 % を大きく超えたので、採用していません。
+  確かめたのは 1 種類の短い録音の上だけで、条件の違う実際の録音ではまだ測っていません。
+  また、5 本は区間が出る下限で、変化を検出するのに足りる本数ではありません。短い録音では録音ごとの値のばらつきが大きく、
+  1 組数十本でも区間は広くなりました。条件ごとの録音は、長い対話をできるだけ多く集めてください。
 - 測る量は次の 6 つです。条件の間で比べるのは上の 5 つです。
 
   | 名前 | 内容 |
@@ -957,8 +964,9 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
     (`timeline_from_record`)。`DialogueResponse` に `events` / `received_audio`(省略可)。
   - README と docstring の OpenAI Realtime のイベント名を訂正(`response.cancelled` というイベントは無い。打ち切りは `response.done` の `status: cancelled`)。
   - `measure-contexts`(新規): 1 つのシステムを複数の対話の条件(タスク、場面、関係、ペルソナ)で測る。条件ごとに同じ条件の人どうしの録音と並べ、
-    条件の間の変化が人どうしの録音の変化と同じ向きかを、録音を単位にした bootstrap 区間で判定する。聴取者の判断とは照合していない。
-    確かめたのは合成信号の単体テストまで。`measure` の出力と採点の値は変わらない。
+    条件の間の変化が人どうしの録音の変化と同じ向きかを、録音を単位にした t 区間(差は Welch の t 区間)で判定する。聴取者の判断とは照合していない。
+    区間は、評価セットの人どうしの録音を同じ条件の中で 2 組に分けて確かめた。条件の違う実際の録音ではまだ測っていない。
+    `measure` の出力と採点の値は変わらない。
   - `make-profile`: プロファイルに録音ごとの値(`reference_recordings`、6 つの数値、ファイル名なし)を書く。形式名は `fdbja-profile/1` のまま。
     この欄の無いプロファイルも `measure` ではそのまま使える。
 

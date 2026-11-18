@@ -358,20 +358,30 @@ Example of the output (**synthetic signals, not measured values**; one context t
 ```text
 context: chat   system: 6 recording(s)   human: ja-strangers-chat-video_call@48a934d5 (6 recording(s))
                                          system                  human                   system - human
-  response latency, median               0.40 s [0.35, 0.45]     0.30 s [0.25, 0.35]     +0.10 s [+0.03, +0.17] *
+  response latency, median               0.50 s [0.42, 0.58]     0.30 s [0.22, 0.38]     +0.20 s [+0.10, +0.30] *
   turn ends without a response           0.0 % [0.0, 0.0]        0.0 % [0.0, 0.0]        +0.0 pt [+0.0, +0.0]
 
 shift: chat -> task
                                          human                      system                     verdict
-  response latency, median               +0.60 s [+0.52, +0.68] *   +0.40 s [+0.32, +0.47] *   followed (ratio +0.67)
+  response latency, median               +0.60 s [+0.50, +0.70] *   +0.30 s [+0.20, +0.40] *   followed (ratio +0.50)
   turn ends without a response           +0.0 pt [+0.0, +0.0]       +0.0 pt [+0.0, +0.0]       no clear human shift
 ```
 
 - **The unit of analysis is the recording.** Every value is the mean over the recordings of a per-recording
-  value. `[low, high]` is a 95 % bootstrap interval over recordings (2,000 draws by default; `--bootstrap`,
-  `--seed`), so the events of one dialogue are not treated as independent observations. When fewer than 5
-  recordings on one of the sides have a value, no interval is given and the shift is not assessed (5 is a rule
-  of thumb, not a validated limit). `*` marks a difference whose interval excludes 0.
+  value. `[low, high]` is a 95 % t interval over recordings (Student's t for a mean, Welch's t for the
+  difference between two sets of recordings), so the events of one dialogue are not treated as independent
+  observations. No random numbers are used: the same input gives the same values. When fewer than 5
+  recordings on one of the sides have a value, no interval is given and the shift is not assessed. `*` marks
+  a difference whose interval excludes 0.
+- **How far the intervals were checked**: the human recordings of the evaluation set of this benchmark (short
+  recordings of some tens of seconds) were split at random into two sets within one context, where no
+  difference exists, and the share of comparisons marked as a shift was counted. With 5 to 100 recordings per
+  set, the share stayed around or below the nominal 5 %. Percentile bootstrap intervals over recordings
+  exceeded 5 %, by more the fewer the recordings, and were not adopted. The check covers one kind of short
+  recordings only; recordings of contexts that really differ have not been measured yet. Five recordings is
+  the minimum for an interval, not enough to detect a shift: with short recordings the per-recording values
+  vary a lot, and the intervals were wide even with some tens of recordings per set. Collect long dialogues,
+  and as many as you can, for each context.
 - Six values are reported; the first five are compared between contexts.
 
   | Name | Meaning |

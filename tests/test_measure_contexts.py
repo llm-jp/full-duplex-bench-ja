@@ -5,6 +5,7 @@ import contextlib
 import copy
 import io
 import json
+import math
 import os
 import subprocess
 import sys
@@ -83,7 +84,6 @@ class _Sets(unittest.TestCase):
                      _dialogue(latency_b + off, latency_a + off), SR, subtype="PCM_16")
 
     def run_contexts(self, chat, task, **kw):
-        kw.setdefault("n_boot", 400)
         return cx.measure_contexts({"chat": self.path(chat), "task": self.path(task)},
                                    self.profiles, **kw)
 
@@ -179,7 +179,7 @@ class ShiftTest(_Sets):
     def test_system_only(self):
         res = cx.measure_contexts(
             {"a": self.path("sys_04"), "b": self.path("sys_08")},
-            {"a": self.chat, "b": self.chat}, n_boot=400)
+            {"a": self.chat, "b": self.chat})
         self.assertEqual(self.latency(res)["verdict"], "system_only")
         self.assertEqual(res.summary["n_system_only"], 1)
         self.assertIsNone(res.summary["followed_rate"])   # no clear human shift
@@ -218,7 +218,7 @@ class FewRecordingsTest(_Sets):
         few = {name: [os.path.join(self.path(d), f"r{i}.wav") for i in range(3)]
                for name, d in (("chat", "sys_04"), ("task", "sys_08"))}
         self.assertLess(3, cx.FEW_RECORDINGS)
-        res = cx.measure_contexts(few, self.profiles, n_boot=400)
+        res = cx.measure_contexts(few, self.profiles)
         d = self.latency(res)
         self.assertEqual(d["verdict"], "not_assessed")
         self.assertIsNotNone(d["system"]["value"])        # the value is still given
@@ -232,12 +232,67 @@ class FewRecordingsTest(_Sets):
         self.assertEqual(res.summary["n_not_assessed"], len(cx.SHIFT_FEATURES))
         self.assertIn("system: 3 recording(s) (fewer than 5: no interval)", str(res))
 
-    def test_no_bootstrap(self):
-        res = self.run_contexts("sys_04", "sys_08", n_boot=0)
-        d = self.latency(res)
-        self.assertEqual(d["verdict"], "not_assessed")
-        self.assertAlmostEqual(d["system"]["value"], 0.4, delta=D)
-        self.assertEqual(res.bootstrap["n"], 0)
+    def test_minimum_counts_recordings_with_a_value(self):
+        rows = [{"x": float(i)} for i in range(4)] + [{"x": None}] * 6
+        self.assertIsNone(cx._Side(rows).estimate("x")["interval"])
+        d = cx._difference(cx._Side(rows), cx._Side([{"x": float(i)} for i in range(9)]), "x")
+        self.assertEqual(d["n"], [4, 9])
+        self.assertIsNone(d["interval"])
+        self.assertIsNone(d["clear"])
+
+
+def _side(values):
+    return cx._Side([{"x": float(v)} for v in values])
+
+
+class IntervalTest(unittest.TestCase):
+    def test_t_quantile(self):
+        for df, want in ((1, 12.7062), (4, 2.7764), (9, 2.2622), (30, 2.0423),
+                         (120, 1.9799)):
+            self.assertAlmostEqual(cx._t_quantile(df), want, places=3)
+        self.assertLess(cx._t_quantile(7.0), cx._t_quantile(6.5))      # df need not be whole
+        self.assertGreater(cx._t_quantile(6.0), cx._t_quantile(6.5))
+
+    def test_mean_interval(self):
+        est = _side([1, 2, 3, 4, 5]).estimate("x")
+        # mean 3, s = sqrt(2.5), t(0.975, 4) = 2.7764 -> half width 1.9632
+        self.assertEqual(est["value"], 3.0)
+        self.assertAlmostEqual(est["interval"][0], 3 - 1.9632, places=3)
+        self.assertAlmostEqual(est["interval"][1], 3 + 1.9632, places=3)
+
+    def test_welch_interval(self):
+        d = cx._difference(_side([1, 2, 3, 4, 5]), _side([2, 4, 6, 8, 10, 12]), "x")
+        # se^2 = 2.5/5 + 14/6, df = se^4 / (0.5^2/4 + (14/6)^2/5) = 6.972
+        se = math.sqrt(2.5 / 5 + 14 / 6)
+        half = cx._t_quantile((se ** 2) ** 2 / (0.25 / 4 + (14 / 6) ** 2 / 5)) * se
+        self.assertEqual(d["value"], 4.0)
+        self.assertAlmostEqual(d["interval"][0], 4 - half, places=3)
+        self.assertAlmostEqual(d["interval"][1], 4 + half, places=3)
+        self.assertTrue(2.36 < half / se < 2.37)          # between t(7) and t(6)
+        self.assertTrue(d["clear"])
+        back = cx._difference(_side([2, 4, 6, 8, 10, 12]), _side([1, 2, 3, 4, 5]), "x")
+        self.assertAlmostEqual(back["interval"][0], -d["interval"][1], places=4)
+
+    def test_no_variance(self):
+        same = cx._difference(_side([0] * 6), _side([0] * 6), "x")
+        self.assertEqual(same["interval"], [0.0, 0.0])
+        self.assertFalse(same["clear"])
+        apart = cx._difference(_side([0] * 6), _side([1] * 6), "x")
+        self.assertEqual(apart["interval"], [1.0, 1.0])
+        self.assertTrue(apart["clear"])
+        one = cx._difference(_side([0] * 5), _side([0, 0, 0, 0, 1]), "x")
+        self.assertFalse(one["clear"])                    # one recording differs: not clear
+
+    def test_same_distribution_is_rarely_called_clear(self):
+        # two sets drawn from one skewed, zero-heavy distribution: the share of
+        # differences called clear stays near or below the nominal 5 %
+        rng = np.random.default_rng(0)
+        for n in (5, 10, 30):
+            clear = 0
+            for _ in range(400):
+                a, b = (rng.exponential(1.0, n) * (rng.random(n) < 0.6) for _ in range(2))
+                clear += bool(cx._difference(_side(a), _side(b), "x")["clear"])
+            self.assertLessEqual(clear / 400, 0.07, n)
 
 
 class InputsTest(_Sets):
@@ -245,7 +300,7 @@ class InputsTest(_Sets):
         old = {k: v for k, v in self.chat.items() if k != "reference_recordings"}
         res = cx.measure_contexts(
             {"chat": self.path("sys_04"), "task": self.path("sys_08")},
-            {"chat": old, "task": self.task}, n_boot=400)
+            {"chat": old, "task": self.task})
         f = res.contexts["chat"]["features"]["latency_median"]
         self.assertIsNone(f["human"])
         self.assertIsNone(f["gap"])
@@ -256,7 +311,7 @@ class InputsTest(_Sets):
         self.assertTrue(any("chat" in w and "make-profile" in w for w in res.warnings))
 
     def test_human_recordings_only(self):
-        res = cx.measure_contexts(profiles=self.profiles, n_boot=400)
+        res = cx.measure_contexts(profiles=self.profiles)
         self.assertIsNone(res.contexts["chat"]["n_recordings"])
         self.assertIsNone(res.contexts["chat"]["features"]["latency_median"]["system"])
         d = self.latency(res)
@@ -266,8 +321,7 @@ class InputsTest(_Sets):
         self.assertIn("human", str(res))
 
     def test_system_recordings_only(self):
-        res = cx.measure_contexts({"chat": self.path("sys_04"), "task": self.path("sys_08")},
-                                  n_boot=400)
+        res = cx.measure_contexts({"chat": self.path("sys_04"), "task": self.path("sys_08")})
         d = self.latency(res)
         self.assertIsNone(d["human"])
         self.assertTrue(d["system"]["clear"])
@@ -285,7 +339,7 @@ class InputsTest(_Sets):
             cx.measure_contexts(profiles={"chat": self.chat, "task": other})
         # with explicit settings the run goes through, with a warning
         res = cx.measure_contexts(profiles={"chat": self.chat, "task": other},
-                                  config={"turn_min_seconds": 2.0}, n_boot=0)
+                                  config={"turn_min_seconds": 2.0})
         self.assertEqual(res.config["turn_min_seconds"], 2.0)
         self.assertTrue(any("detection settings differ" in w for w in res.warnings))
 
@@ -304,29 +358,25 @@ class PairsAndDrawsTest(_Sets):
                       "interview": copy.deepcopy(self.task)}
 
     def test_every_pair_or_against_a_baseline(self):
-        res = cx.measure_contexts(profiles=self.three, n_boot=200)
+        res = cx.measure_contexts(profiles=self.three)
         self.assertEqual([(s["from"], s["to"]) for s in res.shifts],
                          [("chat", "task"), ("chat", "interview"), ("task", "interview")])
         self.assertEqual(res.summary["n_pairs"], 3)
-        res = cx.measure_contexts(profiles=self.three, baseline="task", n_boot=200)
+        res = cx.measure_contexts(profiles=self.three, baseline="task")
         self.assertEqual([(s["from"], s["to"]) for s in res.shifts],
                          [("task", "chat"), ("task", "interview")])
         self.assertEqual(res.baseline, "task")
 
-    def test_same_seed_same_result(self):
-        a = self.run_contexts("sys_04", "sys_08", seed=3).to_dict()
-        b = self.run_contexts("sys_04", "sys_08", seed=3).to_dict()
-        self.assertEqual(a, b)
-        c = self.run_contexts("sys_04", "sys_08", seed=4).to_dict()
-        value = lambda r: r["shifts"][0]["features"]["latency_median"]["system"]["value"]  # noqa: E731
-        self.assertEqual(value(a), value(c))              # the values do not depend on it
+    def test_same_input_same_result(self):
+        a = self.run_contexts("sys_04", "sys_08").to_dict()
+        b = self.run_contexts("sys_04", "sys_08").to_dict()
+        self.assertEqual(a, b)                            # no random numbers
 
-    def test_draws_do_not_depend_on_the_other_contexts(self):
-        two = cx.measure_contexts(profiles=self.profiles, n_boot=200)
-        three = cx.measure_contexts(profiles=self.three, n_boot=200)
+    def test_a_pair_does_not_depend_on_the_other_contexts(self):
+        two = cx.measure_contexts(profiles=self.profiles)
+        three = cx.measure_contexts(profiles=self.three)
         self.assertEqual(two.shifts[0]["features"], three.shifts[0]["features"])
-        back = cx.measure_contexts(profiles={"task": self.task, "chat": self.chat},
-                                   n_boot=200)
+        back = cx.measure_contexts(profiles={"task": self.task, "chat": self.chat})
         lo, hi = self.latency(two)["human"]["interval"]
         lo2, hi2 = self.latency(back)["human"]["interval"]
         self.assertAlmostEqual(lo2, -hi, places=3)
@@ -345,7 +395,10 @@ class OutputTest(_Sets):
         self.assertEqual(set(d["verdicts"]), set(cx.VERDICTS))
         self.assertTrue(d["features"]["latency_median"]["shift"])
         self.assertFalse(d["features"]["pause_reaction_penalty"]["shift"])
-        self.assertEqual(d["bootstrap"]["min_recordings"], cx.FEW_RECORDINGS)
+        self.assertEqual(d["interval"]["min_recordings"], cx.FEW_RECORDINGS)
+        self.assertEqual(d["interval"]["confidence"], 0.95)
+        self.assertIn("Welch", d["interval"]["method"])
+        self.assertNotIn("bootstrap", d)
         # names of the published benchmark columns are not reused
         published = {"TOR", "pause_response", "pause_no_response_rate",
                      "pause_interrupt_rate", "lat_median", "overlap_rate"}
@@ -377,13 +430,12 @@ class OutputTest(_Sets):
                              "--profile", f"chat={prof['chat']}",
                              "--profile", f"task={prof['task']}",
                              "--factor", "situation", "--baseline", "chat",
-                             "--bootstrap", "300", "--seed", "1", "--json", out])
+                             "--json", out])
         self.assertEqual(code, 0)
         self.assertIn("shift: chat -> task", buf.getvalue())
         with open(out, encoding="utf-8") as f:
             res = json.load(f)
-        self.assertEqual(res["bootstrap"]["n"], 300)
-        self.assertEqual(res["bootstrap"]["seed"], 1)
+        self.assertEqual(res["interval"]["min_recordings"], cx.FEW_RECORDINGS)
         self.assertEqual(res["baseline"], "chat")
         self.assertEqual(res["shifts"][0]["features"]["latency_median"]["verdict"],
                          "followed")
@@ -404,7 +456,7 @@ class OutputTest(_Sets):
         files = [os.path.join(self.path("sys_04"), f"r{i}.wav") for i in range(N)]
         with contextlib.redirect_stdout(io.StringIO()) as buf:
             code = cli.main(["measure-contexts", *[f"chat={p}" for p in files],
-                             f"task={self.path('sys_08')}", "--bootstrap", "100"])
+                             f"task={self.path('sys_08')}"])
         self.assertEqual(code, 0)
         self.assertIn(f"context: chat   system: {N} recording(s)   human: -", buf.getvalue())
 

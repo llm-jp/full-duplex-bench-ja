@@ -275,10 +275,6 @@ def main(argv=None) -> int:
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                    help="detection setting for every context (repeatable; default: the "
                         "settings the profiles were made with, which must agree)")
-    p.add_argument("--bootstrap", type=int, default=2000, metavar="N",
-                   help="bootstrap draws over recordings for the intervals "
-                        "(default 2000; 0 = no intervals)")
-    p.add_argument("--seed", type=int, default=0, help="seed of the bootstrap (default 0)")
     p.add_argument("--json", default=None, help="also write the full result")
 
     args = parser.parse_args(argv)
@@ -464,8 +460,7 @@ def _cmd_measure_contexts(args) -> int:
         result = cx.measure_contexts(
             recordings, profiles, factor=args.factor, baseline=args.baseline,
             config=ms.parse_settings(args.set) if args.set else None,
-            user_channel=args.user_channel, system_channel=args.system_channel,
-            n_boot=args.bootstrap, seed=args.seed)
+            user_channel=args.user_channel, system_channel=args.system_channel)
     except (ValueError, FileNotFoundError) as e:
         return fail(str(e))
     print(cx.format_context_report(result))

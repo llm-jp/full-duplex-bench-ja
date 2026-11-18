@@ -19,10 +19,15 @@ recordings show one; the second table is there to make that visible.
 
 Unit of analysis: the recording. Every value is the mean over the recordings of
 a per-recording value (:func:`fdbja.measurement.recording_features`), and every
-interval a percentile bootstrap over recordings, so that the events of one
-dialogue are not treated as independent observations. With fewer than
-:data:`FEW_RECORDINGS` recordings on a side no interval is given and the shift
-is not assessed.
+interval a t interval over recordings (Student's t for one mean, Welch's t for
+a difference of two), so that the events of one dialogue are not treated as
+independent observations. With fewer than :data:`FEW_RECORDINGS` recordings on
+a side no interval is given and the shift is not assessed.
+
+Why not a bootstrap: on human recordings split at random within one context
+(no true difference), percentile bootstrap intervals over recordings excluded
+0 more often than the nominal 5 %, the more so the fewer the recordings; the
+t intervals stayed around or below it down to :data:`FEW_RECORDINGS` per side.
 
 What this is not: none of it was compared with listeners' judgement. The
 listening tests behind ``pause_reaction_penalty`` used dialogues of one kind
@@ -40,7 +45,8 @@ recording was made.
 
 from __future__ import annotations
 
-import zlib
+import functools
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
@@ -48,11 +54,13 @@ import numpy as np
 
 from fdbja import measurement as ms
 
-#: with fewer recordings than this on a side, no bootstrap interval is given
-#: (a rule of thumb for a percentile interval, not a validated limit)
+#: with fewer recordings than this on a side, no interval is given (the
+#: smallest number in the same-context check described above; not a guarantee
+#: for recordings of other kinds)
 FEW_RECORDINGS = 5
-DEFAULT_BOOTSTRAP = 2000
 CONFIDENCE = 0.95
+INTERVAL_METHOD = ("Student's t interval of the mean over recordings; Welch's t interval "
+                   "for a difference of two means (independent sets of recordings)")
 CONTEXTS_FORMAT = "fdbja-contexts/1"
 
 #: per-recording values reported per context: name -> (label, unit).
@@ -111,8 +119,32 @@ Recordings = Union[PathLike, Sequence[PathLike]]
 
 
 # ---------------------------------------------------------------------------
-# Means over recordings and their bootstrap
+# Means over recordings and their intervals
 # ---------------------------------------------------------------------------
+
+def _t_cdf(x: float, df: float) -> float:
+    """P(T <= x) for x >= 0 of Student's t with ``df`` degrees of freedom
+    (Simpson's rule on the density; the base dependencies have no t table)."""
+    g = np.linspace(0.0, x, 4001)
+    c = math.exp(math.lgamma((df + 1) / 2) - math.lgamma(df / 2)) / math.sqrt(df * math.pi)
+    y = c * (1 + g * g / df) ** (-(df + 1) / 2)
+    h = g[1] - g[0]
+    return float(0.5 + h / 3 * (y[0] + y[-1] + 4 * y[1:-1:2].sum() + 2 * y[2:-1:2].sum()))
+
+
+@functools.lru_cache(maxsize=4096)
+def _t_quantile(df: float, p: float = (1 + CONFIDENCE) / 2) -> float:
+    """The ``p`` quantile (p > 0.5) of Student's t, by bisection; ``df`` need
+    not be an integer (Welch)."""
+    lo, hi = 0.0, 1000.0
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if _t_cdf(mid, df) < p:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
 
 def _column(rows: Optional[Sequence[Mapping[str, Any]]], key: str) -> Optional[np.ndarray]:
     if rows is None:
@@ -121,61 +153,45 @@ def _column(rows: Optional[Sequence[Mapping[str, Any]]], key: str) -> Optional[n
                     dtype=np.float64)
 
 
-def _boot_means(v: np.ndarray, n_boot: int, rng: np.random.Generator) -> np.ndarray:
-    """Means of ``n_boot`` resamples of the recordings (with replacement);
-    recordings without a value stay in the resampling and are left out of the
-    mean. ``nan`` when a resample holds no value."""
-    idx = rng.integers(0, len(v), size=(n_boot, len(v)))
-    x = v[idx]
-    ok = ~np.isnan(x)
-    count = ok.sum(axis=1)
-    total = np.where(ok, x, 0.0).sum(axis=1)
-    return np.where(count > 0, total / np.maximum(count, 1), np.nan)
+def _mean_interval(v: np.ndarray) -> Optional[List[float]]:
+    """Student's t interval of the mean over recordings."""
+    n = len(v)
+    if n < FEW_RECORDINGS:
+        return None
+    half = _t_quantile(n - 1) * math.sqrt(float(v.var(ddof=1)) / n)
+    return [ms._r(v.mean() - half), ms._r(v.mean() + half)]
+
+
+def _difference_interval(a: np.ndarray, b: np.ndarray) -> Optional[List[float]]:
+    """Welch's t interval of ``mean(b) - mean(a)``: two independent sets of
+    recordings, variances not assumed equal."""
+    na, nb = len(a), len(b)
+    if min(na, nb) < FEW_RECORDINGS:
+        return None
+    va, vb = float(a.var(ddof=1)) / na, float(b.var(ddof=1)) / nb
+    d = float(b.mean() - a.mean())
+    denom = va ** 2 / (na - 1) + vb ** 2 / (nb - 1)
+    # every recording of both sets has the same value: an interval of width 0
+    half = _t_quantile((va + vb) ** 2 / denom) * math.sqrt(va + vb) if denom > 0 else 0.0
+    return [ms._r(d - half), ms._r(d + half)]
 
 
 class _Side:
     """The per-recording values of one side (system or human) of one context."""
 
-    def __init__(self, name: str, side: str, rows: Optional[Sequence[Mapping[str, Any]]],
-                 n_boot: int, seed: int):
+    def __init__(self, rows: Optional[Sequence[Mapping[str, Any]]]):
         self.rows = rows
-        self._key = f"{name}|{side}"
-        self._n_boot, self._seed = n_boot, seed
-        self._boot: Dict[str, Optional[np.ndarray]] = {}
 
     def values(self, feature: str) -> Optional[np.ndarray]:
         v = _column(self.rows, feature)
         return None if v is None else v[~np.isnan(v)]
-
-    def boot(self, feature: str) -> Optional[np.ndarray]:
-        if feature not in self._boot:
-            v = _column(self.rows, feature)
-            if v is None or int((~np.isnan(v)).sum()) < FEW_RECORDINGS or self._n_boot <= 0:
-                self._boot[feature] = None
-            else:
-                # one stream per (context, side, feature): the draws do not depend
-                # on the order or the number of the contexts
-                rng = np.random.default_rng(
-                    [self._seed, zlib.crc32(f"{self._key}|{feature}".encode("utf-8"))])
-                self._boot[feature] = _boot_means(v, self._n_boot, rng)
-        return self._boot[feature]
 
     def estimate(self, feature: str) -> Optional[Dict[str, Any]]:
         v = self.values(feature)
         if v is None:
             return None
         return {"value": ms._r(v.mean()) if len(v) else None, "n": int(len(v)),
-                "interval": _interval(self.boot(feature))}
-
-
-def _interval(draws: Optional[np.ndarray]) -> Optional[List[float]]:
-    if draws is None:
-        return None
-    draws = draws[~np.isnan(draws)]
-    if not len(draws):
-        return None
-    a = 100 * (1 - CONFIDENCE) / 2
-    return [ms._r(np.percentile(draws, a)), ms._r(np.percentile(draws, 100 - a))]
+                "interval": _mean_interval(v)}
 
 
 def _clear(interval: Optional[List[float]]) -> Optional[bool]:
@@ -186,14 +202,12 @@ def _clear(interval: Optional[List[float]]) -> Optional[bool]:
 
 
 def _difference(minus: _Side, plus: _Side, feature: str) -> Optional[Dict[str, Any]]:
-    """``plus - minus`` of the means over recordings, the two sides resampled
-    independently."""
+    """``plus - minus`` of the means over recordings (two independent sets)."""
     a, b = minus.values(feature), plus.values(feature)
     if a is None or b is None:
         return None
     value = ms._r(b.mean() - a.mean()) if len(a) and len(b) else None
-    da, db = minus.boot(feature), plus.boot(feature)
-    interval = _interval(db - da) if da is not None and db is not None else None
+    interval = _difference_interval(a, b)
     return {"value": value, "n": [int(len(a)), int(len(b))], "interval": interval,
             "clear": _clear(interval)}
 
@@ -249,7 +263,7 @@ class ContextMeasurement:
     factor: Optional[str]
     baseline: Optional[str]
     config: Dict[str, Any]
-    bootstrap: Dict[str, Any]
+    interval: Dict[str, Any]
     warnings: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -259,7 +273,7 @@ class ContextMeasurement:
             "factor": self.factor,
             "baseline": self.baseline,
             "unit": "recording (values are means over recordings)",
-            "bootstrap": self.bootstrap,
+            "interval": self.interval,
             "layers": {k: dict(v) for k, v in LAYERS.items()},
             "verdicts": dict(VERDICTS),
             "features": {k: {"label": label, "unit": unit, "shift": k in SHIFT_FEATURES}
@@ -300,8 +314,7 @@ def measure_contexts(recordings: Optional[Mapping[str, Recordings]] = None,
                      profiles: Optional[Mapping[str, Any]] = None, *,
                      factor: Optional[str] = None, baseline: Optional[str] = None,
                      config: ms.ConfigLike = None, user_channel: int = 0,
-                     system_channel: Optional[int] = None,
-                     n_boot: int = DEFAULT_BOOTSTRAP, seed: int = 0) -> ContextMeasurement:
+                     system_channel: Optional[int] = None) -> ContextMeasurement:
     """One system measured in several contexts and compared with the human
     recordings of each.
 
@@ -319,7 +332,9 @@ def measure_contexts(recordings: Optional[Mapping[str, Recordings]] = None,
             = every pair, in the order given.
         config: detection settings for every context; ``None`` = those the
             profiles were made with (they must agree), else the defaults.
-        n_boot, seed: bootstrap over recordings (``n_boot=0`` = no intervals).
+
+    The result does not depend on random numbers: the same input gives the
+    same output.
     """
     recordings = dict(recordings or {})
     profs = {name: ms.load_profile(p) for name, p in (profiles or {}).items()}
@@ -364,8 +379,7 @@ def measure_contexts(recordings: Optional[Mapping[str, Recordings]] = None,
                     f"{name}: the profile carries no per-recording values (the built-in "
                     "profile, or one written by an earlier version); rebuild it with "
                     "`fdbja make-profile` to compare this context with human recordings")
-        s = {"system": _Side(name, "system", system_rows, n_boot, seed),
-             "human": _Side(name, "human", human_rows, n_boot, seed)}
+        s = {"system": _Side(system_rows), "human": _Side(human_rows)}
         sides[name] = s
         entry["features"] = {
             f: {"system": s["system"].estimate(f), "human": s["human"].estimate(f),
@@ -398,9 +412,8 @@ def measure_contexts(recordings: Optional[Mapping[str, Recordings]] = None,
     return ContextMeasurement(
         contexts=contexts, shifts=shifts, summary=summary, factor=factor,
         baseline=baseline, config=cfg.to_dict(),
-        bootstrap={"n": int(n_boot), "seed": int(seed), "confidence": CONFIDENCE,
-                   "min_recordings": FEW_RECORDINGS,
-                   "method": "percentile, recordings resampled within each context and side"},
+        interval={"method": INTERVAL_METHOD, "confidence": CONFIDENCE,
+                  "min_recordings": FEW_RECORDINGS},
         warnings=warnings)
 
 
@@ -445,12 +458,12 @@ def _table(head: Sequence[str], rows: Sequence[Sequence[str]]) -> List[str]:
 def format_context_report(c: ContextMeasurement) -> str:
     """The text printed by ``fdbja measure-contexts``."""
     names = list(c.contexts)
-    boot = c.bootstrap
+    iv = c.interval
     out = [f"{len(names)} contexts" + (f" by {c.factor}" if c.factor else "") + ": "
            + ", ".join(names) + (f" (baseline: {c.baseline})" if c.baseline else ""),
            "values are means over recordings; [low, high] = "
-           f"{100 * boot['confidence']:g} % bootstrap interval over recordings "
-           f"({boot['n']} draws), given from {boot['min_recordings']} recordings; "
+           f"{100 * iv['confidence']:g} % t interval over recordings (Welch's t for a "
+           f"difference), given from {iv['min_recordings']} recordings with a value; "
            "* = the interval of a difference excludes 0", ""]
     for name in names:
         e = c.contexts[name]
@@ -458,8 +471,8 @@ def format_context_report(c: ContextMeasurement) -> str:
         n = e["n_recordings"]
         out.append(f"context: {name}   system: "
                    + ("-" if n is None else f"{n} recording(s)"
-                      + (f" (fewer than {boot['min_recordings']}: no interval)"
-                         if n < boot["min_recordings"] else ""))
+                      + (f" (fewer than {iv['min_recordings']}: no interval)"
+                         if n < iv["min_recordings"] else ""))
                    + "   human: "
                    + ("-" if prof is None
                       else f"{prof['id']} ({prof['n_recordings']} recording(s))"))
