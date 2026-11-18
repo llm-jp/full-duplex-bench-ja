@@ -634,3 +634,13 @@ def test_gemini_instruction_can_be_replaced(monkeypatch):
     assert sent["system_instruction"] == "日本語で話してください。"
     assert _session(resp.events)["instructions"] == tlm.text_id("日本語で話してください。")
     assert _session(resp.events)["instructions"] != tlm.text_id(SYSTEM_INSTRUCTION)
+
+
+def test_record_says_which_version_recorded_it_and_when():
+    import re
+
+    import fdbja
+    tl = ResponseTimeline(24000, adapter="x")
+    record = tl.record("playout", "playout")
+    assert record["fdbja"] == fdbja.__version__
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", record["recorded_at"])

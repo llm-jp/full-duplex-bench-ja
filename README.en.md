@@ -479,6 +479,15 @@ stopped, `client.receive_end`; no audio, no text) and `received.wav`
 without calling the model again (`fdbja.adapters._timeline.timeline_from_record`). Custom adapters work without
 returning `events` / `received_audio`.
 
+`infer` skips clips that already have `combined.wav`, so a run that stopped continues with the same command. A clip
+whose adapter call fails (network or API error) gets no output and one line in the log, and the run goes on; running
+`infer` again records only those clips. A model is abandoned after 5 failed clips in a row (wrong API key, server
+down), and `infer` exits with status 1 when any clip failed. `combined.wav` is written last, so an interrupted run
+leaves no half-written clip that would count as done. Error messages in the log have anything that looks like a key
+or token masked. `events.json` also holds the version of fdbja that wrote it (`fdbja`) and the time the clip was
+started (`recorded_at`, UTC). Commercial APIs can change behaviour under an unchanged model name, so report the
+day of recording with the results; `check-responses` lists both per system.
+
 The leaderboard rows were recorded with the construction up to 0.2.0 and have not been recorded again; see
 items 4 to 6 of the [known limitations](#known-limitations).
 
@@ -513,6 +522,7 @@ totals (`systems.csv`) and the findings (`response_check.md`).
 | `stall` | warning | inside one response the audio arrived too late for playback for longer than `--stall-limit` (default 0.2 s); the timeline holds that much silence |
 | `tail_cut` | warning | model audio beyond the written length was cut |
 | `no_record` | warning | no `events.json`, nothing to check (recordings up to 0.2.0, hand-placed `combined.wav`, custom adapters without a record) |
+| `mixed_versions` | warning | clips of one system were recorded with different versions of fdbja |
 | `rules_differ` | warning | systems were recorded under different timeline rules, so response positions are not on one scale |
 
 The totals also list the timeline rule, the number of interruption notices, the seconds of audio discarded at a

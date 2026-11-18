@@ -497,6 +497,14 @@ models:
 
 時刻は、入力の最初のサンプルを送る時点を 0 とするクライアントの時計です。商用 API の応答の位置には通信の遅れが含まれます(実際のクライアントで聞こえる時刻)。
 
+`infer` は `combined.wav` があるクリップを飛ばすので、止まった取得は同じコマンドで続きから再開できます。
+アダプタの呼び出しが失敗したクリップ(通信や API のエラー)は、出力を書かずにログに 1 行残して次のクリップへ進みます。もう一度 `infer` を実行すると、そのクリップだけ取り直します。
+失敗が 5 クリップ続いたモデルは、そこで打ち切ります(API キーの誤り、サーバの停止など)。失敗したクリップがあると、`infer` は終了コード 1 を返します。
+`combined.wav` はクリップの最後に書くので、途中で止めても、書きかけのクリップが取得済みとして残ることはありません。ログに出すエラー文は、キーやトークンに見える部分を伏せます。
+
+`events.json` には、記録を書いた fdbja のバージョン(`fdbja`)と、そのクリップの取得を始めた日時(`recorded_at`、UTC)も入ります。
+商用 API は同じモデル名のまま振る舞いが変わることがあるので、結果を報告するときは取得した日を添えてください。`check-responses` がシステムごとに表示します。
+
 #### 商用 API に送る指示文(`instructions`)
 
 `gemini_live` と `openai_realtime` は、既定で同じ指示文を送ります。
@@ -542,6 +550,7 @@ uv run fdbja check-responses --config configs/default.yaml --out results/respons
 | `stall` | 注意 | 1 つの応答の途中で、音声の到着が再生に間に合わない区間が閾値(`--stall-limit`、既定 0.2 秒)を超えた。時間軸にはその長さの無音が入る |
 | `tail_cut` | 注意 | 書き出す長さを超えた応答の音声が切り捨てられた |
 | `no_record` | 注意 | `events.json` が無く、点検できない(0.2.0 までの録音、`combined.wav` を直接置いた場合、記録を返さない自作アダプタ) |
+| `mixed_versions` | 注意 | 1 つのシステムのクリップに、違うバージョンの fdbja で取得したものが混ざっている |
 | `rules_differ` | 注意 | システムによって時間軸のルールが違う(応答の位置を同じ尺度で比べられない) |
 
 集計には、時間軸のルール、割り込みの通知の回数、通知で捨てた音声の秒数、最初の音声の時刻の中央値、モデルの音声が無いクリップの数も並びます。
@@ -830,6 +839,9 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
     記録と音声の食い違い、応答の途中の音声の途切れを所見として出す。`--strict` で誤りがあれば終了コード 1。モデルにも API にも接続しない。
   - ストリーミングのアダプタが、受信を終えた時刻と理由を `events.json` に残す(`client.receive_end`)。応答音声と採点の値は変わらない。
   - `gemini_live` / `openai_realtime` が、モデル名・声・指示文の識別子を `events.json` に残す(`client.session`)。
+  - `infer`: アダプタの呼び出しが失敗したクリップで全体を止めず、出力を書かずに次へ進む(再実行でそのクリップだけ取り直す。失敗が 5 クリップ続いたモデルは打ち切る)。
+    `combined.wav` をクリップの最後に書き、途中で止めたときに書きかけのクリップが取得済みとして残らないようにした。
+  - `events.json` に、記録を書いた fdbja のバージョンと取得を始めた日時(UTC)を残す。`check-responses` がシステムごとに表示し、バージョンが混ざっていれば注意を出す。
   - `gemini_live`: 指示文を `instructions` で差し替えられるようにした(`openai_realtime` と同じ。既定の指示文は変えていない)。
     README に既定の指示文を明記した。
   - `analyze-profile`: Pause の傾向を、順位に使う指標(無反応 + 割り込み)のルールで出すようにした。列 `pause_no_reaction` / `pause_barge_in` / `pause_brief` を追加し、
@@ -937,6 +949,7 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 | `always_talk` が pyopenjtalk を求めて止まる | `uv sync --extra always-talk`、または config で `source_wav` に音声ファイルを指定 |
 | `reconstruct` が `unusable speaker labels` と警告する | 転写の `speaker` が `A` / `B` の両方を含んでいない。`transcribe --wav ... --channel 0 1 --speaker A B` で作り直す |
 | `infer` が `[<model>] skipped: unknown adapter` と言う | `adapter` の名前を確認。自作のアダプタは `"モジュール:クラス"`、出力を自分で置くなら `offline` |
+| `infer` が `failed, no output written` と言う | そのクリップの取得が失敗しています(通信や API のエラー。理由は同じ行の括弧の中)。もう一度 `infer` を実行すると、失敗したクリップだけ取り直します |
 | `sample-human-eval` が `webui/ not found` と言う | Web UI はリポジトリ直下の `webui/` を参照します。`git clone` した作業ツリーから(`uv sync` の editable install で)実行してください |
 | 商用 API アダプタが接続できない | モデル名・プロトコルは 2026-08 時点のもの。各 API のドキュメントで現行のモデル名を確認し、config の `model` を差し替えてください |
 

@@ -75,6 +75,8 @@ FINDINGS = {
     "stall": ("warning", "the audio stream stalled for longer than the limit"),
     "tail_cut": ("warning", "model audio beyond the written length was cut"),
     "no_record": ("warning", "no events.json: the recording cannot be checked"),
+    "mixed_versions": ("warning", "clips of one system were recorded with different "
+                                  "versions of fdbja"),
     "rules_differ": ("warning", "systems were recorded under different timeline rules"),
 }
 LEVELS = ("error", "warning")
@@ -85,11 +87,11 @@ CLIP_FIELDS = [
     "discarded_seconds", "interruptions", "chunks_after_interruption", "first_audio",
     "last_audio_end", "stalls", "stall_seconds", "longest_stall", "cut_seconds",
     "receive_end", "receive_end_reason", "error_notes", "failed_responses", "no_audio",
-    "rebuild",
+    "rebuild", "fdbja", "recorded_at",
 ]
 SYSTEM_FIELDS = [
     "model", "task", "clips", "outputs", "records", "rules", "timelines", "adapters",
-    "settings",
+    "settings", "fdbja", "recorded",
     "no_audio", "interruptions", "clips_interrupted", "discarded_seconds", "stalled_clips",
     "longest_stall", "first_audio_median", "ended_early", "errors", "warnings",
 ]
@@ -143,6 +145,8 @@ def replay(record: Dict[str, Any]) -> Dict[str, Any]:
                          if k not in ("t", "type", "event"))
     return {
         "adapter": record.get("adapter", ""),
+        "fdbja": str(record.get("fdbja", "")),
+        "recorded_at": str(record.get("recorded_at", "")),
         "settings": settings,
         "timeline": record.get("timeline", ""),
         "rule": rule,
@@ -292,6 +296,12 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         if len(rules) > 1:
             minority = rules.most_common()[-1][0]
             per_code["mixed_rules"] = [r["clip"] for r in with_record if r["rule"] == minority]
+        versions = Counter(r["fdbja"] for r in with_record)
+        if len(versions) > 1:
+            minority = versions.most_common()[-1][0]
+            per_code["mixed_versions"] = [r["clip"] for r in with_record
+                                          if r["fdbja"] == minority]
+        days = sorted({r["recorded_at"][:10] for r in with_record if r["recorded_at"]})
         for code in FINDINGS:
             if code in per_code:
                 add(code, model, task, per_code[code])
@@ -304,6 +314,9 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             "adapters": "/".join(sorted({r["adapter"] for r in with_record})),
             "settings": " | ".join(sorted({r["settings"] for r in with_record
                                            if r["settings"]})),
+            "fdbja": "/".join(sorted(v for v in versions if v)),
+            "recorded": days[0] if len(days) == 1 else (
+                f"{days[0]}..{days[-1]}" if days else ""),
             "no_audio": len(silent),
             "interruptions": sum(r["interruptions"] for r in with_record),
             "clips_interrupted": sum(1 for r in with_record if r["interruptions"]),
@@ -395,6 +408,13 @@ def write_markdown(path: str, summary: Dict[str, Any], stall_limit: float,
             f"{_fmt(float(s['discarded_seconds']))} | {s['stalled_clips']} | "
             f"{_fmt(float(s['longest_stall']))} | {_fmt(s['first_audio_median'])} | "
             f"{s['ended_early']} |")
+    if any(s["fdbja"] or s["recorded"] for s in summary["systems"]):
+        lines += ["", "## Recorded with", "",
+                  "Version of fdbja that wrote the record and the days (UTC) of recording. "
+                  "Empty for records written before these fields existed.", "",
+                  "| system | task | fdbja | recorded |", "|---|---|---|---|"]
+        for s in summary["systems"]:
+            lines.append(f"| {s['model']} | {s['task']} | {s['fdbja']} | {s['recorded']} |")
     settings = {}
     for s in summary["systems"]:
         if s["settings"]:

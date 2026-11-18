@@ -289,3 +289,34 @@ def test_session_settings_are_reported_and_have_to_be_the_same(tmp_path):
     assert " | " in systems["changed"]["settings"]
     report = (tmp_path / "check" / "response_check.md").read_text(encoding="utf-8")
     assert "| same | pause | instructions=abc123, model=m-1, voice=alto |" in report
+
+
+def test_version_and_day_of_recording_are_reported(tmp_path):
+    def speaking(version, at):
+        tl = ResponseTimeline(SR, adapter="x")
+        tl.add_audio(0.1, _tone(0.5), item="a")
+        return tl, version, at
+
+    eval_dir = _eval_dir(tmp_path)
+    plan = {"same": [("0.3.0", "2026-12-01T10:00:00Z")] * 3,
+            "changed": [("0.3.0", "2026-12-01T23:59:00Z"), ("0.3.0", "2026-12-02T00:01:00Z"),
+                        ("0.4.0", "2026-12-20T00:00:00Z")]}
+    for name, clips in plan.items():
+        for clip, (version, at) in zip(("c1", "c2", "c3"), clips):
+            d = eval_dir / f"pause_{name}_output" / clip
+            tl, _, _ = speaking(version, at)
+            _save(d / "combined.wav", tl, end=2.5)
+            record = json.loads((d / "events.json").read_text(encoding="utf-8"))
+            record.update(fdbja=version, recorded_at=at)
+            (d / "events.json").write_text(json.dumps(record), encoding="utf-8")
+    config = _config(eval_dir, [{"name": n, "adapter": "x"} for n in plan])
+    summary = rc.run(config, str(tmp_path / "check"), log=lambda m: None)
+    (finding,) = summary["findings"]
+    assert finding["finding"] == "mixed_versions" and finding["level"] == "warning"
+    assert finding["model"] == "changed" and finding["examples"] == ["c3"]
+    systems = {s["model"]: s for s in summary["systems"]}
+    assert systems["same"]["fdbja"] == "0.3.0" and systems["same"]["recorded"] == "2026-12-01"
+    assert systems["changed"]["fdbja"] == "0.3.0/0.4.0"
+    assert systems["changed"]["recorded"] == "2026-12-01..2026-12-20"
+    report = (tmp_path / "check" / "response_check.md").read_text(encoding="utf-8")
+    assert "| same | pause | 0.3.0 | 2026-12-01 |" in report

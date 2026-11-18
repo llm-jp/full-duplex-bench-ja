@@ -36,8 +36,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 
 import numpy as np
+
+from fdbja import __version__
 
 RULES = ("playout", "arrival", "concat")
 TIMELINE_OPTIONS = ("playout", "legacy")
@@ -164,6 +167,8 @@ class ResponseTimeline:
         self.sample_rate = sample_rate
         self.adapter = adapter
         self.events: list[dict] = []
+        #: wall-clock time (UTC) at which the clip was started
+        self.recorded_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         self._chunks: list[np.ndarray] = []
         self._n_received = 0
         self._queue = _Queue(sample_rate, flush=True)
@@ -216,6 +221,8 @@ class ResponseTimeline:
         """JSON-serialisable record of this clip (no audio, no text)."""
         return {
             "format": RECORD_FORMAT,
+            "fdbja": __version__,
+            "recorded_at": self.recorded_at,
             "adapter": self.adapter,
             "sample_rate": self.sample_rate,
             "timeline": timeline,
