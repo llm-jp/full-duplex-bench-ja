@@ -191,8 +191,9 @@ def score_offline(config: Config, limit: int = 0,
                 model_wav = os.path.join(eval_dir, layout["model_wav"].format(
                     task=task, clip=clip, model=mname))
                 model_utts: list = []
+                model_chars = _load_jchat(asr_json)
                 events, tor_results, sys_stats = _tor_events(
-                    task, gt_jchat, _load_jchat(asr_json), events=event_cache[key],
+                    task, gt_jchat, model_chars, events=event_cache[key],
                     system_activity=system_activity, model_wav=model_wav,
                     sys_cfg=sys_cfg, out_utts=model_utts,
                     overlap_tolerance=float(
@@ -212,7 +213,7 @@ def score_offline(config: Config, limit: int = 0,
                         cache_tag=cache_tag)
                 pr_per_event = [None] * len(events)
                 if pr_cfg is not None and task == "pause" and have_wavs:
-                    from fdbja.metrics.pause_response import judge_events
+                    from fdbja.metrics.pause_response import judge_events, reaction_characters
                     pr_per_event = judge_events(gt_wav, model_wav, events, pr_cfg)
 
                 for i, (ev, tr, dstat, bstat, prj) in enumerate(
@@ -233,6 +234,14 @@ def score_offline(config: Config, limit: int = 0,
                     if pr_cfg is not None and task == "pause":
                         for k in ("no_response", "interrupt", "pause_response"):
                             row[k] = None if prj is None else prj[k]
+                        # what the reaction says, as counts only (no transcript text
+                        # in the results): characters of the reaction and those left
+                        # after removing backchannel words. For reports, not scored.
+                        row["reaction_chars"] = row["reaction_residual_chars"] = None
+                        if prj is not None and prj["reaction_runs"]:
+                            row["reaction_chars"], row["reaction_residual_chars"] = (
+                                reaction_characters(model_chars, prj["reaction_runs"],
+                                                    pr_cfg.reaction_text_margin_seconds))
                     # Preserve conditioning variables needed for stratified
                     # analyses without copying transcript text into results.
                     if sys_stats is not None:

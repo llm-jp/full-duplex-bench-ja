@@ -21,6 +21,12 @@ spoke in these pauses, yet listeners preferred the systems that reacted
 briefly, so the metric counts the reaction itself instead of the distance to
 the human reference. Energy-based: backchannels, breaths and noise are not
 told apart.
+
+For reports only (the metric does not use it), :func:`reaction_characters`
+counts the transcript characters of the reaction and how many are left after
+removing backchannel words, so that ``analyze-profile`` can say how many of
+the brief reactions were backchannel words. This part depends on the ASR and
+on its character times, and was not part of the human-judgement study.
 """
 
 from __future__ import annotations
@@ -43,6 +49,8 @@ class PauseResponseConfig:
     pre_overlap_max_seconds: float = 0.5       # ... in which overlap with A must not exceed this
     frame_rate: int = 20
     rel_threshold: float = 0.05
+    # reports only: characters starting within this margin of the reaction count as its text
+    reaction_text_margin_seconds: float = 0.2
 
     @classmethod
     def from_config(cls, cfg: Optional[Dict[str, Any]]) -> "PauseResponseConfig":
@@ -106,7 +114,32 @@ def judge_event(va_sys: Sequence[bool], va_a: Sequence[bool], times: Sequence[fl
     interrupt = 1 if (persists or pre_overlap > cfg.pre_overlap_max_seconds) else 0
     return {"no_response": no_response, "interrupt": interrupt,
             "pause_response": no_response + interrupt,
-            "pre_overlap": round(pre_overlap, 3)}
+            "pre_overlap": round(pre_overlap, 3),
+            # the voiced runs that count as the reaction (>= min_response_seconds in the gap)
+            "reaction_runs": [[round(s, 3), round(e, 3)] for (s, e), x in zip(runs, in_gap)
+                              if x >= cfg.min_response_seconds - TOL]}
+
+
+def reaction_characters(chars: Sequence[Dict[str, Any]],
+                        runs: Sequence[Sequence[float]],
+                        margin: float = DEFAULT_PAUSE_RESPONSE.reaction_text_margin_seconds
+                        ) -> Tuple[int, int]:
+    """``(characters, characters left after removing laughter and backchannel
+    words)`` of the transcript characters that start within ``margin`` seconds
+    of one of the reaction ``runs`` (``judge_event(...)["reaction_runs"]``).
+
+    ``chars``: the character-level transcript of the response (``word`` /
+    ``start``). The start time is used because forced alignment
+    tends to stretch the end of the last character into the following silence.
+    ``(0, 0)`` = the reaction has no transcribed characters (a breath, noise,
+    or speech the ASR missed). Words with the long-vowel mark are matched with
+    the mark in place."""
+    from fdbja.data.event_detection import backchannel_residual
+
+    text = "".join(
+        str(c.get("word", "")) for c in chars
+        if any(s - margin - TOL <= float(c["start"]) <= e + margin + TOL for s, e in runs))
+    return backchannel_residual(text, match_long_vowel=True)
 
 
 def activity_from_wavs(gt_wav: str, model_wav: str,

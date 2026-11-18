@@ -162,8 +162,13 @@ def main(argv=None) -> int:
     p.add_argument("--results", required=True, help="results.json of score-offline")
     p.add_argument("--out", required=True, help="output directory")
     p.add_argument("--model", nargs="+", default=None, help="only these systems")
+    p.add_argument("--barge-in-hi", type=float, default=0.5,
+                   help="'overlapping' when the Pause barge-in rate >= this")
+    p.add_argument("--no-reaction-hi", type=float, default=0.5,
+                   help="'unreactive' when the Pause no-reaction rate >= this")
     p.add_argument("--takeover-hi", type=float, default=0.5,
-                   help="'overlapping' when Pause talked-through share >= this")
+                   help="'overlapping' when Pause talked-through share >= this "
+                        "(only for results without the Pause reaction rule)")
     p.add_argument("--no-response-hi", type=float, default=0.5,
                    help="'silent' when Smooth TT no-response share >= this")
     p.add_argument("--slow-onset", type=float, default=1.0,
@@ -319,7 +324,8 @@ def main(argv=None) -> int:
         from fdbja.turn_profile import run as run_profile
         run_profile(args.results, args.out, models=args.model,
                     takeover_hi=args.takeover_hi, no_response_hi=args.no_response_hi,
-                    slow_onset=args.slow_onset)
+                    slow_onset=args.slow_onset, barge_in_hi=args.barge_in_hi,
+                    no_reaction_hi=args.no_reaction_hi)
         return 0
 
     if args.command == "analyze-pause":
