@@ -389,10 +389,11 @@ repeated on another corpus. When reading the Pause ranking, note that:
 - any voice of at least 0.2 s counts as a reaction; backchannels, breaths and noise are not told apart;
 - listeners preferred systems that reacted briefly in the pause and did not talk over the partner. This is
   not the behaviour of the recorded human B, who rarely speaks in the pauses of this evaluation set;
-- the three commercial-API rows can be affected by two unfixed points of the adapters (items 4 and 5 of the
-  known limitations below): interruption notices are ignored, so a response that the API would have cut
-  short can be counted as a barge-in, and responses are placed by arrival time, so a reaction in the pause
-  appears later by the network delay.
+- the three commercial-API rows come from responses recorded before the adapters were fixed (items 4 to 6
+  of the known limitations below; the code is fixed, the responses have not been recorded again). In those
+  recordings interruption notices are ignored, so a response that the API would have cut short can be
+  counted as a barge-in, and Gemini Live has only the first model turn of each clip. Responses of the
+  commercial APIs are placed by arrival time, so a reaction in the pause is later by the network delay.
 
 - **Boundary-weighted VAP-distance** (Smooth TT; `metrics.vap_distance.weighting: boundary`, needs
   `vap_distance.enabled: true`). Instead of the equal-weight mean of D_KL(P_t‖Q_t) over the judgement window, d_t is
@@ -435,13 +436,29 @@ settings). `gpt-realtime` and `grok-voice-latest` are aliases whose target chang
 (newer Grok Voice generations were released after our access), so the same IDs may no longer give the same models;
 we do not guarantee to track API changes.
 
-Known limitations (fairness across adapters, not fixed yet; they may affect the three commercial-API rows of the
-leaderboard): (1) `gemini_live` / `openai_realtime` ignore the servers' interruption notices
-(`server_content.interrupted`; `input_audio_buffer.speech_started` / `response.cancelled`) and keep all received
-audio on the timeline, whereas a real client stops playback on barge-in, so a reply the API would have cut short is
-scored as continuous speech (a short start in a Pause can become an utterance over 1.5 s, TO = 1); (2) `moshi_ws`
-concatenates the received frames in order while the API adapters place audio by wall-clock arrival time, so
-response latencies (`lat_median`) are not on exactly the same footing across adapters.
+**Response timeline (`timeline`).** The streaming adapters (`moshi_ws`, `gemini_live`, `openai_realtime`) place
+the received audio chunks on the time axis with shared rules (`src/fdbja/adapters/_timeline.py`), selected per
+model entry in the config:
+
+- `timeline: playout` (default): what a real client plays. A chunk starts when it arrives, or when the audio
+  queued before it has finished playing, whichever is later (servers may send audio faster than real time).
+  On an interruption notice (`server_content.interrupted` of Gemini Live, `input_audio_buffer.speech_started`
+  of the OpenAI Realtime protocol) playback stops at the time the notice arrived and the audio not yet played
+  is discarded; audio of the cut-off response that arrives later is not played. `openai_realtime` reports the
+  played length to the server with `conversation.item.truncate` (`send_truncate: false` turns this off), and
+  `gemini_live` keeps receiving until the input has been sent.
+- `timeline: legacy`: the construction up to 0.2.0, for reproducing values published with 0.2.0. `moshi_ws`
+  joins the received frames in order from time 0; `gemini_live` / `openai_realtime` place chunks by arrival
+  time and ignore interruption notices; `gemini_live` stops receiving at the first `turn_complete`.
+
+`infer` writes, next to `combined.wav`, the event record `events.json` (arrival time and sample count of every
+chunk, time of every interruption notice and of other server events; no audio, no text) and `received.wav`
+(the received audio joined in order). With these two files the timeline can be rebuilt under another rule
+without calling the model again (`fdbja.adapters._timeline.timeline_from_record`). Custom adapters work without
+returning `events` / `received_audio`.
+
+The leaderboard rows were recorded with the construction up to 0.2.0 and have not been recorded again; see
+items 4 to 6 of the [known limitations](#known-limitations).
 
 Your own model: implement `ModelAdapter.infer(input_audio, sample_rate) -> DialogueResponse`
 (`src/fdbja/adapters/base.py`; `input_audio` is speaker A, mono 16 kHz; `infer` writes the returned
@@ -475,11 +492,29 @@ The binary TOR is decided on ASR transcripts and inherits their errors (details 
    VAP-distance.
 3. **ASR output on near-silent audio**: a short word transcribed over a long stretch falls outside the
    backchannel exemption (at most 6 characters and 1.5 s) and counts as a takeover.
-4. **The commercial-API adapters ignore interruption notices** from the server, so a response that the API
-   would have cut short is scored as if it had continued. This can affect the three commercial-API rows.
-5. **The response timeline is built differently per adapter** (the Moshi adapter concatenates frames in
-   arrival order; the API adapters place audio by wall-clock arrival time), so the response latency is not
-   strictly on the same scale across adapters.
+
+Items 4 to 6 concern fairness across adapters. They are fixed in the code (`timeline: playout`, see
+[Model adapters](#model-adapters)), but **the leaderboard values still come from the recordings made before
+the fix**: the commercial-API responses have not been recorded again, and the recordings of the Moshi-family
+systems do not contain frame arrival times.
+
+4. **The commercial-API recordings ignore interruption notices.** Up to 0.2.0, `gemini_live` /
+   `openai_realtime` did not handle the servers' notices (`server_content.interrupted`;
+   `input_audio_buffer.speech_started`, after which the server ends the response with `response.done`,
+   `status: cancelled`) and kept all received audio on the timeline. A real client stops playback on barge-in,
+   so a response that the API would have cut short is scored as if it had continued (a short start in a
+   Pause can become an utterance over 1.5 s, TO = 1).
+5. **The response timeline was built differently per adapter.** Up to 0.2.0, the Moshi adapter joined the
+   frames in arrival order from time 0, while the API adapters placed audio by arrival time, so the published
+   response latencies (`lat_median`) are not strictly on the same scale across adapters.
+6. **The Gemini Live recordings contain only the first model turn of each clip.** Up to 0.2.0, `gemini_live`
+   stopped receiving at the first `turn_complete` (the SDK's `session.receive()` ends after each turn), so
+   later responses in the same clip were not recorded. Counting stretches of audio separated by at least
+   0.5 s of silence in the responses behind the published values, Gemini Live has at most one in all 400
+   clips (one in 380, none in 20); with the same count, 300 clips of GPT-Realtime and 210 clips of Grok Voice
+   have two or more. Events after the first turn are scored as having no response; the direction of the
+   resulting bias is not known until the responses are recorded again. The clock of this adapter also
+   started before the connection was opened, unlike the other adapters.
 
 VAP-distance is computed from the waveform and is not affected by 1 and 3.
 

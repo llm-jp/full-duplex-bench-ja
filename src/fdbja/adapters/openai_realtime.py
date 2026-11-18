@@ -7,23 +7,31 @@ adapter covers both; only the ``session.update`` payload differs slightly
 (``dialect``: "openai" nests voice/turn_detection under ``audio``, "xai" puts
 them at the session top level).
 
-The response timeline is reconstructed by arrival time, preserving silence
-gaps (same SynchronizedRecorder convention as the Gemini adapter) — the
-timing of the response, not just its content, is what the benchmark scores.
+Timeline (``timeline`` option, see ``fdbja.adapters._timeline``):
+
+``playout`` (default)
+    The response channel is what a real client plays. Audio is queued by
+    arrival time (the server sends it faster than real time). When the server
+    reports that the user started speaking (``input_audio_buffer.speech_started``),
+    playback stops at the time the notice arrived, the audio still waiting in
+    the queue is discarded, and the adapter sends ``conversation.item.truncate``
+    with the milliseconds actually played, as the API guide asks WebSocket
+    clients to do. The server marks the cut-off response with ``response.done``
+    whose ``response.status`` is ``cancelled``; audio for that response that
+    arrives after the notice is not played.
+``legacy``
+    The construction up to 0.2.0: interruption notices are ignored, nothing is
+    sent back, and every received chunk stays on the timeline. A reply that
+    the API cut short is then scored as continuous speech (for example a short
+    start in a Pause can become an utterance over 1.5 s and TO = 1). Use it to
+    reproduce values published with 0.2.0.
+
+Each clip also returns an event record (arrival time and sample count of every
+chunk, time of every notice) and the received audio, which ``fdbja infer``
+saves as ``events.json`` / ``received.wav`` next to ``combined.wav``.
 
 Requires ``websockets`` + ``librosa`` (extra ``[realtime]``) and an API key
 (``OPENAI_API_KEY`` / ``XAI_API_KEY`` by default, or ``api_key`` in config).
-
-Known limitation (fairness across adapters, not yet fixed): this adapter
-ignores the server's interruption notices (``input_audio_buffer.speech_started``,
-``response.cancelled``) and keeps every
-received audio chunk on the timeline. A real client stops playback when the
-user barges in, so a reply that the API would have cut short is scored here as
-continuous speech (e.g. a short start in a Pause can become an utterance over
-1.5 s and TO = 1). The timeline is also built from wall-clock arrival times,
-whereas ``moshi_ws`` concatenates the received frames in order, so response
-latencies (``lat_median``) are not measured on exactly the same footing across
-adapters. See README "既知の限界".
 """
 
 from __future__ import annotations
@@ -36,11 +44,21 @@ import time
 
 import numpy as np
 
+from fdbja.adapters._timeline import (
+    DEFAULT_TIMELINE,
+    ResponseTimeline,
+    resolve_rule,
+)
 from fdbja.adapters.base import DialogueResponse, ModelAdapter
 
 WIRE_SR = 24000            # both APIs default to 24 kHz PCM16
 CHUNK_MS = 100
 CHUNK_SAMPLES = int(WIRE_SR * CHUNK_MS / 1000)
+AUDIO_DELTAS = ("response.output_audio.delta", "response.audio.delta")
+SPEECH_STARTED = "input_audio_buffer.speech_started"
+TRUNCATE_ID = "fdbja_truncate_"     # event_id prefix of the truncations we send
+_NOTE_KEYS = ("item_id", "response_id", "content_index", "audio_start_ms",
+              "audio_end_ms")
 
 SYSTEM_INSTRUCTION = (
     "あなたは日本語の対話相手です。自然に日本語で応答してください。"
@@ -81,6 +99,7 @@ class OpenAIRealtimeAdapter(ModelAdapter):
                  instructions: str = SYSTEM_INSTRUCTION,
                  max_retries: int = 8, retry_wait_s: float = 15.0,
                  api_key: str | None = None, api_key_env: str | None = None,
+                 timeline: str = DEFAULT_TIMELINE, send_truncate: bool = True,
                  **_):
         self.url = url
         self.model = model
@@ -90,6 +109,9 @@ class OpenAIRealtimeAdapter(ModelAdapter):
         self.instructions = instructions
         self.max_retries = max_retries
         self.retry_wait_s = retry_wait_s
+        self.timeline = timeline
+        self.rule = resolve_rule(timeline, legacy_rule="arrival")
+        self.send_truncate = send_truncate
         env = api_key_env or ("XAI_API_KEY" if self.dialect == "xai"
                               else "OPENAI_API_KEY")
         self.api_key = api_key or os.environ.get(env)
@@ -101,7 +123,7 @@ class OpenAIRealtimeAdapter(ModelAdapter):
         input_pcm = _to_wire_i16(input_audio, sample_rate)
         for attempt in range(self.max_retries + 1):
             try:
-                output_pcm = asyncio.run(self._stream(input_pcm))
+                output_pcm, tl, events = asyncio.run(self._stream(input_pcm))
                 break
             except Exception as e:  # noqa: BLE001
                 if attempt >= self.max_retries or not _retryable(e):
@@ -115,6 +137,8 @@ class OpenAIRealtimeAdapter(ModelAdapter):
             input_audio=input_pcm.astype(np.float32) / 32768.0,
             response_audio=output_pcm.astype(np.float32) / 32768.0,
             sample_rate=WIRE_SR,
+            events=events,
+            received_audio=tl.received_audio().astype(np.float32) / 32768.0,
         )
 
     def _session_update(self) -> dict:
@@ -138,13 +162,16 @@ class OpenAIRealtimeAdapter(ModelAdapter):
             }
         return {"type": "session.update", "session": session}
 
-    async def _stream(self, input_pcm: np.ndarray) -> np.ndarray:
+    async def _stream(self, input_pcm: np.ndarray):
         import websockets
 
         total = len(input_pcm)
         total_dur = total / WIRE_SR
         deadline = total_dur + self.silence_after_s + 3.0   # recv grace
-        received: list[tuple[float, np.ndarray]] = []       # (arrival, pcm)
+        tl = ResponseTimeline(WIRE_SR, adapter=self.name)
+        playout = self.rule == "playout"
+        content_index: dict = {}                            # item -> index
+        n_truncate = 0
         send_done = [False]
 
         headers = {"Authorization": f"Bearer {self.api_key}"}
@@ -175,6 +202,7 @@ class OpenAIRealtimeAdapter(ModelAdapter):
                 send_done[0] = True
 
             async def recv_audio():
+                nonlocal n_truncate
                 while True:
                     remaining = deadline - (time.monotonic() - t0)
                     if remaining <= 0:
@@ -186,30 +214,61 @@ class OpenAIRealtimeAdapter(ModelAdapter):
                         break
                     msg = json.loads(raw)
                     mtype = msg.get("type", "")
-                    if mtype in ("response.output_audio.delta",
-                                 "response.audio.delta"):
-                        at = time.monotonic() - t0
+                    at = time.monotonic() - t0
+                    if mtype in AUDIO_DELTAS:
                         pcm = np.frombuffer(base64.b64decode(msg["delta"]),
                                             dtype=np.int16)
-                        received.append((at, pcm))
+                        item = msg.get("item_id")
+                        content_index[item] = msg.get("content_index", 0)
+                        tl.add_audio(at, pcm, item=item,
+                                     response=msg.get("response_id"))
+                    elif mtype == SPEECH_STARTED:
+                        # the user barged in: stop playback, drop the queue
+                        cut = tl.interrupt(
+                            at, source=mtype,
+                            audio_start_ms=msg.get("audio_start_ms"))
+                        if not (playout and self.send_truncate):
+                            continue
+                        for item, played_ms in cut.items():
+                            if item is None:
+                                continue
+                            n_truncate += 1
+                            await ws.send(json.dumps({
+                                "type": "conversation.item.truncate",
+                                "event_id": f"{TRUNCATE_ID}{n_truncate}",
+                                "item_id": item,
+                                "content_index": content_index.get(item, 0),
+                                "audio_end_ms": played_ms,
+                            }))
+                            tl.note(time.monotonic() - t0,
+                                    "conversation.item.truncate (sent)",
+                                    item_id=item, audio_end_ms=played_ms)
                     elif mtype == "error":
                         err = msg.get("error", msg)
+                        cause = err.get("event_id") if isinstance(err, dict) else None
+                        if str(cause or "").startswith(TRUNCATE_ID):
+                            # a refused truncation does not spoil the recording
+                            tl.note(at, "error", event_id=cause,
+                                    code=err.get("code"))
+                            continue
                         raise RuntimeError(f"{self.name}: server error: {err}")
-                    elif mtype == "response.done" and send_done[0]:
-                        break
+                    elif mtype == "response.done":
+                        resp = msg.get("response") or {}
+                        tl.note(at, mtype, response_id=resp.get("id"),
+                                status=resp.get("status"),
+                                reason=(resp.get("status_details") or {}).get("reason"))
+                        if send_done[0]:
+                            break
+                    elif not mtype.endswith(".delta"):
+                        tl.note(at, mtype,
+                                **{k: msg.get(k) for k in _NOTE_KEYS})
 
             await asyncio.gather(send_audio(), recv_audio())
 
-        # reconstruct timeline with silence by arrival time
+        # lay the received audio out on the time axis
         n = int((total_dur + self.silence_after_s) * WIRE_SR)
-        out = np.zeros(n, dtype=np.int16)
-        cursor = 0
-        for at, pcm in received:
-            start = max(int(at * WIRE_SR), cursor)
-            end = start + len(pcm)
-            if end > len(out):
-                out = np.concatenate([out, np.zeros(end - len(out),
-                                                    dtype=np.int16)])
-            out[start:end] = pcm
-            cursor = end
-        return out[:n]
+        max_samples = None if playout else n    # up to 0.2.0: cut at n
+        out = tl.render(self.rule, min_samples=n, max_samples=max_samples)
+        events = tl.record(self.timeline, self.rule, min_samples=n,
+                           max_samples=max_samples)
+        return out, tl, events

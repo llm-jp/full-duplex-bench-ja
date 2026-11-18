@@ -22,12 +22,22 @@ class DialogueResponse:
         input_audio:  speaker A audio actually sent (mono, ``sample_rate``)
         response_audio: model's speaker-B response audio (mono, ``sample_rate``)
         sample_rate:  sample rate of both arrays
+        events: optional record of what the adapter received (arrival time and
+            sample count of every audio chunk, time of every interruption
+            notice). Saved as ``events.json`` next to ``combined.wav``.
+        received_audio: optional, every received chunk joined in order (mono,
+            ``sample_rate``), before it is placed on the time axis. Saved as
+            ``received.wav``. With ``events`` it is enough to rebuild
+            ``response_audio`` under another timeline rule without calling
+            the model again (``fdbja.adapters._timeline``).
     The toolkit builds the stereo (A, model-B) signal for VAP-distance from
     these, and ASR-transcribes ``response_audio`` for the binary TOR metric.
     """
     input_audio: np.ndarray
     response_audio: np.ndarray
     sample_rate: int
+    events: dict | None = None
+    received_audio: np.ndarray | None = None
 
 
 class ModelAdapter(abc.ABC):

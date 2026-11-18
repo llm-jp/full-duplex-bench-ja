@@ -464,6 +464,15 @@ def _write_outputs(combined_path, resp, sf) -> None:
     d = os.path.dirname(combined_path)
     sf.write(os.path.join(d, "input.wav"), ap, resp.sample_rate)
     sf.write(os.path.join(d, "output.wav"), bp, resp.sample_rate)
+    # what the adapter received, so the timeline can be rebuilt later
+    events = getattr(resp, "events", None)
+    if events is not None:
+        with open(os.path.join(d, "events.json"), "w", encoding="utf-8") as f:
+            json.dump(events, f, ensure_ascii=False)
+    received = getattr(resp, "received_audio", None)
+    if received is not None:
+        sf.write(os.path.join(d, "received.wav"),
+                 np.asarray(received, dtype=np.float32), resp.sample_rate)
 
 
 def _boundary_settings(vap_cfg):

@@ -452,6 +452,32 @@ detection:
 | `openai_realtime` | OpenAI Realtime プロトコル(GPT-Realtime、Grok Voice) | `.[realtime]` |
 | `silence` / `always_talk` | 自明なベースライン(常時沈黙 / 常時発話)。常時発話は初回に Open JTalk(声質 Mei、CC BY 3.0、帰属表示は [src/fdbja/assets/README.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/src/fdbja/assets/README.md))で 60 秒の音声ループを生成してキャッシュ | 常時発話のみ `pyopenjtalk`(無い場合は `source_wav` を指定) |
 
+#### 応答の時間軸(`timeline`)
+
+ストリーミングのアダプタ(`moshi_ws` / `gemini_live` / `openai_realtime`)は、受信した音声のチャンクを共通のルールで時間軸に置きます
+(`src/fdbja/adapters/_timeline.py`)。config のモデルの項目に `timeline` を書いて選びます。
+
+| `timeline` | 作り方 |
+|------------|--------|
+| `playout`(既定) | 実際のクライアントが再生する音。チャンクは、到着した時刻か、先に届いた音声の再生が終わる時刻の、遅いほうから始まる(サーバは実時間より速く音声を送ることがある)。サーバが割り込みを通知したら(Gemini Live の `server_content.interrupted`、OpenAI Realtime プロトコルの `input_audio_buffer.speech_started`)、通知が届いた時刻で再生を止め、まだ再生していない音声を捨てる。打ち切られた応答の音声が通知より後に届いても再生しない。`openai_realtime` は再生した長さを `conversation.item.truncate` でサーバに返す(`send_truncate: false` で送らない)。`gemini_live` は入力を送り終えるまで受信を続ける |
+| `legacy` | 0.2.0 までの作り方。0.2.0 で公開した値を再現するときに使う。`moshi_ws` は受信したフレームを受信順に時刻 0 から連結する。`gemini_live` / `openai_realtime` は到着時刻で置き、割り込みの通知を無視する。`gemini_live` は最初のターンの完了(`turn_complete`)で受信を終える |
+
+```yaml
+models:
+  - name: gpt_realtime
+    adapter: openai_realtime
+    model: gpt-realtime
+    timeline: legacy      # 省略時は playout
+```
+
+`infer` は `combined.wav` の隣に、受信の記録 `events.json`(チャンクごとの到着時刻とサンプル数、割り込みの通知の時刻、ターンの完了などのサーバのイベント。音声と文字は含まない)と、
+受信した音声を受信順につないだ `received.wav` を書きます。この 2 つがあれば、応答を取り直さずに別のルールの時間軸を作り直せます
+(`fdbja.adapters._timeline.timeline_from_record(record, received, rule)`、`rule` は `playout` / `arrival` / `concat`)。
+`legacy` で取得した録音にも通知の時刻は残るので、後から `playout` の時間軸を作れます(`openai_realtime` の `legacy` は `conversation.item.truncate` を送らないので、
+サーバ側の会話の状態は `playout` で取得した場合と同じにはなりません)。自作のアダプタは `DialogueResponse` の `events` / `received_audio` を返さなくても動きます。
+
+時刻は、入力の最初のサンプルを送る時点を 0 とするクライアントの時計です。商用 API の応答の位置には通信の遅れが含まれます(実際のクライアントで聞こえる時刻)。
+
 #### 自作モデルをつなぐ
 
 config の `adapter` には、上の名前のほかに次の 2 つを書けます。
@@ -485,7 +511,7 @@ uv run fdbja score-offline --config examples/adapters/config.yaml
 | GPT-Realtime | `openai_realtime` | `gpt-realtime` | marin | 2026-07 |
 | Grok Voice | `openai_realtime` | `grok-voice-latest` | eve | 2026-07 |
 
-3 システムとも、発話区間の検出はサーバ側の既定値のままです。Gemini Live の出力は、`gemini_live` アダプタの移植元のスクリプト(設定は同じ)で取得しました。
+3 システムとも、0.2.0 までの時間軸の作り方(`timeline: legacy` に相当)で取得した応答音声で、発話区間の検出はサーバ側の既定値のままです。Gemini Live の出力は、`gemini_live` アダプタの移植元のスクリプト(設定は同じ)で取得しました。
 `gpt-realtime` と `grok-voice-latest` は別名で、指す先のモデルは提供元の更新で替わります
 (Grok Voice は取得後に新しい世代が公開されています)。いま同じ ID で推論しても、リーダーボードと同じモデルになるとは限りません。
 API 側の変更への追随は保証しません。動かなくなった場合は Issue で報告してください。
@@ -553,7 +579,7 @@ Pause の順位を解釈するときは、次の点に注意してください�
 - 値は「何も出力しないとき 1.0」を基準に見ます。1.0 を超えるのは、割り込んだ事象の割合が、反応した事象の割合を上回るときです。
 - 0.2 秒以上の声があれば反応と数え、相槌・息・雑音は区別しません。
 - 聴取者が選んだのは、ポーズで短く反応し、相手に被せないシステムでした。録音の人間 B の振る舞い(この評価セットのポーズではほとんど声を出していない)とは一致しません。
-- 商用 API 3 システムの値には、アダプタの未修正の点が効きえます(下の「既知の限界」の 4 と 5)。割り込みの通知を無視しているので、API 側で止まるはずの応答が続いたものとして割り込みに数えられることがあります。応答は到着時刻で時間軸に置いているので、通信の遅れの分だけポーズの中の反応が遅れて見えることがあります。
+- 商用 API 3 システムの値は、アダプタを修正する前に取得した応答音声によるものです(下の「既知の限界」の 4〜6。コードは修正済みで、応答の取り直しはこれから)。その録音では割り込みの通知を無視しているので、API 側で止まるはずの応答が続いたものとして割り込みに数えられることがあります。Gemini Live の録音は、1 クリップにつき最初のターンだけです。商用 API の応答は到着時刻で時間軸に置くので、通信の遅れの分だけポーズの中の反応は遅くなります。
 
 #### 2 回目の聴取実験の数値
 
@@ -607,14 +633,26 @@ Pause の順位を解釈するときは、次の点に注意してください�
 VAP-distance は生波形から計算するため 1・3 の影響を受けません(2 は要注意)。
 `sample-human-eval` / `analyze-human-eval` はこれらの妥当性を人手で検証するためのものです。
 
-アダプタ間の公平性について、未修正の点が 2 つあります(リーダーボードの商用 API 3 本の値に効きうる。2026-11-15 の採点し直しは同じ応答音声を使っており、この 2 点は直っていません。修正は応答の取り直しと合わせて行う予定です)。
+アダプタ間の公平性について、次の 3 点はコードでは修正済みです(`timeline: playout`。「[モデルアダプタ](#モデルアダプタ)」の「応答の時間軸」)。
+リーダーボードの値は修正前の録音のままです。商用 API 3 システムの応答は取り直しておらず、Moshi 系の録音にはフレームの到着時刻が残っていないので、
+修正後の作り方の値は応答を取り直すまで出せません(2026-11-15 の採点し直しも同じ応答音声を使っています)。
 
-4. **商用 API アダプタは割り込みの通知を無視する** — `gemini_live` / `openai_realtime` は、サーバが送る割り込みの通知
-   (Gemini の `server_content.interrupted`、OpenAI Realtime の `input_audio_buffer.speech_started` / `response.cancelled`)を処理せず、
-   受信した音声を全部時間軸に残します。実際のクライアントは相手が話し始めたら再生を止めるので、API 側で途中で止まるはずの応答が
+4. **修正前の商用 API の録音は割り込みの通知を無視している** — 0.2.0 までの `gemini_live` / `openai_realtime` は、サーバが送る割り込みの通知
+   (Gemini の `server_content.interrupted`、OpenAI Realtime プロトコルの `input_audio_buffer.speech_started`。サーバが打ち切った応答は
+   `response.done` の `status` が `cancelled` になる)を処理せず、受信した音声を全部時間軸に残していました。
+   実際のクライアントは相手が話し始めたら再生を止めるので、API 側で途中で止まるはずの応答が
    続けて話したものとして採点されます(例: Pause の間で短く話し始めた応答が 1.5 秒を超える発話になり TO = 1 になりうる)。
-5. **応答の時間軸の作り方がアダプタで異なる** — Moshi 系(`moshi_ws`)は受信したフレームを受信順に連結し、商用 API は壁時計の到着時刻で配置します。
-   応答の遅れ(`lat_median`)は、アダプタをまたぐと厳密には同じ尺度になっていません。
+   現在の既定(`playout`)は、通知が届いた時刻で再生を止めます。
+5. **修正前の録音は応答の時間軸の作り方がアダプタで異なる** — 0.2.0 までは、Moshi 系(`moshi_ws`)が受信したフレームを受信順に時刻 0 から連結し、
+   商用 API は到着時刻で配置していました。掲載値の応答の遅れ(`lat_median`)は、アダプタをまたぐと厳密には同じ尺度になっていません。
+   現在の既定は、どのアダプタも到着時刻と再生の待ち行列で配置します。
+6. **修正前の Gemini Live の録音は 1 クリップにつき最初のターンだけ** — 0.2.0 までの `gemini_live` は、最初のターンの完了(`turn_complete`)で
+   受信を終えていました(SDK の `session.receive()` が 1 ターンごとに終わるため)。同じクリップの中のそれより後の応答は録音されていません。
+   掲載値に使った応答音声を 0.5 秒以上の無音で区切って数えると、Gemini Live は 400 クリップすべてで音声のまとまりが 1 つ以下でした
+   (1 つが 380、0 が 20)。同じ数え方で 2 つ以上あるクリップは、GPT-Realtime が 300、Grok Voice が 210 です。
+   最初のターンより後にある事象は、応答が無いものとして採点されています。値がどちら向きにずれるかは、取り直すまで分かりません。
+   時刻の原点も接続を開く前にあり、接続後を原点とする他のアダプタと揃っていませんでした。
+   現在の既定は、入力を送り終えるまで受信を続け、原点を接続後に置きます。
 
 ## 構成
 
@@ -707,6 +745,18 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 3. システムが先に話している場面の 2 課題(v1 の User Interruption と、v1.5 のユーザの相槌)。設計案は [docs/design/next-tasks.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/docs/design/next-tasks.md)。
 
 ## バージョン / 変更履歴
+
+- **未リリース** — アダプタ間の公平性の修正(「既知の限界」の 4〜6)。採点のコードと掲載値は変えていない(修正後のアダプタでの応答の取り直しはこれから)。
+  - ストリーミングのアダプタ(`moshi_ws` / `gemini_live` / `openai_realtime`)の応答の時間軸を共通のルールにした(`adapters/_timeline.py`)。
+    既定は `timeline: playout`(到着時刻と再生の待ち行列で置き、割り込みの通知で未再生の音声を捨てる)。0.2.0 までの作り方は `timeline: legacy` で選べる。
+    **既定のままでは、`infer` の出力は 0.2.0 と同じにならない**(Moshi 系も応答の位置が到着時刻になり、出力の長さが入力 + 末尾の無音になる)。
+    0.2.0 で公開した値を再現するときは `timeline: legacy` を指定する。
+  - `gemini_live`: `server_content.interrupted` で再生を止める。入力を送り終えるまで受信を続ける(0.2.0 までは最初のターンの完了で受信を終えていた)。時刻の原点を接続後に。
+  - `openai_realtime`: `input_audio_buffer.speech_started` で再生を止め、再生した長さを `conversation.item.truncate` で返す(`send_truncate`)。
+    打ち切られた応答の音声が通知より後に届いても再生しない。
+  - `infer` が受信の記録 `events.json` と受信した音声 `received.wav` を保存する。応答を取り直さずに別のルールの時間軸を作り直せる
+    (`timeline_from_record`)。`DialogueResponse` に `events` / `received_audio`(省略可)。
+  - README と docstring の OpenAI Realtime のイベント名を訂正(`response.cancelled` というイベントは無い。打ち切りは `response.done` の `status: cancelled`)。
 
 - **0.2.0(2026-11-15)** — 外部の利用者が自前のデータ・モデルで評価するための整備と、PyPI での配布(`pip install fdbja`)。TOR・VAP-distance・応答潜時の定義は変えていない(既存の数値は同じ手順で再現する)。既定の変更は、Pause の無反応 + 割り込みを採点するようにした 1 点。
   - 自前の 2 チャネル対話から評価セットを作る経路: `transcribe --wav` に `--channel 0 1 --speaker A B`(2 チャンネルを話者ラベル付きで 1 つの jchat に)、
