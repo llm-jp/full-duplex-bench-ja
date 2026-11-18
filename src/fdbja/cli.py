@@ -21,6 +21,10 @@ Outside the benchmark (no config, no transcript, numpy + soundfile only):
                    against a reference profile
     make-profile : build a reference profile from two-channel human-human
                    recordings (language / relationship / situation / medium)
+    measure-contexts: one system in several dialogue contexts (task, scene,
+                   persona, relationship), each next to the human recordings
+                   of the same context, and whether the system shifts between
+                   contexts the way the human recordings do
 
 ``reconstruct`` needs the corpus and ``infer`` a model adapter (server or API
 key); ``examples/dummy/`` runs every stage on a synthetic corpus instead.
@@ -245,10 +249,45 @@ def main(argv=None) -> int:
                    help="detection setting (repeatable)")
     p.add_argument("-o", "--out", required=True, help="output profile JSON")
 
+    p = sub.add_parser(
+        "measure-contexts",
+        help="one system in several dialogue contexts (task, scene, persona, "
+             "relationship): its timing next to the human recordings of each context, "
+             "and whether it shifts between contexts the way the human recordings do; "
+             "not compared with listeners' judgement")
+    p.add_argument("recordings", nargs="*", metavar="NAME=RECORDINGS",
+                   help="a context and the system's recordings in it: a two-channel wav "
+                        "or a directory of them (repeat the name to add more paths)")
+    p.add_argument("--profile", action="append", default=[], metavar="NAME=PROFILE",
+                   help="the profile of the human dialogues of a context, written by "
+                        "make-profile from recordings of that context (repeatable). A "
+                        "context may have a profile only or recordings only")
+    p.add_argument("--factor", default=None,
+                   help="what the contexts differ in (task, situation, persona, "
+                        "relationship, ...), copied to the output")
+    p.add_argument("--baseline", default=None, metavar="NAME",
+                   help="compare every other context with this one only "
+                        "(default: every pair)")
+    p.add_argument("--user-channel", type=int, default=0,
+                   help="channel of the user (default 0; the other is the system)")
+    p.add_argument("--system-channel", type=int, default=None,
+                   help="channel of the system (needed with more than two channels)")
+    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                   help="detection setting for every context (repeatable; default: the "
+                        "settings the profiles were made with, which must agree)")
+    p.add_argument("--bootstrap", type=int, default=2000, metavar="N",
+                   help="bootstrap draws over recordings for the intervals "
+                        "(default 2000; 0 = no intervals)")
+    p.add_argument("--seed", type=int, default=0, help="seed of the bootstrap (default 0)")
+    p.add_argument("--json", default=None, help="also write the full result")
+
     args = parser.parse_args(argv)
 
     if args.command == "measure":
         return _cmd_measure(args)
+
+    if args.command == "measure-contexts":
+        return _cmd_measure_contexts(args)
 
     if args.command == "make-profile":
         from fdbja import measurement as ms
@@ -390,6 +429,46 @@ def _cmd_measure(args) -> int:
                         config=ms.parse_settings(args.set) if args.set else None,
                         conditions=conditions, target=target)
     print(ms.format_report(result))
+    if args.json:
+        with open(args.json, "w", encoding="utf-8") as f:
+            json.dump(result.to_dict(), f, ensure_ascii=False, indent=1)
+            f.write("\n")
+        print(f"[fdbja] wrote {args.json}", file=sys.stderr)
+    return 0
+
+
+def _cmd_measure_contexts(args) -> int:
+    import json
+
+    from fdbja import contexts as cx
+    from fdbja import measurement as ms
+
+    def fail(message: str) -> int:
+        print(f"fdbja measure-contexts: {message}", file=sys.stderr)
+        return 2
+
+    recordings, profiles = {}, {}
+    for item in args.recordings:
+        name, sep, path = item.partition("=")
+        if not sep or not name or not path:
+            return fail(f"expected NAME=RECORDINGS, got {item!r}")
+        recordings.setdefault(name, []).append(path)
+    for item in args.profile:
+        name, sep, path = item.partition("=")
+        if not sep or not name or not path:
+            return fail(f"--profile expects NAME=PROFILE, got {item!r}")
+        if name in profiles:
+            return fail(f"more than one profile for the context {name!r}")
+        profiles[name] = path
+    try:
+        result = cx.measure_contexts(
+            recordings, profiles, factor=args.factor, baseline=args.baseline,
+            config=ms.parse_settings(args.set) if args.set else None,
+            user_channel=args.user_channel, system_channel=args.system_channel,
+            n_boot=args.bootstrap, seed=args.seed)
+    except (ValueError, FileNotFoundError) as e:
+        return fail(str(e))
+    print(cx.format_context_report(result))
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(result.to_dict(), f, ensure_ascii=False, indent=1)

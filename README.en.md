@@ -316,6 +316,115 @@ do not depend on the warnings.
 Design, constraints found when validating on real recordings, and limits:
 [docs/design/measure-entry.md](docs/design/measure-entry.md) (in Japanese).
 
+#### Measuring per dialogue context (`fdbja measure-contexts`)
+
+What counts as well-timed depends on the dialogue: the task, the scene, the relationship of the speakers, the
+persona of the system. Human dialogues differ too; a chat and a task-oriented dialogue do not have the same
+response latency or the same amount of overlap. `measure-contexts` measures one system in several contexts and
+reports two things:
+
+- per context, the values of the system, of the human recordings of the same context, and their difference
+  (`system - human`);
+- per pair of contexts, how the values moved from context A to context B (the shift) for the human recordings
+  and for the system, with a verdict: **did the system move in the direction in which the human recordings
+  moved?**
+
+A system that times its speech the same way in every context can be close to the human recordings of one
+context and still not change where the human recordings change; the second table makes that visible. Like
+`measure`, it works on the audio alone: no transcript, no annotation, base dependencies only.
+
+```bash
+# 1. one reference profile per context, from human-human recordings of that context
+uv run fdbja make-profile human/chat/ --language ja --relationship strangers \
+    --situation chat --medium "video call" -o chat.json
+uv run fdbja make-profile human/task/ --language ja --relationship strangers \
+    --situation task --medium "video call" -o task.json
+# 2. the recordings of the same system in each context, under a name of your choice (matched with the profile by name)
+uv run fdbja measure-contexts chat=system/chat/ task=system/task/ \
+    --profile chat=chat.json --profile task=task.json --factor situation --json contexts.json
+```
+
+```python
+from fdbja import measure_contexts
+c = measure_contexts({"chat": "system/chat/", "task": "system/task/"},
+                     {"chat": "chat.json", "task": "task.json"}, factor="situation")
+print(c)                                                # the same tables as the command
+c.contexts["chat"]["features"]["latency_median"]        # {"system": ..., "human": ..., "gap": ...}
+c.shifts[0]["features"]["latency_median"]["verdict"]    # "followed", ...
+```
+
+Example of the output (**synthetic signals, not measured values**; one context table and a few rows only):
+
+```text
+context: chat   system: 6 recording(s)   human: ja-strangers-chat-video_call@48a934d5 (6 recording(s))
+                                         system                  human                   system - human
+  response latency, median               0.40 s [0.35, 0.45]     0.30 s [0.25, 0.35]     +0.10 s [+0.03, +0.17] *
+  turn ends without a response           0.0 % [0.0, 0.0]        0.0 % [0.0, 0.0]        +0.0 pt [+0.0, +0.0]
+
+shift: chat -> task
+                                         human                      system                     verdict
+  response latency, median               +0.60 s [+0.52, +0.68] *   +0.40 s [+0.32, +0.47] *   followed (ratio +0.67)
+  turn ends without a response           +0.0 pt [+0.0, +0.0]       +0.0 pt [+0.0, +0.0]       no clear human shift
+```
+
+- **The unit of analysis is the recording.** Every value is the mean over the recordings of a per-recording
+  value. `[low, high]` is a 95 % bootstrap interval over recordings (2,000 draws by default; `--bootstrap`,
+  `--seed`), so the events of one dialogue are not treated as independent observations. When fewer than 5
+  recordings on one of the sides have a value, no interval is given and the shift is not assessed (5 is a rule
+  of thumb, not a validated limit). `*` marks a difference whose interval excludes 0.
+- Six values are reported; the first five are compared between contexts.
+
+  | Name | Meaning |
+  |---|---|
+  | `latency_median` | median time from a turn end to the start of the system's speech (seconds) |
+  | `no_response_rate` | share of turn ends without a response |
+  | `starts_in_user_speech_per_minute` | system starts during user speech, per minute of user speech |
+  | `overlap_share` | share of the recording in which both are voiced |
+  | `pause_voiced_rate` | share of the pauses inside user turns with system voice |
+  | `pause_reaction_penalty` | no-reaction rate + barge-in rate at pauses (per context only; no verdict between contexts) |
+
+- One verdict per value and pair of contexts. "Shifts" means that the interval of the shift excludes 0.
+
+  | Verdict | Meaning |
+  |---|---|
+  | `followed` | the human recordings shift and the system shifts in the same direction |
+  | `opposite` | the human recordings shift and the system shifts in the other direction |
+  | `no_clear_system_shift` | the human recordings shift; the interval of the system's shift contains 0 |
+  | `system_only` | the interval of the human shift contains 0; the system shifts |
+  | `no_clear_human_shift` | both intervals contain 0 |
+  | `not_assessed` | a value is missing, fewer than 5 recordings, or the profile has no per-recording values |
+
+  When the human recordings shift, `ratio` (system shift / human shift) is given as well: 1 = the same size,
+  0 = no shift, negative = the other direction. With three or more contexts every pair is compared;
+  `--baseline NAME` compares that context with each of the others only. The last lines count how many of the
+  clear human shifts were `followed` (`summary` in the JSON).
+- **What this does and does not tell you**:
+  - The comparison is with the behaviour of the human recordings. **None of the values was compared with
+    listeners' judgement.** `followed` says that the system moved where the human recordings moved, not that
+    listeners judge the system natural in that context.
+  - `pause_reaction_penalty` was compared with listeners' judgement on dialogues of one kind only (the
+    evaluation set of this benchmark). Whether listeners' judgement depends on the context was not tested,
+    so the value is reported per context without a verdict between contexts.
+  - A shift between two contexts contains every difference between the two sets of recordings (users,
+    topics, recording set-up). The system's shift describes the system alone only when the user's side is
+    held fixed and nothing but the instruction to the system changes.
+  - The intervals are per comparison and are not corrected for the number of comparisons; with many values
+    and pairs some intervals exclude 0 by chance. An interval that contains 0 is not evidence of no shift
+    (few recordings give wide intervals).
+  - As with `measure`, the values are not comparable with the leaderboard, and the limits on the recording
+    conditions above apply unchanged.
+- The detection settings are the same for every context. Without `--set`, the settings the profiles were made
+  with are used; profiles made with different settings are an error.
+- The intervals of the human side come from the per-recording values stored in the profile
+  (`reference_recordings`), a field added to `make-profile` together with this command. Profiles written
+  before that, and `generic`, do not have it: the human values are then left out and a warning advises to
+  rebuild the profile with `make-profile`. The field holds six numbers per recording, no file names and no
+  audio.
+- A context may have a profile only (shift of the human recordings alone) or recordings only (shift of the
+  system alone).
+
+Design and open questions: [docs/design/measure-contexts.md](docs/design/measure-contexts.md) (in Japanese).
+
 ### Outputs (`score-offline`, `analyze-profile`)
 
 `score-offline` writes `results.json` (summary, scoring conditions and per-event decisions, including the event

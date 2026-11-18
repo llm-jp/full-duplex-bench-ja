@@ -297,6 +297,101 @@ print(m.stats["turn_end"]["latency_median"], m.signature)    # numpy 配列な�
 
 設計(どの変数をどこに記録するか)、実際の録音での検証で分かった制約、限界は [docs/design/measure-entry.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/docs/design/measure-entry.md) にあります。
 
+#### 対話の条件ごとに測る(`fdbja measure-contexts`)
+
+適切なタイミングは、対話のタスク・場面・話者どうしの関係・システムのペルソナで変わります。
+人どうしの対話でも、たとえば雑談とタスクのある対話では、応答の遅延や声の重なりの量が違います。
+`measure-contexts` は、1 つのシステムを複数の条件で測り、次の 2 つを出します。
+
+- 条件ごとに、システムの値、同じ条件の人どうしの録音の値、その差(`system - human`)。
+- 条件の組ごとに、条件 A から条件 B へ値がどう動いたか(変化)を人どうしの録音とシステムのそれぞれで出し、
+  **人どうしの録音が動いた向きにシステムも動いたか**の判定。
+
+どの条件でも同じタイミングで話すシステムは、ある条件の人どうしの録音には近くても、人どうしの録音が変わるところで変わりません。
+2 つ目の表はそれを見るためのものです。`measure` と同じく音声だけで動き、転写も注釈も要りません(基本依存のみ)。
+
+```bash
+# 1. 条件ごとに、その条件の人どうしの録音から基準プロファイルを作る
+uv run fdbja make-profile human/chat/ --language ja --relationship strangers \
+    --situation chat --medium "video call" -o chat.json
+uv run fdbja make-profile human/task/ --language ja --relationship strangers \
+    --situation task --medium "video call" -o task.json
+# 2. 同じシステムを各条件で録音したディレクトリを、条件の名前を付けて渡す(名前は自由。プロファイルと同じ名前で対応づける)
+uv run fdbja measure-contexts chat=system/chat/ task=system/task/ \
+    --profile chat=chat.json --profile task=task.json --factor situation --json contexts.json
+```
+
+```python
+from fdbja import measure_contexts
+c = measure_contexts({"chat": "system/chat/", "task": "system/task/"},
+                     {"chat": "chat.json", "task": "task.json"}, factor="situation")
+print(c)                                                # コマンドと同じ表
+c.contexts["chat"]["features"]["latency_median"]        # {"system": ..., "human": ..., "gap": ...}
+c.shifts[0]["features"]["latency_median"]["verdict"]    # "followed" など
+```
+
+表示の例(**合成した信号での例で、実測値ではありません**。条件ごとの表は 1 つだけ、行も一部だけ示します):
+
+```text
+context: chat   system: 6 recording(s)   human: ja-strangers-chat-video_call@48a934d5 (6 recording(s))
+                                         system                  human                   system - human
+  response latency, median               0.40 s [0.35, 0.45]     0.30 s [0.25, 0.35]     +0.10 s [+0.03, +0.17] *
+  turn ends without a response           0.0 % [0.0, 0.0]        0.0 % [0.0, 0.0]        +0.0 pt [+0.0, +0.0]
+
+shift: chat -> task
+                                         human                      system                     verdict
+  response latency, median               +0.60 s [+0.52, +0.68] *   +0.40 s [+0.32, +0.47] *   followed (ratio +0.67)
+  turn ends without a response           +0.0 pt [+0.0, +0.0]       +0.0 pt [+0.0, +0.0]       no clear human shift
+```
+
+- **分析の単位は録音です**。値はすべて、録音ごとに出した値の、録音にわたる平均です。`[low, high]` は録音を単位にした
+  95 % の bootstrap 区間(既定 2,000 回、`--bootstrap` と `--seed` で変更)で、1 つの対話の中の事象を独立な観測として扱いません。
+  その量の値がある録音が、比べる片方で 5 本に満たないときは区間を出さず、変化の判定もしません(5 は目安で、確かめた値ではありません)。
+  `*` は、差の区間が 0 を含まないことを示します。
+- 測る量は次の 6 つです。条件の間で比べるのは上の 5 つです。
+
+  | 名前 | 内容 |
+  |---|---|
+  | `latency_median` | ターンの終わりからシステムが話し始めるまでの時間の中央値(秒) |
+  | `no_response_rate` | ターンの終わりのうち、応答が無かった割合 |
+  | `starts_in_user_speech_per_minute` | ユーザの発話中にシステムが話し始めた回数(ユーザの発話 1 分あたり) |
+  | `overlap_share` | 両者が同時に声を出していた時間の、録音に占める割合 |
+  | `pause_voiced_rate` | ユーザのターン内のポーズのうち、システムが声を出した割合 |
+  | `pause_reaction_penalty` | ポーズでの無反応の割合 + 割り込みの割合(条件ごとの表だけ。条件の間の判定はしない) |
+
+- 変化の判定(`verdict`)は、量ごと・条件の組ごとに 1 つです。「変化がある」は、変化の区間が 0 を含まないことを指します。
+
+  | 判定 | 意味 |
+  |---|---|
+  | `followed` | 人どうしの録音に変化があり、システムにも同じ向きの変化がある |
+  | `opposite` | 人どうしの録音に変化があり、システムには逆向きの変化がある |
+  | `no_clear_system_shift` | 人どうしの録音に変化があるが、システムの変化の区間は 0 を含む |
+  | `system_only` | 人どうしの録音の変化の区間は 0 を含むが、システムには変化がある |
+  | `no_clear_human_shift` | どちらの変化の区間も 0 を含む |
+  | `not_assessed` | 値が無い、録音が 5 本に満たない、またはプロファイルに録音ごとの値が無い |
+
+  人どうしの録音に変化があるときは、`ratio`(システムの変化 ÷ 人どうしの録音の変化)も出します。1 なら同じ大きさ、0 なら変化なし、負なら逆向きです。
+  条件が 3 つ以上のときは全部の組を比べます。`--baseline NAME` を付けると、その条件とほかの条件の組だけを比べます。
+  最後に、変化のあった量のうち `followed` だった数をまとめて表示します(JSON の `summary`)。
+- **何を言えて、何を言えないか**:
+  - ここで比べているのは人どうしの録音のふるまいです。**どの値も、聴取者の判断とは照合していません**。
+    `followed` は「人どうしの録音が動いた向きに動いた」ことを表し、「聴取者がその条件で自然と判断する」ことは表しません。
+  - `pause_reaction_penalty` を聴取者の判断と照合したのは、1 種類の対話(このベンチマークの評価セット)の上だけです。
+    聴取者の判断が条件によって変わるかは確かめていないので、この量は条件ごとに値を出すだけで、条件の間の判定は付けません。
+  - 2 つの条件の間の変化には、2 組の録音の間のあらゆる違い(ユーザ、話題、収録の環境)が入ります。
+    システムの変化をシステムのふるまいの違いとして解釈できるのは、ユーザ側の音声をそろえ、システムへの指示だけを変えて録ったときです。
+  - 区間は比較 1 つごとのもので、比較の数に対する補正はしていません。量と条件の組が多いと、偶然 0 を外れる区間も出ます。
+    また、「変化の区間が 0 を含む」ことは、変化が無いことの証拠ではありません(録音が少ないと区間は広くなります)。
+  - `measure` と同じく、リーダーボードの値とは比べられません。録音の条件の制約(上の「対応する録音条件」)もそのまま当てはまります。
+- 検出の設定は全部の条件で同じにします。`--set` を渡さなければプロファイルを作ったときの設定で測り、プロファイルどうしで設定が違うとエラーになります。
+- 人どうしの録音の区間には、プロファイルに入っている録音ごとの値(`reference_recordings`)を使います。
+  この欄はこの機能と一緒に `make-profile` に足したもので、それより前に作ったプロファイルと `generic` にはありません。
+  その場合は人どうしの録音の値を出さず、警告で `make-profile` での作り直しを案内します。
+  プロファイルに入るのは録音ごとの 6 つの数値だけで、ファイル名や音声は入りません。
+- プロファイルだけ(人どうしの録音の条件間の変化だけを見る)、録音だけ(システムの変化だけを見る)の条件があっても動きます。
+
+設計と未決事項は [docs/design/measure-contexts.md](https://github.com/llm-jp/full-duplex-bench-ja/blob/main/docs/design/measure-contexts.md) にあります。
+
 ### VAP-distance の準備(実験的指標を使う場合のみ)
 
 ```bash
@@ -328,6 +423,7 @@ uv run fdbja sample-human-eval --config configs/default.yaml --out ./human_eval 
 uv run fdbja analyze-human-eval --responses <dir> --bundle ./human_eval --out <dir>   # 回収した回答の集計と自動指標との照合
 uv run fdbja measure rec.wav [--target listener-judgement|human-likeness|both] [--profile generic] [--condition key=value]   # 任意の 2 チャネル録音のタイミング統計(転写なし、リーダーボードとは比較不可)
 uv run fdbja make-profile <dir> --language ja --relationship R --situation S --medium M -o profile.json   # 人どうしの録音から measure 用の基準プロファイル
+uv run fdbja measure-contexts chat=<dir> task=<dir> --profile chat=chat.json --profile task=task.json   # 1 つのシステムを複数の対話の条件で測り、条件の間の変化を人どうしの録音と比べる(聴取者の判断とは未照合)
 ```
 
 各コマンドの引数は `uv run fdbja <command> --help` を参照。人手評価の設計と手順は
@@ -860,6 +956,11 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
   - `infer` が受信の記録 `events.json` と受信した音声 `received.wav` を保存する。応答を取り直さずに別のルールの時間軸を作り直せる
     (`timeline_from_record`)。`DialogueResponse` に `events` / `received_audio`(省略可)。
   - README と docstring の OpenAI Realtime のイベント名を訂正(`response.cancelled` というイベントは無い。打ち切りは `response.done` の `status: cancelled`)。
+  - `measure-contexts`(新規): 1 つのシステムを複数の対話の条件(タスク、場面、関係、ペルソナ)で測る。条件ごとに同じ条件の人どうしの録音と並べ、
+    条件の間の変化が人どうしの録音の変化と同じ向きかを、録音を単位にした bootstrap 区間で判定する。聴取者の判断とは照合していない。
+    確かめたのは合成信号の単体テストまで。`measure` の出力と採点の値は変わらない。
+  - `make-profile`: プロファイルに録音ごとの値(`reference_recordings`、6 つの数値、ファイル名なし)を書く。形式名は `fdbja-profile/1` のまま。
+    この欄の無いプロファイルも `measure` ではそのまま使える。
 
 - **0.2.0(2026-11-15)** — 外部の利用者が自前のデータ・モデルで評価するための整備と、PyPI での配布(`pip install fdbja`)。TOR・VAP-distance・応答潜時の定義は変えていない(既存の数値は同じ手順で再現する)。既定の変更は、Pause の無反応 + 割り込みを採点するようにした 1 点。
   - 自前の 2 チャネル対話から評価セットを作る経路: `transcribe --wav` に `--channel 0 1 --speaker A B`(2 チャンネルを話者ラベル付きで 1 つの jchat に)、
