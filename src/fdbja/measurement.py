@@ -589,6 +589,38 @@ def score_against(analyses: Sequence[Dict[str, Any]],
 
 
 # ---------------------------------------------------------------------------
+# Per-recording values
+# ---------------------------------------------------------------------------
+
+#: values taken per recording, the unit of analysis of ``fdbja
+#: measure-contexts`` (:mod:`fdbja.contexts`): name -> (part of the
+#: statistics, key, unit). ``pause_reaction_penalty`` (the rule of the layer
+#: ``listener_judgement`` on the pauses of one recording) is added by
+#: :func:`recording_features`.
+RECORDING_FEATURES: Dict[str, Tuple[str, str, str]] = {
+    "latency_median": ("turn_end", "latency_median", "s"),
+    "no_response_rate": ("turn_end", "no_response_rate", "rate"),
+    "starts_in_user_speech_per_minute": ("start_in_user_speech",
+                                         "per_minute_of_user_speech", "per_min"),
+    "overlap_share": ("overlap", "share_of_recording", "rate"),
+    "pause_voiced_rate": ("pause", "voiced_rate", "rate"),
+}
+
+
+def recording_features(stats: Dict[str, Any],
+                       pauses: Sequence[Dict[str, Any]]) -> Dict[str, Optional[float]]:
+    """The values of one recording: :data:`RECORDING_FEATURES` from its
+    statistics (:func:`summarise`) and ``pause_reaction_penalty`` from its
+    pause events. A value is ``None`` when the recording has no event to
+    compute it from."""
+    out = {name: stats[part][key] for name, (part, key, _) in RECORDING_FEATURES.items()}
+    out["pause_reaction_penalty"] = (
+        _r(np.mean([p["no_reaction"] for p in pauses])
+           + np.mean([p["barge_in"] for p in pauses])) if pauses else None)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Profiles
 # ---------------------------------------------------------------------------
 
@@ -630,6 +662,7 @@ def generic_profile() -> Dict[str, Any]:
         },
         "reference": None,
         "reference_score": None,
+        "reference_recordings": None,
     }
 
 
@@ -653,6 +686,10 @@ def validate_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
     # optional: profiles written by earlier development versions do not have it
     if not isinstance(profile.get("reference_score"), (dict, type(None))):
         raise ValueError("malformed profile: reference_score must be a mapping")
+    rows = profile.get("reference_recordings")
+    if not (rows is None or (isinstance(rows, list)
+                             and all(isinstance(r, dict) for r in rows))):
+        raise ValueError("malformed profile: reference_recordings must be a list of mappings")
     MeasureConfig.from_dict(meta.get("detection"))      # raises on unknown keys
     return profile
 
@@ -700,14 +737,17 @@ def make_profile(recordings: Union[PathLike, Sequence[PathLike]], *,
     recordings under the finished profile under ``reference_score`` (what
     ``measure --profile`` prints next to the scores of a recording: an
     optimistic guide, since the range was derived from the recordings that
-    are scored). ``language`` (e.g. ``ja``),
+    are scored). ``reference_recordings`` holds the values of each recording
+    (:func:`recording_features`, the two directions pooled, in the order of
+    the sorted paths and without their names): ``fdbja measure-contexts``
+    needs them for the intervals of the human side. ``language`` (e.g. ``ja``),
     ``relationship`` (e.g. ``strangers``), ``situation`` (e.g. ``chat``) and
     ``medium`` (e.g. ``video call``) say what the profile is a norm *of*;
     ``source`` names the recordings.
     """
     cfg = as_config(config)
     paths = _expand(recordings)
-    analyses = []
+    analyses, rows = [], []
     for p in paths:
         x, sr = _read(p)
         if x.shape[1] != 2:
@@ -715,8 +755,10 @@ def make_profile(recordings: Union[PathLike, Sequence[PathLike]], *,
                              f"got {x.shape[1]} channel(s)")
         va0, dt = _activity(x[:, 0], sr, cfg)
         va1, _ = _activity(x[:, 1], sr, cfg)
-        analyses.append(analyse(va0, va1, dt, cfg))
-        analyses.append(analyse(va1, va0, dt, cfg))
+        both = [analyse(va0, va1, dt, cfg), analyse(va1, va0, dt, cfg)]
+        analyses += both
+        rows.append(recording_features(summarise(both),
+                                       [e for a in both for e in a["pauses"]]))
     lat = np.array([e["latency"] for a in analyses for e in a["turn_ends"]
                     if e["latency"] is not None], dtype=np.float64)
     if len(lat) == 0:
@@ -769,6 +811,8 @@ def make_profile(recordings: Union[PathLike, Sequence[PathLike]], *,
             "note": REFERENCE_SCORE_NOTE,
             **_score_values(analyses, low, high),
         },
+        # one row per recording, both directions pooled (no file names)
+        "reference_recordings": rows,
     }
     return validate_profile(profile)
 

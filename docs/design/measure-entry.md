@@ -145,7 +145,10 @@ fdbja:0.2.0|measure|vad:energy(p56;margin_db=12.0)|events:custom(turn_min_second
                       "latency_in_tolerance_rate": 0.0, "latency_deviation_mean": 0.0,
                       "turn_end_no_response_rate": 0.0, "n_turn_ends": 0,
                       "pause_no_reaction_rate": 0.0, "pause_barge_in_rate": 0.0,
-                      "pause_reaction_penalty": 0.0, "n_pauses": 0}
+                      "pause_reaction_penalty": 0.0, "n_pauses": 0},
+  "reference_recordings": [{"latency_median": 0.0, "no_response_rate": 0.0,
+                            "starts_in_user_speech_per_minute": 0.0, "overlap_share": 0.0,
+                            "pause_voiced_rate": 0.0, "pause_reaction_penalty": 0.0}]
 }
 ```
 
@@ -171,6 +174,9 @@ fdbja:0.2.0|measure|vad:energy(p56;margin_db=12.0)|events:custom(turn_min_second
 - `reference_score` の無いプロファイル(この欄を足す前のバージョンで書いたもの)も、そのまま読める。`generic` にもこの欄は無い(`null`)。
   そのときは横の値を表示しない。古いプロファイルには、作り直しを勧める注記を `score.note` に入れる。
   形式名は `fdbja-profile/1` のままにした(欄を足しただけで、既存の欄は変えていない)。
+- **録音ごとの値(`reference_recordings`)**: `make-profile` は、録音 1 本につき 1 行(両方向を合わせた 6 つの数値。ファイル名は入れない)を保存する。
+  `measure` は使わない。`measure-contexts` が、人どうしの録音の側の区間を録音を単位にして出すために使う
+  ([measure-contexts.md](measure-contexts.md) の 5 節)。この欄の無いプロファイルもそのまま読める。
 - 特定のコーパスから作った統計は同梱しない(ライセンスと、規範を 1 つに固定しないため)。プロファイルは利用者が作って配る。
 
 ## 7. スコア: 2 つの層と、人の判断で検証した 2 指標との関係
@@ -311,6 +317,8 @@ README「提案指標」の 2 つのうち、音声だけで計算できる部�
 - mono の組が並んだディレクトリ(`*_user.wav` / `*_system.wav`)の受け取り方。いまは 2 チャネルのファイルだけ。
 - プロファイルを配る場所と、名前の付け方の決まり。
 - `measure` の数値を載せる場所を作るか(作る場合も、リーダーボードとは別の表にする)。
+- 対話の条件(タスク、場面、関係、ペルソナ)ごとに規範が変わることの扱い。条件ごとのプロファイルと並べて測る入口は
+  `measure-contexts` として別に置いた。設計と未決事項は [measure-contexts.md](measure-contexts.md)。
 
 ## 11. 予測器を使う指標を `measure` に足す場合(設計メモ、未実装)
 
