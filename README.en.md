@@ -17,7 +17,7 @@ scenarios of v1.5 (user backchannels, third-party and background speech) are not
 
 The full README is in Japanese: [README.md](README.md). Leaderboard: <https://llm-jp.github.io/full-duplex-bench-ja/>
 
-- **Ranking**: per task. Smooth Turn-Taking is ranked by TOR, the binary metric of Full-Duplex-Bench (the
+- **Ranking**: per task. Smooth Turn-Taking is ranked by TOR, the binary metric of Full-Duplex-Bench re-implemented for Japanese (the
   share of turn ends at which the system took the turn). Pause Handling is ranked, from 0.2.0, by the pause
   reaction penalty: the share of pauses with no reaction plus the share with a barge-in (0-2, lower is
   better). The Pause TOR improves the more a system stays silent, and in the listening test it pointed the
@@ -366,7 +366,7 @@ not the transcript text.
 | Smooth Turn-Taking | A (>=4 s) -> gap (<0.4 s) -> B (>=4 s) | take the turn (TO=1) |
 | Backchanneling | human B only backchannels during A (>=3 s) | backchannel only (TO=0); also backchannel frequency (`bc_freq`, per second of A; human: `human_freq`) and the timing JSD against the human onsets in 0.2 s bins (`jsd`, 0-1, 1.0 when the model never backchannels; `bc_any_rate` = share of events with at least one model backchannel and `jsd_cond` = JSD over those events), as in the original Backchannel task (experimental; not in the default `tasks`) |
 
-Ranking metrics, one per task: **TOR** (binary takeover rate, ASR-based, same definition as Full-Duplex-Bench)
+Ranking metrics, one per task: **TOR** (binary takeover rate, ASR-based, the same idea as in Full-Duplex-Bench with different thresholds; see the correspondence below)
 for Smooth TT, and the **pause reaction penalty** (`pause_response`: the share of pauses with no reaction plus
 the share with a barge-in, 0-2, lower is better, judged from the response audio) for Pause. The Pause TOR is
 reported as a reference value only, because it pointed the opposite way to the listeners in the listening test.
@@ -445,6 +445,57 @@ of up to 0.3 s, and uses the ASR only for the character counts (shared among the
 utterance overlaps). On the evaluation set, two ASR backends disagree on 1-18 of 240 Pause events with `audio`
 versus 17-73 with `transcript`. The published numbers are reproduced only with `transcript` and the transcripts
 used for the paper; report `audio` as a separate condition. VAP-distance is unaffected.
+
+### Correspondence with Full-Duplex-Bench v1 / v1.5
+
+The task names and the idea follow Full-Duplex-Bench. The language, the data and the decision rules differ.
+**Numbers from this toolkit cannot be compared with numbers from the English Full-Duplex-Bench.**
+The tables below were made from the papers (v1: [arXiv:2503.04721](https://arxiv.org/abs/2503.04721) v3; v1.5:
+[arXiv:2507.23159](https://arxiv.org/abs/2507.23159) v4) and the public scoring scripts
+([`v1_v1.5/evaluation/`](https://github.com/DanielLin94144/Full-Duplex-Bench/tree/main/v1_v1.5/evaluation), main branch as of 2026-11-18).
+
+| Full-Duplex-Bench | Task | Data in the paper (all English) | This toolkit |
+|---|---|---|---|
+| v1 | Pause Handling | 216 real dialogues (Candor), 137 synthetic | implemented (real Japanese dialogues; no synthetic condition) |
+| v1 | Smooth Turn-Taking | 119 real dialogues (Candor) | implemented (real Japanese dialogues) |
+| v1 | Backchanneling (by the system) | 55 real dialogues (ICC) | event definition and values only (experimental, not ranked, not in the default `tasks`) |
+| v1 | User Interruption | 200 synthetic | not covered |
+| v1.5 | User Interruption / User Backchannel / User Talking to Others / Background Speech | 200 / 99 / 100 / 100 synthetic; user-side audio overlaps the system while it is speaking | not covered (design note for user backchannels and interruptions: [docs/design/next-tasks.md](docs/design/next-tasks.md), in Japanese) |
+
+Differences in how Pause Handling and Smooth Turn-Taking are decided:
+
+| Item | Full-Duplex-Bench v1 | This toolkit |
+|---|---|---|
+| Input | one event per item; 5 s of silence appended for Smooth Turn-Taking | 20 s from the middle of a dialogue, centred on the event; no silence appended; a clip can contain several events |
+| Pause event | from stretches where only one speaker is active, turns with an internal pause of 0.4-1.0 s; turns shorter than 5 s excluded | nearly the same (pause of 0.4-1.0 s, turn of at least 5 s); pauses in which the recorded partner (human B) spoke for 0.1 s or more, and pauses next to a backchannel-length utterance, are excluded |
+| Smooth Turn-Taking event | gap between two consecutive turns below 0.4 s, no overlap, both turns longer than 4 s, neither a backchannel | nearly the same (A >= 4 s, gap < 0.4 s, B >= 4 s); the restriction to real turn changes (`detection.smooth_tt_roles`) is specific to this toolkit |
+| Part of the output examined | the whole output | a time range around the event |
+| Output treated as a backchannel | paper: "less than 1 second" and "fewer than two words"; scripts: the whole output shorter than 1 s with at most 3 words | an utterance of at most 6 characters and at most 1.5 s |
+| TO = 1, Pause | the output is more than a backchannel | an utterance that overlaps the pause by at least 0.1 s and is more than a backchannel |
+| TO = 1, Smooth Turn-Taking | the output is more than a backchannel (silence or a backchannel gives TO = 0) | an utterance of at least 3 characters that starts between 0.5 s before and 2.0 s after the end of A's turn |
+| Response latency | from the end of the user's speech to the start of the model's response; only when TO = 1; negative values set to 0 | the same, inside the range above; the signed value is kept as `onset` |
+| Transcription | English ASR (parakeet-tdt-0.6b-v2, word timestamps) | Japanese ASR (default: ReazonSpeech with WhisperX, character timestamps); with `detection.system_activity: audio` the times come from the response audio |
+| Value used for ranking | TOR for Pause (lower is better) and for Smooth Turn-Taking (higher is better) | TOR for Smooth Turn-Taking (higher is better); the pause reaction penalty for Pause (lower is better), with the Pause TOR as a reference value |
+
+- Characters are counted because Japanese transcripts have no word boundaries.
+- Only a range around the event is examined because the clips are 20 s of an ongoing dialogue, not items cut to end at one event.
+- The Pause ranking does not use TOR because the Pause TOR pointed the opposite way to the listeners in the listening test.
+- The Smooth Turn-Taking TOR is "the share of turn ends at which the system took the turn" in both, but the range and the thresholds differ, so one model does not get the same value in both.
+
+Backchanneling (experimental): both use 0.2 s bins, compute the value per item and average, and give 1 when the model never
+backchannels (the original script; the paper describes a uniform distribution for that case). The original scripts call
+`scipy.spatial.distance.jensenshannon` (the JS distance: the square root of the divergence, natural logarithm) and count every
+bin from the start to the end of a backchannel; this toolkit reports the base-2 JS divergence (0-1) over backchannel onsets.
+The human reference in the original is a distribution per stimulus built from many participants (59 on average) who marked where
+they would backchannel in the ICC data; here it is, per event, the onsets of the one recorded human B. The frequency is per second
+of the model's output audio in the original script and per second of A's speech here.
+
+v1.5 covers four scenarios in which user-side audio overlaps the system while it is speaking. It classifies the behaviour after the
+overlap from transcripts (Respond / Resume / Uncertain / Unknown) and measures the stop latency and the response latency. This
+toolkit has no corresponding task or metric yet. The values of `measure` (starts in the user's speech, overlap share) are statistics
+over a whole recording and are not the per-scenario metrics of v1.5. v2 ([arXiv:2510.07838](https://arxiv.org/abs/2510.07838),
+multi-turn dialogues with an automated examiner) and v3 ([arXiv:2604.04847](https://arxiv.org/abs/2604.04847), tool use) have a
+different target from timing; there is no corresponding task here.
 
 ## Model adapters
 
