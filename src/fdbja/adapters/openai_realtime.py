@@ -47,8 +47,10 @@ import numpy as np
 from fdbja.adapters._timeline import (
     DEFAULT_TIMELINE,
     RECEIVE_END,
+    SESSION,
     ResponseTimeline,
     resolve_rule,
+    text_id,
 )
 from fdbja.adapters.base import DialogueResponse, ModelAdapter
 
@@ -170,6 +172,8 @@ class OpenAIRealtimeAdapter(ModelAdapter):
         total_dur = total / WIRE_SR
         deadline = total_dur + self.silence_after_s + 3.0   # recv grace
         tl = ResponseTimeline(WIRE_SR, adapter=self.name)
+        tl.note(0.0, SESSION, model=self.model, voice=self.voice,
+                instructions=text_id(self.instructions))
         playout = self.rule == "playout"
         content_index: dict = {}                            # item -> index
         n_truncate = 0

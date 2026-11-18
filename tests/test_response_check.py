@@ -263,3 +263,29 @@ def test_cli_exit_status(tmp_path, capsys):
     assert main(args + ["--strict"]) == 1
     assert "ended_early" in capsys.readouterr().out
     assert main(args + ["--strict", "--records-only"]) == 1
+
+
+def test_session_settings_are_reported_and_have_to_be_the_same(tmp_path):
+    from fdbja.adapters._timeline import SESSION
+
+    def speaking(voice):
+        tl = ResponseTimeline(SR, adapter="x")
+        tl.note(0.0, SESSION, model="m-1", voice=voice, instructions="abc123")
+        tl.add_audio(0.1, _tone(0.5), item="a")
+        return tl
+
+    eval_dir = _eval_dir(tmp_path)
+    for name, voices in (("same", "aaa"), ("changed", "aab")):
+        for clip, voice in zip(("c1", "c2", "c3"), voices):
+            _save(eval_dir / f"pause_{name}_output" / clip / "combined.wav",
+                  speaking({"a": "alto", "b": "bass"}[voice]), end=2.5)
+    config = _config(eval_dir, [{"name": n, "adapter": "x"} for n in ("same", "changed")])
+    summary = rc.run(config, str(tmp_path / "check"), log=lambda m: None)
+    (finding,) = summary["findings"]
+    assert finding["finding"] == "mixed_settings" and finding["level"] == "error"
+    assert finding["model"] == "changed" and finding["examples"] == ["pause/c3"]
+    systems = {s["model"]: s for s in summary["systems"]}
+    assert systems["same"]["settings"] == "instructions=abc123, model=m-1, voice=alto"
+    assert " | " in systems["changed"]["settings"]
+    report = (tmp_path / "check" / "response_check.md").read_text(encoding="utf-8")
+    assert "| same | pause | instructions=abc123, model=m-1, voice=alto |" in report

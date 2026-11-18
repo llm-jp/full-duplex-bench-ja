@@ -40,8 +40,10 @@ import numpy as np
 from fdbja.adapters._timeline import (
     DEFAULT_TIMELINE,
     RECEIVE_END,
+    SESSION,
     ResponseTimeline,
     resolve_rule,
+    text_id,
 )
 from fdbja.adapters.base import DialogueResponse, ModelAdapter
 
@@ -76,8 +78,10 @@ class GeminiLiveAdapter(ModelAdapter):
     def __init__(self, model: str = "gemini-3.1-flash-live-preview",
                  voice: str = "Aoede", silence_after_s: float = 5.0,
                  api_key: str | None = None,
-                 timeline: str = DEFAULT_TIMELINE, **_):
+                 timeline: str = DEFAULT_TIMELINE,
+                 instructions: str = SYSTEM_INSTRUCTION, **_):
         self.model = model
+        self.instructions = instructions
         self.timeline = timeline
         self.rule = resolve_rule(timeline, legacy_rule="arrival")
         self.voice = voice
@@ -115,9 +119,11 @@ class GeminiLiveAdapter(ModelAdapter):
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
                         voice_name=self.voice)),
                 language_code="ja-JP"),
-            system_instruction=SYSTEM_INSTRUCTION,
+            system_instruction=self.instructions,
         )
         tl = ResponseTimeline(OUTPUT_SR, adapter=self.name)
+        tl.note(0.0, SESSION, model=self.model, voice=self.voice,
+                instructions=text_id(self.instructions))
         playout = self.rule == "playout"
         send_done = [False]
         t0 = time.monotonic()   # up to 0.2.0 the clock started here

@@ -34,6 +34,7 @@ timeline under any rule without calling the model again
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import numpy as np
@@ -44,6 +45,13 @@ DEFAULT_TIMELINE = "playout"
 RECORD_FORMAT = "fdbja.response_events/1"
 #: note written by an adapter when it stops listening (``reason`` says why)
 RECEIVE_END = "client.receive_end"
+SESSION = "client.session"      # note at time 0: the settings the session was opened with
+
+
+def text_id(text: str) -> str:
+    """Short identifier of a text (first 12 hex digits of its SHA-256), for
+    records that do not hold the text itself."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
 def resolve_rule(timeline: str, legacy_rule: str) -> str:

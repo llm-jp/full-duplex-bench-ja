@@ -592,3 +592,45 @@ def test_moshi_records_why_listening_stopped(monkeypatch):
     resp, _ = _run_moshi(monkeypatch, FRAME_TIMES)
     end = _receive_end(resp.events)
     assert end["reason"] == "closed" and end["t"] >= 0.9
+
+
+# --- the settings of the session ---------------------------------------------
+
+def _session(record):
+    (note,) = [e for e in record["events"] if e.get("event") == tlm.SESSION]
+    return note
+
+
+def test_commercial_adapters_record_model_voice_and_instruction_id(monkeypatch):
+    from fdbja.adapters import gemini_live, openai_realtime
+    resp, _ = _run_realtime(monkeypatch, _realtime_script())
+    realtime = _session(resp.events)
+    assert realtime["t"] == 0.0 and realtime["model"] == "gpt-realtime"
+    assert realtime["voice"] == "marin"
+    assert realtime["instructions"] == tlm.text_id(openai_realtime.SYSTEM_INSTRUCTION)
+    resp, _ = _run_gemini(monkeypatch, _gemini_script())
+    gemini = _session(resp.events)
+    assert gemini["model"] == "gemini-3.1-flash-live-preview" and gemini["voice"] == "Aoede"
+    # the two adapters send the same instruction text by default
+    assert gemini_live.SYSTEM_INSTRUCTION == openai_realtime.SYSTEM_INSTRUCTION
+    assert gemini["instructions"] == realtime["instructions"]
+    # the record holds an identifier, not the text
+    assert openai_realtime.SYSTEM_INSTRUCTION not in json.dumps(resp.events, ensure_ascii=False)
+    # the Moshi-type adapter has no such settings
+    resp, _ = _run_moshi(monkeypatch, FRAME_TIMES)
+    assert not [e for e in resp.events["events"] if e.get("event") == tlm.SESSION]
+
+
+def test_gemini_instruction_can_be_replaced(monkeypatch):
+    from fdbja.adapters.gemini_live import SYSTEM_INSTRUCTION, GeminiLiveAdapter
+    _fake_genai(_gemini_script(), monkeypatch)
+    sent = {}
+    gtypes = sys.modules["google.genai.types"]
+    monkeypatch.setattr(gtypes, "LiveConnectConfig",
+                        lambda **k: sent.update(k) or types.SimpleNamespace(**k))
+    adapter = GeminiLiveAdapter(api_key="test", silence_after_s=0.4,
+                                instructions="日本語で話してください。")
+    resp = adapter.infer(np.zeros(int(0.4 * 16000), dtype=np.float32), 16000)
+    assert sent["system_instruction"] == "日本語で話してください。"
+    assert _session(resp.events)["instructions"] == tlm.text_id("日本語で話してください。")
+    assert _session(resp.events)["instructions"] != tlm.text_id(SYSTEM_INSTRUCTION)

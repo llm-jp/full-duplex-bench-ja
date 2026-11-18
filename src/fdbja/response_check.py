@@ -49,6 +49,7 @@ from fdbja.adapters._timeline import (
     RECEIVE_END,
     RECORD_FORMAT,
     RULES,
+    SESSION,
     _Queue,
     timeline_from_record,
 )
@@ -68,6 +69,8 @@ FINDINGS = {
     "ended_early": ("error", "the client stopped listening before the input ended"),
     "all_no_audio": ("error", "no clip of the task holds any model audio"),
     "mixed_rules": ("error", "clips of one system were recorded under different timeline rules"),
+    "mixed_settings": ("error", "clips of one system were recorded with different session "
+                                "settings (model, voice or instructions)"),
     "response_failed": ("warning", "the server reported a failed or incomplete response"),
     "stall": ("warning", "the audio stream stalled for longer than the limit"),
     "tail_cut": ("warning", "model audio beyond the written length was cut"),
@@ -78,7 +81,7 @@ LEVELS = ("error", "warning")
 
 CLIP_FIELDS = [
     "model", "task", "clip", "findings", "has_output", "has_record", "adapter", "timeline",
-    "rule", "input_seconds", "chunks", "received_seconds", "placed_seconds",
+    "rule", "settings", "input_seconds", "chunks", "received_seconds", "placed_seconds",
     "discarded_seconds", "interruptions", "chunks_after_interruption", "first_audio",
     "last_audio_end", "stalls", "stall_seconds", "longest_stall", "cut_seconds",
     "receive_end", "receive_end_reason", "error_notes", "failed_responses", "no_audio",
@@ -86,6 +89,7 @@ CLIP_FIELDS = [
 ]
 SYSTEM_FIELDS = [
     "model", "task", "clips", "outputs", "records", "rules", "timelines", "adapters",
+    "settings",
     "no_audio", "interruptions", "clips_interrupted", "discarded_seconds", "stalled_clips",
     "longest_stall", "first_audio_median", "ended_early", "errors", "warnings",
 ]
@@ -134,8 +138,12 @@ def replay(record: Dict[str, Any]) -> Dict[str, Any]:
     cut = max(0, end - max_samples) if max_samples is not None else 0
     notes = [e for e in events if e["type"] == "note"]
     ends = [e for e in notes if e.get("event") == RECEIVE_END]
+    session = next((e for e in notes if e.get("event") == SESSION), {})
+    settings = ", ".join(f"{k}={session[k]}" for k in sorted(session)
+                         if k not in ("t", "type", "event"))
     return {
         "adapter": record.get("adapter", ""),
+        "settings": settings,
         "timeline": record.get("timeline", ""),
         "rule": rule,
         "sample_rate": sr,
@@ -264,6 +272,7 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
                          "meaning": FINDINGS[code][1]})
 
     rules_by_model: Dict[str, Counter] = {}
+    settings_by_model: Dict[str, Dict[str, List[str]]] = {}
     for (model, task), group in groups.items():
         per_code: Dict[str, List[str]] = {}
         for r in group:
@@ -273,6 +282,10 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         with_record = [r for r in with_output if r["rule"]]
         rules = Counter(r["rule"] for r in with_record)
         rules_by_model.setdefault(model, Counter()).update(rules)
+        for r in with_record:
+            if r["settings"]:
+                settings_by_model.setdefault(model, {}).setdefault(
+                    r["settings"], []).append(f"{task}/{r['clip']}")
         silent = [r["clip"] for r in with_output if r["no_audio"] is True]
         if with_output and len(silent) == len(with_output):
             per_code["all_no_audio"] = silent
@@ -289,6 +302,8 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             "rules": "/".join(sorted(rules)),
             "timelines": "/".join(sorted({r["timeline"] for r in with_record})),
             "adapters": "/".join(sorted({r["adapter"] for r in with_record})),
+            "settings": " | ".join(sorted({r["settings"] for r in with_record
+                                           if r["settings"]})),
             "no_audio": len(silent),
             "interruptions": sum(r["interruptions"] for r in with_record),
             "clips_interrupted": sum(1 for r in with_record if r["interruptions"]),
@@ -301,6 +316,15 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             "warnings": sum(len(v) for k, v in per_code.items() if _level(k) == "warning"),
         })
 
+    # one system = one model, one voice, one instruction, over all tasks
+    for model, by_setting in settings_by_model.items():
+        if len(by_setting) > 1:
+            common = max(by_setting, key=lambda k: len(by_setting[k]))
+            others = sorted(c for k, v in by_setting.items() if k != common for c in v)
+            findings.append({
+                "level": "error", "finding": "mixed_settings", "model": model,
+                "task": "", "clips": len(others), "examples": others[:5],
+                "meaning": FINDINGS["mixed_settings"][1]})
     # the timeline rule decides the response latency: it has to be the same
     # for every system that is compared
     used = {m: max(c, key=c.get) for m, c in rules_by_model.items() if c}
@@ -371,6 +395,18 @@ def write_markdown(path: str, summary: Dict[str, Any], stall_limit: float,
             f"{_fmt(float(s['discarded_seconds']))} | {s['stalled_clips']} | "
             f"{_fmt(float(s['longest_stall']))} | {_fmt(s['first_audio_median'])} | "
             f"{s['ended_early']} |")
+    settings = {}
+    for s in summary["systems"]:
+        if s["settings"]:
+            settings.setdefault((s["model"], s["settings"]), []).append(s["task"])
+    if settings:
+        lines += ["", "## Session settings", "",
+                  "As recorded by the adapter when the session was opened. `instructions` "
+                  "is an identifier of the instruction text (first 12 hex digits of its "
+                  "SHA-256), not the text.", "",
+                  "| system | tasks | settings |", "|---|---|---|"]
+        for (model, value), tasks in settings.items():
+            lines.append(f"| {model} | {' '.join(tasks)} | {value} |")
     lines += [
         "",
         "- **no audio**: clips whose model channel is empty (without the audio: clips whose "

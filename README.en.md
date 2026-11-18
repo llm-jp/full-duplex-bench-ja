@@ -482,6 +482,15 @@ returning `events` / `received_audio`.
 The leaderboard rows were recorded with the construction up to 0.2.0 and have not been recorded again; see
 items 4 to 6 of the [known limitations](#known-limitations).
 
+`gemini_live` and `openai_realtime` send the same instruction text by default (in Japanese: reply naturally in
+Japanese, use backchannels such as "うん", "はい", "なるほど" where appropriate, reply in Japanese only). The
+text has not changed since the first release (0.1.0). Because it asks for backchannels, the amount of
+backchannels and brief reactions depends on it; nothing is sent to Moshi-type servers. Set `instructions` in the
+model entry of the config to replace it, and treat results with another instruction as a separate condition. Both
+adapters leave the model name, the voice and an identifier of the instruction (first 12 hex digits of its
+SHA-256, not the text) at the start of `events.json` as the note `client.session`; `check-responses` lists them
+per system and reports an error when they differ inside one system.
+
 ### Checking what `infer` recorded (`fdbja check-responses`)
 
 Before scoring, `uv run fdbja check-responses --config configs/default.yaml --out results/response_check` checks
@@ -499,6 +508,7 @@ totals (`systems.csv`) and the findings (`response_check.md`).
 | `ended_early` | error | the client stopped listening before the input ended; later replies are not in the recording |
 | `all_no_audio` | error | no clip of the task holds any model audio (check the endpoint and the credentials) |
 | `mixed_rules` | error | clips of one system were recorded under different timeline rules |
+| `mixed_settings` | error | clips of one system were recorded with different model names, voices or instructions (from the note `client.session` of the commercial-API adapters) |
 | `response_failed` | warning | the server reported a failed or incomplete response |
 | `stall` | warning | inside one response the audio arrived too late for playback for longer than `--stall-limit` (default 0.2 s); the timeline holds that much silence |
 | `tail_cut` | warning | model audio beyond the written length was cut |
