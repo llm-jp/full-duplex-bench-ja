@@ -25,7 +25,8 @@ Adapters take a ``timeline`` option: ``"playout"`` or ``"legacy"`` (the rule
 that adapter used up to 0.2.0, for reproducing published values).
 
 The event record (``ResponseTimeline.record()``) keeps the arrival time and
-sample count of every chunk and the time of every notice. Together with the
+sample count of every chunk, the time of every notice, and when and why the
+adapter stopped listening (the note ``client.receive_end``). Together with the
 received audio (all chunks joined in order) it is enough to rebuild the
 timeline under any rule without calling the model again
 (``timeline_from_record``).
@@ -33,14 +34,27 @@ timeline under any rule without calling the model again
 
 from __future__ import annotations
 
+import hashlib
 import json
+import time
 
 import numpy as np
+
+from fdbja import __version__
 
 RULES = ("playout", "arrival", "concat")
 TIMELINE_OPTIONS = ("playout", "legacy")
 DEFAULT_TIMELINE = "playout"
 RECORD_FORMAT = "fdbja.response_events/1"
+#: note written by an adapter when it stops listening (``reason`` says why)
+RECEIVE_END = "client.receive_end"
+SESSION = "client.session"      # note at time 0: the settings the session was opened with
+
+
+def text_id(text: str) -> str:
+    """Short identifier of a text (first 12 hex digits of its SHA-256), for
+    records that do not hold the text itself."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
 def resolve_rule(timeline: str, legacy_rule: str) -> str:
@@ -153,6 +167,8 @@ class ResponseTimeline:
         self.sample_rate = sample_rate
         self.adapter = adapter
         self.events: list[dict] = []
+        #: wall-clock time (UTC) at which the clip was started
+        self.recorded_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         self._chunks: list[np.ndarray] = []
         self._n_received = 0
         self._queue = _Queue(sample_rate, flush=True)
@@ -205,6 +221,8 @@ class ResponseTimeline:
         """JSON-serialisable record of this clip (no audio, no text)."""
         return {
             "format": RECORD_FORMAT,
+            "fdbja": __version__,
+            "recorded_at": self.recorded_at,
             "adapter": self.adapter,
             "sample_rate": self.sample_rate,
             "timeline": timeline,

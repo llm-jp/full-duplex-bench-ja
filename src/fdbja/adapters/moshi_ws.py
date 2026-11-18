@@ -37,6 +37,7 @@ import numpy as np
 from fdbja.adapters._oggopus import OggDemuxer, OggOpusMuxer
 from fdbja.adapters._timeline import (
     DEFAULT_TIMELINE,
+    RECEIVE_END,
     ResponseTimeline,
     resolve_rule,
 )
@@ -146,9 +147,10 @@ class MoshiWebSocketAdapter(ModelAdapter):
                                         break
                                     except Exception:
                                         continue
-                except (asyncio.TimeoutError,
-                        websockets.exceptions.ConnectionClosed):
-                    pass
+                except asyncio.TimeoutError:      # the server sent nothing for 2 s
+                    tl.note(time.monotonic() - t0, RECEIVE_END, reason="timeout")
+                except websockets.exceptions.ConnectionClosed:
+                    tl.note(time.monotonic() - t0, RECEIVE_END, reason="closed")
 
             await asyncio.gather(send_audio(), recv_audio())
 

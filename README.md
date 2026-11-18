@@ -30,7 +30,7 @@ Backchanneling(システムの相槌)は事象の定義だけを公開してお�
 ```bash
 uv sync --group asr-reazon-whisperx                        # 1. インストール(ASR バックエンドを 1 つ)
 uv run fdbja reconstruct --config configs/default.yaml     # 2. 評価クリップを作る(config の corpus.zoom1_root を設定)
-# 応答を用意: `fdbja infer` + `fdbja transcribe`、または combined.wav を置く(「[モデルアダプタ](#モデルアダプタ)」)
+# 応答を用意: `fdbja infer`(+ `fdbja check-responses` で点検)+ `fdbja transcribe`、または combined.wav を置く(「[モデルアダプタ](#モデルアダプタ)」)
 uv run fdbja score-offline --config configs/default.yaml   # 3. 採点 → results/summary.json
 uv run fdbja leaderboard --reference docs/results.json     # 4. リーダーボードと同じ順位で掲載値と並べる
 ```
@@ -100,6 +100,7 @@ uv sync --group asr-reazon-whisperx                         # ASR バックエ�
 # configs/default.yaml の corpus.zoom1_root を LLM-jp-Zoom1 の場所に、models を評価対象に合わせて書き換える
 uv run fdbja reconstruct --config configs/default.yaml      # LLM-jp-Zoom1 → 事象検出 → 20 秒クリップ + manifest
 uv run fdbja infer --config configs/default.yaml            # 話者 A の音声をモデルに流し応答を録る
+uv run fdbja check-responses --config configs/default.yaml --out results/response_check   # 取得した応答の点検(採点の前に)
 uv run fdbja transcribe --config configs/default.yaml       # モデル応答を文字単位の jchat に転写
 uv run fdbja score-offline --config configs/default.yaml    # 評価ディレクトリの出力を採点
 ```
@@ -317,6 +318,7 @@ export VAP_REALTIME_ROOT=$(cd ../VAP-Realtime && pwd)
 ```bash
 uv run fdbja reconstruct --config configs/default.yaml           # LLM-jp-Zoom1 → 事象検出 → 20 秒クリップ + manifest
 uv run fdbja infer --config configs/default.yaml [--limit N]     # 話者 A の音声をモデルに流し応答を録る
+uv run fdbja check-responses --config configs/default.yaml --out results/response_check [--strict]   # 取得した応答の点検(時間軸のルールの不一致、途中で終わった受信、空の出力など)
 uv run fdbja transcribe --config configs/default.yaml [--model NAME] [--task T] [--backend B]   # 応答を ASR して jchat を書く
 uv run fdbja score-offline --config configs/default.yaml [--limit N] [--model NAME]   # TOR と Pause の無反応 + 割り込み(有効にした場合は VAP-distance も)を採点し results.json / summary.json / summary.csv を出力
 uv run fdbja leaderboard --results results/summary.json [--reference docs/results.json]   # リーダーボードと同じ課題ごとの順位(Pause は無反応 + 割り込み、Smooth TT は TOR)で表示。採点条件が違えば警告
@@ -486,13 +488,81 @@ models:
     timeline: legacy      # 省略時は playout
 ```
 
-`infer` は `combined.wav` の隣に、受信の記録 `events.json`(チャンクごとの到着時刻とサンプル数、割り込みの通知の時刻、ターンの完了などのサーバのイベント。音声と文字は含まない)と、
+`infer` は `combined.wav` の隣に、受信の記録 `events.json`(チャンクごとの到着時刻とサンプル数、割り込みの通知の時刻、ターンの完了などのサーバのイベント、
+受信を終えた時刻と理由 `client.receive_end`。音声と文字は含まない)と、
 受信した音声を受信順につないだ `received.wav` を書きます。この 2 つがあれば、応答を取り直さずに別のルールの時間軸を作り直せます
 (`fdbja.adapters._timeline.timeline_from_record(record, received, rule)`、`rule` は `playout` / `arrival` / `concat`)。
 `legacy` で取得した録音にも通知の時刻は残るので、後から `playout` の時間軸を作れます(`openai_realtime` の `legacy` は `conversation.item.truncate` を送らないので、
 サーバ側の会話の状態は `playout` で取得した場合と同じにはなりません)。自作のアダプタは `DialogueResponse` の `events` / `received_audio` を返さなくても動きます。
 
 時刻は、入力の最初のサンプルを送る時点を 0 とするクライアントの時計です。商用 API の応答の位置には通信の遅れが含まれます(実際のクライアントで聞こえる時刻)。
+
+`infer` は `combined.wav` があるクリップを飛ばすので、止まった取得は同じコマンドで続きから再開できます。
+アダプタの呼び出しが失敗したクリップ(通信や API のエラー)は、出力を書かずにログに 1 行残して次のクリップへ進みます。もう一度 `infer` を実行すると、そのクリップだけ取り直します。
+失敗が 5 クリップ続いたモデルは、そこで打ち切ります(API キーの誤り、サーバの停止など)。失敗したクリップがあると、`infer` は終了コード 1 を返します。
+`combined.wav` はクリップの最後に書くので、途中で止めても、書きかけのクリップが取得済みとして残ることはありません。ログに出すエラー文は、キーやトークンに見える部分を伏せます。
+
+`events.json` には、記録を書いた fdbja のバージョン(`fdbja`)と、そのクリップの取得を始めた日時(`recorded_at`、UTC)も入ります。
+商用 API は同じモデル名のまま振る舞いが変わることがあるので、結果を報告するときは取得した日を添えてください。`check-responses` がシステムごとに表示します。
+
+#### 商用 API に送る指示文(`instructions`)
+
+`gemini_live` と `openai_realtime` は、既定で同じ指示文を送ります。
+
+> あなたは日本語の対話相手です。自然に日本語で応答してください。相槌（「うん」「はい」「なるほど」など）も適切に使ってください。必ず日本語のみで応答してください。
+
+この指示文は最初の公開(0.1.0)から変えていません。相槌を促す一文が入っているので、相槌や短い反応の量は指示文に左右されます。
+Moshi 系のサーバには指示文を送りません。指示文を変えた結果は、掲載値とは別の条件として扱ってください。config のモデルの項目で差し替えられます。
+
+```yaml
+models:
+  - name: gemini_live_plain
+    adapter: gemini_live
+    instructions: "あなたは日本語の対話相手です。必ず日本語のみで応答してください。"
+```
+
+2 つのアダプタは、セッションを開いたときのモデル名・声・指示文の識別子(指示文の SHA-256 の先頭 12 桁。本文は書かない)を
+`events.json` の先頭に `client.session` として残します。`check-responses` はこれをシステムごとに表示し、1 つのシステムの中で食い違えば誤りにします。
+
+#### 取得した応答の点検(`fdbja check-responses`)
+
+採点の前に、`infer` が書いた出力がシステム間で比べられる状態かを確かめます。モデルにも API にも接続しません。ASR も使いません。
+
+```bash
+uv run fdbja check-responses --config configs/default.yaml --out results/response_check
+```
+
+`events.json` の受信の記録を同じルールで再生し、クリップごとの値(`clips.csv`)、システムと課題ごとの集計(`systems.csv`)、
+所見の一覧(`response_check.md`)を書きます。所見は 2 段階です。
+
+| 所見 | 段階 | 意味 |
+|------|------|------|
+| `missing_output` | 誤り | クリップの `combined.wav` が無い |
+| `bad_output` | 誤り | `combined.wav` を読めない、またはモデルのチャネルが無い |
+| `bad_record` | 誤り | `events.json` を読めない、または形式が違う |
+| `received_mismatch` | 誤り | `received.wav` の長さが記録と合わない |
+| `rebuild_differs` | 誤り | 記録から作り直した時間軸が `output.wav` と一致しない(取得後に音声か記録が書き換わった) |
+| `ended_early` | 誤り | 入力を送り終える前に受信が終わった(それより後の応答は録音されていない) |
+| `all_no_audio` | 誤り | その課題の全クリップでモデルの音声が無い(接続先や認証の誤りを疑う) |
+| `mixed_rules` | 誤り | 1 つのシステムのクリップに、時間軸のルールが違うものが混ざっている |
+| `mixed_settings` | 誤り | 1 つのシステムのクリップに、モデル名・声・指示文が違うものが混ざっている(商用 API のアダプタが残す `client.session` で判定) |
+| `response_failed` | 注意 | サーバが応答の失敗か未完了を返した(`response.done` の `status` が `failed` / `incomplete`) |
+| `stall` | 注意 | 1 つの応答の途中で、音声の到着が再生に間に合わない区間が閾値(`--stall-limit`、既定 0.2 秒)を超えた。時間軸にはその長さの無音が入る |
+| `tail_cut` | 注意 | 書き出す長さを超えた応答の音声が切り捨てられた |
+| `no_record` | 注意 | `events.json` が無く、点検できない(0.2.0 までの録音、`combined.wav` を直接置いた場合、記録を返さない自作アダプタ) |
+| `mixed_versions` | 注意 | 1 つのシステムのクリップに、違うバージョンの fdbja で取得したものが混ざっている |
+| `rules_differ` | 注意 | システムによって時間軸のルールが違う(応答の位置を同じ尺度で比べられない) |
+
+集計には、時間軸のルール、割り込みの通知の回数、通知で捨てた音声の秒数、最初の音声の時刻の中央値、モデルの音声が無いクリップの数も並びます。
+割り込みの通知と捨てた秒数は誤りではなく、システムの振る舞いです。システム間で桁が違うときは、アダプタの設定を見直す手がかりになります。
+
+- `--strict` を付けると、誤りが 1 つでもあれば終了コード 1 を返します(注意だけなら 0)。取得のスクリプトで採点の前に止めるために使います。
+- `--records-only` は `events.json` だけを読みます(音声は開かない)。音声の有無は受信したチャンクの数で判定し、`bad_output` / `received_mismatch` / `rebuild_differs` は判定しません。
+- `--model` / `--task` で対象を絞れます。自明なベースライン(`silence` / `always_talk`)は、`--model` で名指ししない限り点検しません。
+- 入力の長さは評価クリップの wav から取ります。受信が終わった時刻は、アダプタが受信の記録に残す `client.receive_end`(理由つき)から取ります。
+  この記録が無い録音では `ended_early` は判定しません。
+
+点検は取得の不備を見つけるためのもので、応答の良し悪しは測りません。所見が無いことは、採点の値が正しいことの保証ではありません。
 
 #### 自作モデルをつなぐ
 
@@ -676,12 +746,13 @@ VAP-distance は生波形から計算するため 1・3 の影響を受けませ
 ```
 src/fdbja/
   cli.py                    # fdbja コマンド(reconstruct | infer | transcribe | score-offline
-                            #              | leaderboard | analyze-pause | analyze-profile
+                            #              | check-responses | leaderboard | analyze-pause | analyze-profile
                             #              | sample-human-eval | analyze-human-eval)
                             #              | measure | make-profile)
   config.py  runner.py  report.py  io_audio.py
   summary.py                # 95% 区間・応答の遅れ・採点条件(summary.json / summary.csv)
   turn_profile.py           # analyze-profile(システムの傾向と事象単位のレポート)
+  response_check.py         # check-responses(infer の出力の点検)
   measurement.py            # measure / make-profile(任意の 2 チャネル録音のタイミング統計、基準プロファイル)
   data/event_detection.py   # pause / smooth_tt / bc 検出器(jchat 入力)
   data/reconstruct.py       # コーパス → 評価クリップ + manifest
@@ -763,7 +834,16 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 
 ## バージョン / 変更履歴
 
-- **未リリース** — アダプタ間の公平性の修正(「既知の限界」の 4〜6)と、`analyze-profile` の Pause の内訳。掲載値は変えていない(修正後のアダプタでの応答の取り直しはこれから)。
+- **未リリース** — アダプタ間の公平性の修正(「既知の限界」の 4〜6)、`analyze-profile` の Pause の内訳、取得した応答の点検。掲載値は変えていない(修正後のアダプタでの応答の取り直しはこれから)。
+  - `check-responses`(新規): `infer` の出力を採点の前に点検する。受信の記録を再生し、時間軸のルールの不一致、入力の途中で終わった受信、全クリップが空の出力、
+    記録と音声の食い違い、応答の途中の音声の途切れを所見として出す。`--strict` で誤りがあれば終了コード 1。モデルにも API にも接続しない。
+  - ストリーミングのアダプタが、受信を終えた時刻と理由を `events.json` に残す(`client.receive_end`)。応答音声と採点の値は変わらない。
+  - `gemini_live` / `openai_realtime` が、モデル名・声・指示文の識別子を `events.json` に残す(`client.session`)。
+  - `infer`: アダプタの呼び出しが失敗したクリップで全体を止めず、出力を書かずに次へ進む(再実行でそのクリップだけ取り直す。失敗が 5 クリップ続いたモデルは打ち切る)。
+    `combined.wav` をクリップの最後に書き、途中で止めたときに書きかけのクリップが取得済みとして残らないようにした。
+  - `events.json` に、記録を書いた fdbja のバージョンと取得を始めた日時(UTC)を残す。`check-responses` がシステムごとに表示し、バージョンが混ざっていれば注意を出す。
+  - `gemini_live`: 指示文を `instructions` で差し替えられるようにした(`openai_realtime` と同じ。既定の指示文は変えていない)。
+    README に既定の指示文を明記した。
   - `analyze-profile`: Pause の傾向を、順位に使う指標(無反応 + 割り込み)のルールで出すようにした。列 `pause_no_reaction` / `pause_barge_in` / `pause_brief` を追加し、
     被せる型の判定と散布図の横軸を、書き起こしによる「話し続けた」(= TOR)から割り込み率に変えた(`--barge-in-hi`)。傾向に「反応しない型」(`--no-reaction-hi`)を追加。
     0.2.0 までは、短く反応して引くシステムが被せる型と表示されることがあった。
@@ -869,6 +949,7 @@ WhisperX BSD-2-Clause)であれば、採点結果の利用に商用・非商用�
 | `always_talk` が pyopenjtalk を求めて止まる | `uv sync --extra always-talk`、または config で `source_wav` に音声ファイルを指定 |
 | `reconstruct` が `unusable speaker labels` と警告する | 転写の `speaker` が `A` / `B` の両方を含んでいない。`transcribe --wav ... --channel 0 1 --speaker A B` で作り直す |
 | `infer` が `[<model>] skipped: unknown adapter` と言う | `adapter` の名前を確認。自作のアダプタは `"モジュール:クラス"`、出力を自分で置くなら `offline` |
+| `infer` が `failed, no output written` と言う | そのクリップの取得が失敗しています(通信や API のエラー。理由は同じ行の括弧の中)。もう一度 `infer` を実行すると、失敗したクリップだけ取り直します |
 | `sample-human-eval` が `webui/ not found` と言う | Web UI はリポジトリ直下の `webui/` を参照します。`git clone` した作業ツリーから(`uv sync` の editable install で)実行してください |
 | 商用 API アダプタが接続できない | モデル名・プロトコルは 2026-08 時点のもの。各 API のドキュメントで現行のモデル名を確認し、config の `model` を差し替えてください |
 

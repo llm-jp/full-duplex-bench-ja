@@ -283,6 +283,21 @@ def score_offline(config: Config, limit: int = 0,
                       vap_path=vap_path)
 
 
+#: ``infer`` stops a model after this many clips in a row failed (wrong key, server down)
+MAX_CONSECUTIVE_FAILURES = 5
+
+
+def _error_text(e: BaseException) -> str:
+    """Exception as one log line, with anything that looks like a credential masked."""
+    import re
+    value = r"[^\s&\"',;]+"
+    text = " ".join(f"{type(e).__name__}: {e}".split())
+    text = re.sub(rf"(?i)\b(bearer|basic)\s+{value}", r"\1 ***", text)
+    text = re.sub(rf"(?i)(key|token|secret|authorization)([\"']?\s*[=:]\s*[\"']?)"
+                  rf"(?!(?:bearer|basic)\b){value}", r"\1\2***", text)
+    return text[:300]
+
+
 def run_infer(config: Config, limit: int = 0, log=print, models=None) -> int:
     """Stream each eval clip's speaker-A audio to each model adapter and write
     ``input.wav`` / ``output.wav`` / ``combined.wav`` per clip, matching the
@@ -292,8 +307,13 @@ def run_infer(config: Config, limit: int = 0, log=print, models=None) -> int:
     ``adapter: offline`` (or no adapter) are not run: their ``combined.wav``
     files are expected to be placed by hand, and the number still missing is
     reported. An entry whose adapter cannot be built is reported and skipped,
-    so the other models still run. Returns the number of skipped entries
-    (0 = every requested adapter ran).
+    so the other models still run.
+
+    A clip whose adapter call raises (network or API error) is reported and
+    left without output, so that running ``infer`` again retries exactly
+    those clips; after ``MAX_CONSECUTIVE_FAILURES`` failures in a row the
+    model is abandoned. Returns the number of entries that were skipped or
+    had a failed clip (0 = every requested adapter ran over every clip).
     """
     import soundfile as sf
 
@@ -326,12 +346,15 @@ def run_infer(config: Config, limit: int = 0, log=print, models=None) -> int:
             log(f"[{mname}] skipped: {e}")
             failed += 1
             continue
+        errors = streak = 0
         try:
             for task in config.tasks:
+                if streak >= MAX_CONSECUTIVE_FAILURES:
+                    break
                 clip_ids = _clip_ids(eval_dir, task, layout)
                 if limit:
                     clip_ids = clip_ids[:limit]
-                done = 0
+                done = task_errors = 0
                 for clip in clip_ids:
                     gt_wav = os.path.join(eval_dir, layout["gt_wav"].format(
                         task=task, clip=clip, model=mname))
@@ -340,12 +363,28 @@ def run_infer(config: Config, limit: int = 0, log=print, models=None) -> int:
                     if not os.path.exists(gt_wav) or os.path.exists(out_wav):
                         continue
                     speaker_a, _ = load_stereo_16k(gt_wav)  # ch0 = A
-                    resp = adapter.infer(speaker_a, 16000)
+                    try:
+                        resp = adapter.infer(speaker_a, 16000)
+                    except Exception as e:  # noqa: BLE001 - network / API errors of any kind
+                        task_errors += 1
+                        streak += 1
+                        log(f"[{task}/{mname}] {clip}: failed, no output written "
+                            f"({_error_text(e)})")
+                        if streak >= MAX_CONSECUTIVE_FAILURES:
+                            log(f"[{mname}] stopped: {streak} clips failed in a row")
+                            break
+                        continue
+                    streak = 0
                     _write_outputs(out_wav, resp, sf)
                     done += 1
-                log(f"[{task}/{mname}] generated {done} clips")
+                errors += task_errors
+                log(f"[{task}/{mname}] generated {done} clips" + (
+                    f", {task_errors} failed (run infer again to retry them)"
+                    if task_errors else ""))
         finally:
             adapter.close()
+        if errors:
+            failed += 1
     return failed
 
 
@@ -462,6 +501,9 @@ def transcribe_channels(asr, wav_path: str, out_json: str, channels, speakers,
 
 
 def _write_outputs(combined_path, resp, sf) -> None:
+    """Write the files of one clip. ``combined.wav`` marks the clip as done
+    (``infer`` skips clips that have it), so it is written last and moved
+    into place in one step: an interrupted run leaves no half-written clip."""
     os.makedirs(os.path.dirname(combined_path), exist_ok=True)
     a, b = resp.input_audio, resp.response_audio
     n = max(len(a), len(b))
@@ -469,7 +511,6 @@ def _write_outputs(combined_path, resp, sf) -> None:
     ap[:len(a)] = a
     bp = np.zeros(n, dtype=np.float32)
     bp[:len(b)] = b
-    sf.write(combined_path, np.stack([ap, bp], axis=1), resp.sample_rate)
     d = os.path.dirname(combined_path)
     sf.write(os.path.join(d, "input.wav"), ap, resp.sample_rate)
     sf.write(os.path.join(d, "output.wav"), bp, resp.sample_rate)
@@ -482,6 +523,9 @@ def _write_outputs(combined_path, resp, sf) -> None:
     if received is not None:
         sf.write(os.path.join(d, "received.wav"),
                  np.asarray(received, dtype=np.float32), resp.sample_rate)
+    part = combined_path + ".part"
+    sf.write(part, np.stack([ap, bp], axis=1), resp.sample_rate, format="WAV")
+    os.replace(part, combined_path)
 
 
 def _boundary_settings(vap_cfg):

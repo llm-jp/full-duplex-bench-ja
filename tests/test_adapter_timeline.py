@@ -544,3 +544,103 @@ def test_moshi_legacy_joins_the_frames_in_order(monkeypatch):
     # same recording, placed by arrival time
     again = timeline_from_record(resp.events, received, "playout")
     assert _span(again)[0] == int(_arrivals(resp.events, "audio")[0]["t"] * SR)
+
+
+# --- why listening stopped ---------------------------------------------------
+
+def _receive_end(record):
+    (end,) = [e for e in record["events"] if e.get("event") == tlm.RECEIVE_END]
+    return end
+
+
+def test_realtime_records_why_listening_stopped(monkeypatch):
+    resp, _ = _run_realtime(monkeypatch, _realtime_script())
+    end = _receive_end(resp.events)
+    assert end["reason"] == "response_done" and end["t"] >= 0.8    # after the input
+
+
+def test_realtime_connection_closed_during_the_input_is_on_the_record(monkeypatch):
+    from fdbja.adapters.openai_realtime import OpenAIRealtimeAdapter
+    items = []
+    _, closed = _fake_websockets(items, monkeypatch)
+    items += [(0.10, _delta("item_a", 0.1, 1000)), (0.20, closed)]
+    adapter = OpenAIRealtimeAdapter(api_key="test", silence_after_s=0.4, max_retries=0)
+    resp = adapter.infer(np.zeros(int(0.4 * SR), dtype=np.float32), SR)
+    end = _receive_end(resp.events)
+    assert end["reason"] == "closed" and end["t"] < 0.4            # before the input ended
+
+
+def test_gemini_records_why_listening_stopped(monkeypatch):
+    from fdbja.adapters import gemini_live
+    resp, _ = _run_gemini(monkeypatch, _gemini_script())
+    end = _receive_end(resp.events)
+    assert end["reason"] == "turn_complete" and end["t"] >= 0.8
+    # up to 0.2.0: listening stopped with the first completed turn
+    resp, _ = _run_gemini(monkeypatch, _gemini_script(), timeline="legacy")
+    end = _receive_end(resp.events)
+    assert end["reason"] == "stream_ended"
+    assert end["t"] < 0.5 + 0.15                # before the second reply was sent
+    # nothing more from the server: stopped by the client after the grace period
+    monkeypatch.setattr(gemini_live, "RECV_GRACE_S", 0.2)
+    script = [(0.10, _gemini_msg(audio=_tone(0.2, 1000))),
+              (0.12, _gemini_msg(turn_complete=True))]
+    resp, _ = _run_gemini(monkeypatch, script)
+    assert _receive_end(resp.events)["reason"] == "deadline"
+
+
+def test_moshi_records_why_listening_stopped(monkeypatch):
+    resp, _ = _run_moshi(monkeypatch, FRAME_TIMES)
+    end = _receive_end(resp.events)
+    assert end["reason"] == "closed" and end["t"] >= 0.9
+
+
+# --- the settings of the session ---------------------------------------------
+
+def _session(record):
+    (note,) = [e for e in record["events"] if e.get("event") == tlm.SESSION]
+    return note
+
+
+def test_commercial_adapters_record_model_voice_and_instruction_id(monkeypatch):
+    from fdbja.adapters import gemini_live, openai_realtime
+    resp, _ = _run_realtime(monkeypatch, _realtime_script())
+    realtime = _session(resp.events)
+    assert realtime["t"] == 0.0 and realtime["model"] == "gpt-realtime"
+    assert realtime["voice"] == "marin"
+    assert realtime["instructions"] == tlm.text_id(openai_realtime.SYSTEM_INSTRUCTION)
+    resp, _ = _run_gemini(monkeypatch, _gemini_script())
+    gemini = _session(resp.events)
+    assert gemini["model"] == "gemini-3.1-flash-live-preview" and gemini["voice"] == "Aoede"
+    # the two adapters send the same instruction text by default
+    assert gemini_live.SYSTEM_INSTRUCTION == openai_realtime.SYSTEM_INSTRUCTION
+    assert gemini["instructions"] == realtime["instructions"]
+    # the record holds an identifier, not the text
+    assert openai_realtime.SYSTEM_INSTRUCTION not in json.dumps(resp.events, ensure_ascii=False)
+    # the Moshi-type adapter has no such settings
+    resp, _ = _run_moshi(monkeypatch, FRAME_TIMES)
+    assert not [e for e in resp.events["events"] if e.get("event") == tlm.SESSION]
+
+
+def test_gemini_instruction_can_be_replaced(monkeypatch):
+    from fdbja.adapters.gemini_live import SYSTEM_INSTRUCTION, GeminiLiveAdapter
+    _fake_genai(_gemini_script(), monkeypatch)
+    sent = {}
+    gtypes = sys.modules["google.genai.types"]
+    monkeypatch.setattr(gtypes, "LiveConnectConfig",
+                        lambda **k: sent.update(k) or types.SimpleNamespace(**k))
+    adapter = GeminiLiveAdapter(api_key="test", silence_after_s=0.4,
+                                instructions="日本語で話してください。")
+    resp = adapter.infer(np.zeros(int(0.4 * 16000), dtype=np.float32), 16000)
+    assert sent["system_instruction"] == "日本語で話してください。"
+    assert _session(resp.events)["instructions"] == tlm.text_id("日本語で話してください。")
+    assert _session(resp.events)["instructions"] != tlm.text_id(SYSTEM_INSTRUCTION)
+
+
+def test_record_says_which_version_recorded_it_and_when():
+    import re
+
+    import fdbja
+    tl = ResponseTimeline(24000, adapter="x")
+    record = tl.record("playout", "playout")
+    assert record["fdbja"] == fdbja.__version__
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", record["recorded_at"])
