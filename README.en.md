@@ -120,6 +120,7 @@ Real evaluation (point `corpus.zoom1_root` in `configs/default.yaml` at LLM-jp-Z
 uv sync --group asr-reazon-whisperx
 uv run fdbja reconstruct --config configs/default.yaml
 uv run fdbja infer --config configs/default.yaml
+uv run fdbja check-responses --config configs/default.yaml --out results/response_check   # check the recordings
 uv run fdbja transcribe --config configs/default.yaml
 uv run fdbja score-offline --config configs/default.yaml
 ```
@@ -472,13 +473,47 @@ model entry in the config:
   time and ignore interruption notices; `gemini_live` stops receiving at the first `turn_complete`.
 
 `infer` writes, next to `combined.wav`, the event record `events.json` (arrival time and sample count of every
-chunk, time of every interruption notice and of other server events; no audio, no text) and `received.wav`
+chunk, time of every interruption notice and of other server events, and the time and reason listening
+stopped, `client.receive_end`; no audio, no text) and `received.wav`
 (the received audio joined in order). With these two files the timeline can be rebuilt under another rule
 without calling the model again (`fdbja.adapters._timeline.timeline_from_record`). Custom adapters work without
 returning `events` / `received_audio`.
 
 The leaderboard rows were recorded with the construction up to 0.2.0 and have not been recorded again; see
 items 4 to 6 of the [known limitations](#known-limitations).
+
+### Checking what `infer` recorded (`fdbja check-responses`)
+
+Before scoring, `uv run fdbja check-responses --config configs/default.yaml --out results/response_check` checks
+that the recordings of the configured systems can be compared. It does not call a model or an API and does not run
+ASR. It replays each `events.json` under one set of rules and writes per-clip values (`clips.csv`), per-system
+totals (`systems.csv`) and the findings (`response_check.md`).
+
+| Finding | Level | Meaning |
+|---------|-------|---------|
+| `missing_output` | error | no `combined.wav` for the clip |
+| `bad_output` | error | `combined.wav` cannot be read or has no model channel |
+| `bad_record` | error | `events.json` cannot be read or has an unknown format |
+| `received_mismatch` | error | `received.wav` does not have the length the record states |
+| `rebuild_differs` | error | the timeline rebuilt from the record differs from `output.wav` (audio or record changed after recording) |
+| `ended_early` | error | the client stopped listening before the input ended; later replies are not in the recording |
+| `all_no_audio` | error | no clip of the task holds any model audio (check the endpoint and the credentials) |
+| `mixed_rules` | error | clips of one system were recorded under different timeline rules |
+| `response_failed` | warning | the server reported a failed or incomplete response |
+| `stall` | warning | inside one response the audio arrived too late for playback for longer than `--stall-limit` (default 0.2 s); the timeline holds that much silence |
+| `tail_cut` | warning | model audio beyond the written length was cut |
+| `no_record` | warning | no `events.json`, nothing to check (recordings up to 0.2.0, hand-placed `combined.wav`, custom adapters without a record) |
+| `rules_differ` | warning | systems were recorded under different timeline rules, so response positions are not on one scale |
+
+The totals also list the timeline rule, the number of interruption notices, the seconds of audio discarded at a
+notice, the median time of the first audio and the number of clips without model audio. Notices and discarded audio
+are behaviour of the system, not errors; a difference of an order of magnitude between systems is a reason to look
+at the adapter settings. `--strict` exits with status 1 when there is any error (warnings alone give 0).
+`--records-only` reads only `events.json`: an output counts as empty when no chunk was received, and `bad_output`,
+`received_mismatch` and `rebuild_differs` are not checked. `--model` / `--task` restrict the check; the trivial baselines are skipped unless named with `--model`.
+The end of listening comes from the note `client.receive_end` (with a reason) that the adapters leave in the record;
+recordings without it are not judged for `ended_early`. The check finds problems of the recording. It does not
+measure how good a response is, and a report without findings does not show that the scores are right.
 
 Your own model: implement `ModelAdapter.infer(input_audio, sample_rate) -> DialogueResponse`
 (`src/fdbja/adapters/base.py`; `input_audio` is speaker A, mono 16 kHz; `infer` writes the returned

@@ -25,7 +25,8 @@ Adapters take a ``timeline`` option: ``"playout"`` or ``"legacy"`` (the rule
 that adapter used up to 0.2.0, for reproducing published values).
 
 The event record (``ResponseTimeline.record()``) keeps the arrival time and
-sample count of every chunk and the time of every notice. Together with the
+sample count of every chunk, the time of every notice, and when and why the
+adapter stopped listening (the note ``client.receive_end``). Together with the
 received audio (all chunks joined in order) it is enough to rebuild the
 timeline under any rule without calling the model again
 (``timeline_from_record``).
@@ -41,6 +42,8 @@ RULES = ("playout", "arrival", "concat")
 TIMELINE_OPTIONS = ("playout", "legacy")
 DEFAULT_TIMELINE = "playout"
 RECORD_FORMAT = "fdbja.response_events/1"
+#: note written by an adapter when it stops listening (``reason`` says why)
+RECEIVE_END = "client.receive_end"
 
 
 def resolve_rule(timeline: str, legacy_rule: str) -> str:

@@ -46,6 +46,7 @@ import numpy as np
 
 from fdbja.adapters._timeline import (
     DEFAULT_TIMELINE,
+    RECEIVE_END,
     ResponseTimeline,
     resolve_rule,
 )
@@ -202,16 +203,22 @@ class OpenAIRealtimeAdapter(ModelAdapter):
                 send_done[0] = True
 
             async def recv_audio():
+                reason = await receive()
+                tl.note(time.monotonic() - t0, RECEIVE_END, reason=reason)
+
+            async def receive() -> str:
+                """Handle server messages; returns why listening stopped."""
                 nonlocal n_truncate
                 while True:
                     remaining = deadline - (time.monotonic() - t0)
                     if remaining <= 0:
-                        break
+                        return "deadline"
                     try:
                         raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
-                    except (asyncio.TimeoutError,
-                            websockets.exceptions.ConnectionClosed):
-                        break
+                    except asyncio.TimeoutError:
+                        return "deadline"
+                    except websockets.exceptions.ConnectionClosed:
+                        return "closed"
                     msg = json.loads(raw)
                     mtype = msg.get("type", "")
                     at = time.monotonic() - t0
@@ -258,7 +265,7 @@ class OpenAIRealtimeAdapter(ModelAdapter):
                                 status=resp.get("status"),
                                 reason=(resp.get("status_details") or {}).get("reason"))
                         if send_done[0]:
-                            break
+                            return "response_done"
                     elif not mtype.endswith(".delta"):
                         tl.note(at, mtype,
                                 **{k: msg.get(k) for k in _NOTE_KEYS})

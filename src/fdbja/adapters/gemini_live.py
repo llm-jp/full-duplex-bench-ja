@@ -39,6 +39,7 @@ import numpy as np
 
 from fdbja.adapters._timeline import (
     DEFAULT_TIMELINE,
+    RECEIVE_END,
     ResponseTimeline,
     resolve_rule,
 )
@@ -165,6 +166,8 @@ class GeminiLiveAdapter(ModelAdapter):
                     tl.note(at, "server_content.turn_complete")
                 return bool(sc.turn_complete)
 
+            receive_end = []    # (time, reason) when recv_audio returns by itself
+
             async def recv_audio():
                 # session.receive() ends after each completed turn
                 while True:
@@ -172,8 +175,10 @@ class GeminiLiveAdapter(ModelAdapter):
                     async for msg in session.receive():
                         n_msgs += 1
                         if handle(msg) and send_done[0]:
+                            receive_end.append((time.monotonic() - t0, "turn_complete"))
                             return
                     if not playout or send_done[0] or n_msgs == 0:
+                        receive_end.append((time.monotonic() - t0, "stream_ended"))
                         return
 
             if playout:
@@ -181,6 +186,9 @@ class GeminiLiveAdapter(ModelAdapter):
                                  + self.silence_after_s + RECV_GRACE_S)
             else:
                 await asyncio.gather(send_audio(), recv_audio())
+            at, reason = (receive_end[0] if receive_end
+                          else (time.monotonic() - t0, "deadline"))
+            tl.note(at, RECEIVE_END, reason=reason)
 
         # lay the received audio out on the time axis
         n = int((total_dur + self.silence_after_s) * OUTPUT_SR)

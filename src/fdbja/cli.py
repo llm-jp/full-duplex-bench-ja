@@ -156,6 +156,22 @@ def main(argv=None) -> int:
                         "(vap_cache/<stem>/) to read (default: the only one present)")
 
     p = sub.add_parser(
+        "check-responses",
+        help="check the files written by infer before scoring: missing or empty "
+             "outputs, listening that ended early, stalled streams, discarded audio, "
+             "timeline rules that differ between systems")
+    p.add_argument("--config", required=True)
+    p.add_argument("--out", required=True, help="output directory")
+    p.add_argument("--model", nargs="+", default=None, help="only these models")
+    p.add_argument("--task", nargs="+", default=None, help="only these tasks")
+    p.add_argument("--stall-limit", type=float, default=0.2,
+                   help="warn when a clip has a stall longer than this (seconds)")
+    p.add_argument("--records-only", action="store_true",
+                   help="read events.json only, not the audio files")
+    p.add_argument("--strict", action="store_true",
+                   help="exit with status 1 when there is an error finding")
+
+    p = sub.add_parser(
         "analyze-profile",
         help="turn-taking profile per system (talks over / stays silent / slow) "
              "and an event-level report, from a score-offline results.json")
@@ -319,6 +335,13 @@ def main(argv=None) -> int:
         analyze_human_eval.run(args.responses, args.bundle, args.out,
                                results_path=args.results)
         return 0
+
+    if args.command == "check-responses":
+        from fdbja.response_check import run as run_check
+        summary = run_check(Config.load(args.config), args.out, models=args.model,
+                            tasks=args.task, stall_limit=args.stall_limit,
+                            records_only=args.records_only)
+        return 1 if args.strict and summary["errors"] else 0
 
     if args.command == "analyze-profile":
         from fdbja.turn_profile import run as run_profile
